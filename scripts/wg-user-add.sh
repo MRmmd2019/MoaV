@@ -76,25 +76,18 @@ fi
 
 log_info "Adding WireGuard peer '$USERNAME'..."
 
-# Find next available IP
-# Get used IPs from config file AND running interface (prevent collisions if out of sync)
-USED_IPS=$(grep 'AllowedIPs = 10\.66\.66\.' "$WG_CONFIG_DIR/wg0.conf" 2>/dev/null | sed 's/.*10\.66\.66\.\([0-9]*\).*/\1/' || echo "")
+# Find next available IP: scan the config file (via net_next_free_octet) plus the
+# running interface's allowed-ips, so a config/runtime drift can't hand out a
+# colliding octet.
+RUNNING_IPS=""
 if docker compose ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
     RUNNING_IPS=$(docker compose exec -T wireguard wg show wg0 allowed-ips 2>/dev/null | grep '10\.66\.66\.' | sed 's/.*10\.66\.66\.\([0-9]*\).*/\1/' || echo "")
-    USED_IPS="$USED_IPS $RUNNING_IPS"
 fi
-NEXT_IP=2  # Start from .2 (server is .1)
 
-for ip in $USED_IPS; do
-    if [[ $ip -ge $NEXT_IP ]]; then
-        NEXT_IP=$((ip + 1))
-    fi
-done
-
-if [[ $NEXT_IP -gt 254 ]]; then
+NEXT_IP=$(net_next_free_octet "$WG_CONFIG_DIR/wg0.conf" "10.66.66" $RUNNING_IPS) || {
     log_error "No available IPs in WireGuard network"
     exit 1
-fi
+}
 
 CLIENT_IP="10.66.66.$NEXT_IP"
 log_info "Assigned IP: $CLIENT_IP"
