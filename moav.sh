@@ -8993,7 +8993,7 @@ cmd_regenerate_users() {
     # template and dropped `moav user add` users). Idempotent. (lib/sync.sh)
     echo -n "  Syncing server configs with user state... "
     if docker compose run --rm -T --entrypoint /bin/bash bootstrap \
-        -c 'mkdir -p /state/users; cp -a /host-state/users/. /state/users/ 2>/dev/null || true; source /app/lib/common.sh; source /app/lib/sync.sh; sync_server_users' >/dev/null 2>&1; then
+        -c 'mkdir -p /state/users; cp -a /host-state/users/. /state/users/ 2>/dev/null || true; source /app/lib/common.sh; source /app/lib/sing-box.sh; source /app/lib/xray.sh; source /app/lib/sync.sh; sync_server_users' >/dev/null 2>&1; then
         echo -e "${GREEN}✓${NC}"
         docker compose restart sing-box xray >/dev/null 2>&1 || true
     else

@@ -1,64 +1,42 @@
 #!/bin/bash
 # sing-box specific functions
 
-# Add a new user to sing-box configuration
+# singbox_add_user <config> <username> <uuid> <password> <ss_psk>
+# Canonical sing-box server-config mutation — the single source of truth for
+# inserting a user into the proxy inbounds (used by the host `user add` path and
+# the bootstrap/regenerate reconcile). Each insert is INDEPENDENTLY idempotent:
+# UUID inbounds (reality, vless-ws) dedup by uuid, password inbounds (trojan,
+# anytls, hysteria2, shadowsocks) dedup by name. Do NOT gate the block on the
+# UUID — SS/Trojan/AnyTLS/Hysteria2 entries carry only a password, so a
+# "uuid already present" guard would skip repairing them once Reality re-added
+# the uuid (the SS "invalid request" orphan bug). Shadowsocks is added only when
+# <ss_psk> is non-empty; the addbyname map is a no-op when the inbound is absent.
+# Writes in place via cat-overwrite (preserving the file's inode/mode/owner, so a
+# sudo'd CLI vs admin-container uid mismatch can't lose write access) and only
+# when the config actually changed. Returns 0 if the config changed, 1 if
+# unchanged or on jq failure.
 singbox_add_user() {
-    local user_id="$1"
-    local user_uuid="$2"
-    local user_password="$3"
-    local config_file="/configs/sing-box/config.json"
-
-    if [[ ! -f "$config_file" ]]; then
-        log_error "sing-box config not found at $config_file"
-        return 1
+    local sb="$1" n="$2" id="$3" p="$4" ss="$5" tmp
+    [[ -f "$sb" ]] || return 1
+    tmp=$(mktemp)
+    if jq --arg n "$n" --arg id "$id" --arg p "$p" --arg ss "$ss" '
+            def addbyuuid($tag; $e):
+              .inbounds |= map(if .tag==$tag and ((any(.users[]?; .uuid==$e.uuid)) | not)
+                               then .users += [$e] else . end);
+            def addbyname($tag; $e):
+              .inbounds |= map(if .tag==$tag and ((any(.users[]?; .name==$e.name)) | not)
+                               then .users += [$e] else . end);
+            addbyuuid("vless-reality-in"; {name:$n, uuid:$id, flow:"xtls-rprx-vision"})
+            | addbyname("trojan-tls-in"; {name:$n, password:$p})
+            | addbyname("anytls-in";     {name:$n, password:$p})
+            | addbyname("hysteria2-in";  {name:$n, password:$p})
+            | addbyuuid("vless-ws-in";   {name:$n, uuid:$id})
+            | (if $ss != "" then addbyname("shadowsocks-in"; {name:$n, password:$ss}) else . end)
+        ' "$sb" > "$tmp" 2>/dev/null && jq empty "$tmp" 2>/dev/null; then
+        if ! cmp -s "$tmp" "$sb"; then cat "$tmp" > "$sb"; rm -f "$tmp"; return 0; fi
     fi
-
-    # Add to Reality/VLESS users
-    jq --arg name "$user_id" --arg uuid "$user_uuid" \
-        '.inbounds[] | select(.tag == "vless-reality-in") | .users += [{"name": $name, "uuid": $uuid, "flow": "xtls-rprx-vision"}]' \
-        "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
-
-    # Add to Trojan users
-    jq --arg name "$user_id" --arg password "$user_password" \
-        '.inbounds[] | select(.tag == "trojan-tls-in") | .users += [{"name": $name, "password": $password}]' \
-        "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
-
-    # Add to Hysteria2 users
-    jq --arg name "$user_id" --arg password "$user_password" \
-        '.inbounds[] | select(.tag == "hysteria2-in") | .users += [{"name": $name, "password": $password}]' \
-        "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
-
-    # Add to VLESS WS users (CDN)
-    jq --arg name "$user_id" --arg uuid "$user_uuid" \
-        '.inbounds[] | select(.tag == "vless-ws-in") | .users += [{"name": $name, "uuid": $uuid}]' \
-        "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
-
-    log_info "Added user $user_id to sing-box configuration"
-}
-
-# Remove a user from sing-box configuration
-singbox_remove_user() {
-    local user_id="$1"
-    local config_file="/configs/sing-box/config.json"
-
-    if [[ ! -f "$config_file" ]]; then
-        log_error "sing-box config not found at $config_file"
-        return 1
-    fi
-
-    # Remove from all inbounds
-    jq --arg name "$user_id" \
-        '(.inbounds[].users // []) |= map(select(.name != $name))' \
-        "$config_file" > /tmp/config.tmp && mv /tmp/config.tmp "$config_file"
-
-    log_info "Removed user $user_id from sing-box configuration"
-}
-
-# Reload sing-box configuration
-singbox_reload() {
-    # sing-box supports hot reload via SIGHUP
-    docker kill --signal=SIGHUP moav-sing-box 2>/dev/null || true
-    log_info "Sent reload signal to sing-box"
+    rm -f "$tmp"
+    return 1
 }
 
 # Add a user to TrustTunnel credentials
