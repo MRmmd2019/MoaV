@@ -196,7 +196,22 @@ amneziawg_generate_client_config() {
     local output_dir="$2"
 
     source "$STATE_DIR/users/$user_id/amneziawg.env"
-    source "$STATE_DIR/keys/amneziawg.env"
+
+    # Obfuscation params: read from the awg0.conf [Interface] header — the
+    # always-present source on both host and container (state/keys/amneziawg.env
+    # exists only in the container). One consistent config-read path; the values
+    # are identical to the state file (both are written from the same params).
+    local awg_conf="$AWG_CONFIG_DIR/awg0.conf"
+    local AWG_JC AWG_JMIN AWG_JMAX AWG_S1 AWG_S2 AWG_H1 AWG_H2 AWG_H3 AWG_H4
+    AWG_JC=$(awk '/^Jc[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_JMIN=$(awk '/^Jmin[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_JMAX=$(awk '/^Jmax[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_S1=$(awk '/^S1[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_S2=$(awk '/^S2[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H1=$(awk '/^H1[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H2=$(awk '/^H2[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H3=$(awk '/^H3[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H4=$(awk '/^H4[[:space:]]*=/{print $3; exit}'   "$awg_conf")
 
     local server_public_key
     server_public_key=$(cat "$AWG_CONFIG_DIR/server.pub")

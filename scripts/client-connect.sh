@@ -541,8 +541,8 @@ connect_wireguard() {
 connect_xhttp() {
     local config_file=""
 
-    # Find XHTTP config
-    for f in "$CONFIG_DIR"/xhttp-vless.txt "$CONFIG_DIR"/xhttp.txt; do
+    # Find XHTTP config (the share link lives in xhttp-vless.txt)
+    for f in "$CONFIG_DIR"/xhttp-vless.txt; do
         if [[ -f "$f" ]] && grep -q "^vless://" "$f" 2>/dev/null; then
             config_file="$f"
             break

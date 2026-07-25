@@ -48,12 +48,11 @@ xray_xhttp_link() {
     echo "vless://${USER_UUID}@${SERVER_IP}:${port}?type=xhttp&security=reality&sni=${host}&fp=chrome&headers=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&encryption=none#MoaV-XHTTP-${label}"
 }
 
-# xray_write_xhttp_bundle <output_dir> <label> — xhttp-vless.txt + QR + xhttp.txt.
+# xray_write_xhttp_bundle <output_dir> <label> — writes xhttp-vless.txt (the
+# share link) + its QR. The human-readable setup guide lives in README.html, so
+# no xhttp.txt is emitted.
 xray_write_xhttp_bundle() {
     local out="$1" label="$2"
-    local target="${XHTTP_REALITY_TARGET:-dl.google.com:443}"
-    local host="${target%%:*}"
-    local port="${PORT_XHTTP:-2096}"
     local link; link="$(xray_xhttp_link "$label")"
 
     echo "$link" > "$out/xhttp-vless.txt"
@@ -61,35 +60,6 @@ xray_write_xhttp_bundle() {
     if command -v qrencode &>/dev/null; then
         qrencode -o "$out/xhttp-qr.png" -s 6 -m 2 "$link" 2>/dev/null || true
     fi
-
-    cat > "$out/xhttp.txt" <<EOF
-XHTTP (VLESS+XHTTP+Reality) Configuration for $label
-=======================================================
-
-Protocol: VLESS + XHTTP + Reality (via Xray-core)
-Server: ${SERVER_IP}
-Port: ${port}
-UUID: ${USER_UUID}
-SNI: ${host}
-Reality Public Key: ${REALITY_PUBLIC_KEY}
-Short ID: ${REALITY_SHORT_ID}
-Fingerprint: chrome
-Transport: xhttp
-
-Share Link:
-${link}
-
-Client Apps:
-- Android: V2rayNG, Hiddify
-- iOS: Streisand, V2Box
-- Windows: Hiddify, V2rayN
-- macOS: V2rayU, Hiddify
-
-Instructions:
-1. Install a compatible client app
-2. Import using the share link above or scan the QR code
-3. Connect
-EOF
 }
 
 # xray_xdns_finalmask <mode> — emit the finalmask "settings" JSON. mode=dns uses
@@ -130,9 +100,9 @@ print(json.dumps({"resolvers": resolvers}))
 }
 
 # xray_write_xdns_bundle <output_dir> <label> <uuid> — xdns-config.json (via
-# public resolver), xdns-direct-config.json (direct to the server XDNS port), and
-# the xdns.txt guide. Honors XDNS_SUBDOMAIN / XDNS_MTU / XDNS_RESOLVERS /
-# XDNS_METHOD + PORT_XDNS from the environment.
+# public resolver) + xdns-direct-config.json (direct to the server XDNS port).
+# The setup guide (client, resolver tips, MTU tuning) lives in README.html.
+# Honors XDNS_SUBDOMAIN / XDNS_MTU / XDNS_RESOLVERS / XDNS_METHOD + PORT_XDNS.
 xray_write_xdns_bundle() {
     local out="$1" label="$2" uuid="$3"
     local domain="${XDNS_SUBDOMAIN:-x}.${DOMAIN}"
@@ -169,50 +139,4 @@ XDNSEOF
   "routing": {"rules": [{"type": "field", "ip": ["::/0"], "outboundTag": "direct"}]}
 }
 XDNSEOF2
-
-    cat > "$out/xdns.txt" <<XDNSTXTEOF
-XDNS (DNS Tunnel via Xray mKCP) Configuration for $label
-============================================================
-
-Protocol: VLESS + mKCP + XDNS FinalMask (via Xray-core)
-Domain: ${domain}
-UUID: ${uuid}
-MTU: ${mtu}
-
-This protocol tunnels VPN traffic through DNS queries.
-It works when almost everything except DNS is blocked.
-Speed is slow but connectivity is reliable.
-
-IMPORTANT: XDNS requires Xray-core v26+ with FinalMask support.
-
-Recommended clients:
-- Happ (iOS/Android/Desktop) — supports FinalMask
-- Xray CLI v26.3+ (any platform) — run: xray run -c xdns-config.json
-
-Two configs included:
-
-  xdns-config.json        Via DNS resolver — stealthier, may reconnect periodically
-  xdns-direct-config.json Via direct server connection — more stable, less stealthy
-
-Setup:
-1. Import one of the configs into an Xray-compatible app with FinalMask support
-2. Use as SOCKS5 proxy: 127.0.0.1:7891
-3. For Telegram: tap https://t.me/socks?server=127.0.0.1&port=7891
-
-Tips:
-- Try the DNS resolver config first (stealthier)
-- Switch to direct if connections keep dropping
-- The DNS-resolver config round-robins across: ${resolvers_csv:-(single resolver mode)}
-- If those keep dropping, edit the "resolvers" array in xdns-config.json
-  with DNS servers that actually answer on your network.
-- Scanners that find reachable resolvers:
-    findns   https://github.com/SamNet-dev/findns
-    dns-mns  https://gitlab.com/E-Gurl/dns-mns
-
-MTU tuning (client side only — server uses MTU 900 for return path):
-- MTU ${mtu} = safest (works with all resolvers)
-- MTU 67 = works with most resolvers (faster)
-- MTU 130 = unrestricted resolvers only (fastest)
-- MTU depends on domain name length: shorter domain = higher MTU possible
-XDNSTXTEOF
 }
