@@ -65,6 +65,14 @@ slipstream_generate_client_instructions() {
         cp "$STATE_DIR/keys/slipstream-cert.pem" "$output_dir/slipstream-cert.pem"
     fi
 
+    # Canonical client config (carries the tunnel domain — the human setup guide
+    # lives in README.html). The client tools + connectivity test read the domain
+    # from here; keep it the first slipstream-named file so it wins the glob.
+    cat > "$output_dir/slipstream-client.conf" <<EOF
+# Slipstream client config. Setup guide: README.html.
+# Run: slipstream-client --domain $slipstream_domain --cert slipstream-cert.pem --dns-server 1.1.1.1:53 --socks-listen 127.0.0.1:1080
+domain = $slipstream_domain
+EOF
 
-    log_info "Copied Slipstream cert for $user_id"
+    log_info "Generated Slipstream client config for $user_id"
 }

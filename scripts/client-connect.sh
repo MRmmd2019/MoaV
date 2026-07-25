@@ -768,7 +768,7 @@ connect_dnstt() {
 connect_slipstream() {
     local instructions_file=""
 
-    for f in "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
+    for f in "$CONFIG_DIR"/slipstream-client.conf "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
         [[ -f "$f" ]] && instructions_file="$f" && break
     done
 
