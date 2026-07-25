@@ -95,55 +95,6 @@ gooserelay_generate_client_instructions() {
 }
 EOF
 
-    cat > "$output_dir/gooserelay-instructions.txt" <<EOF
-# GooseRelay Instructions
-# =======================
-# SOCKS5 over a Google Apps Script web app -> this VPS exit server.
-# To the network you only ever appear to talk TLS to google.com.
-# End-to-end AES-256-GCM; Google never sees plaintext or the key.
-# Interoperable with the GooseRelay client in MahsaNG v16 (GooseRelay v1.7.1).
-#
-# Project: https://github.com/kianmhz/GooseRelayVPN
-# Bundled in: MahsaNG (https://github.com/GFW-knocker/MahsaNG)
-
-# This bundle ships TWO ready-made files so you don't hand-edit anything:
-#   gooserelay-AppsScript.gs       -> paste into script.google.com; the
-#                                     RELAY_URLS array already points here
-#   gooserelay-client_config.json  -> ready for the GooseRelay / MahsaNG v16
-#                                     client; only the Deployment ID is blank
-
-# Shared tunnel key (already in the config; keep SECRET — anyone with it can
-# use your VPS as you):
-$tunnel_key
-
-# This server's exit endpoint (already wired into gooserelay-AppsScript.gs):
-$endpoint
-
-# -------------------------
-# Setup (one-time, in YOUR Google account)
-# -------------------------
-# 1. Open https://script.google.com  ->  New project
-# 2. Paste the WHOLE contents of  gooserelay-AppsScript.gs  (no edits needed)
-# 3. Deploy -> New deployment -> type "Web app"
-#       Execute as: Me
-#       Who has access: Anyone
-#    Copy the Deployment ID it shows.
-#    (Re-deploy as a NEW deployment whenever you change the script.)
-# 4. In gooserelay-client_config.json, replace
-#    REPLACE_WITH_YOUR_APPS_SCRIPT_DEPLOYMENT_ID with that Deployment ID.
-# 5. Load gooserelay-client_config.json into the GooseRelay client (or the
-#    MahsaNG v16 GooseRelay tab), then point apps at SOCKS5 127.0.0.1:1080.
-#    A pre-flight check confirms the relay is healthy and the key matches.
-
-# -------------------------
-# Notes:
-# -------------------------
-# - Apps Script quota is ~20,000 calls/day PER Google account. Deploy under
-#   several accounts and add each Deployment ID to "script_keys" for capacity.
-# - Real-time apps (Telegram/X) drain the quota fast due to constant polling.
-# - Traffic exits through the MoaV server (your IP appears as the server IP).
-# - All deployments forwarding here must use this exact tunnel_key.
-EOF
 
     if [[ "$have_gs" == true ]]; then
         log_info "Generated GooseRelay bundle (AppsScript.gs + client_config.json) for $user_id"

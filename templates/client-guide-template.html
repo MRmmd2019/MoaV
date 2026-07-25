@@ -1239,7 +1239,7 @@
             <div class="protocol-content">
                 <p class="protocol-desc">Advanced DNS tunnel (ARQ + resolver load-balancing) bundled natively in the MahsaNG v16 app — typically faster and more resilient than dnstt/Slipstream during heavy shutdowns. Works when almost everything except DNS is blocked. Best for Telegram and light chat.</p>
                 <div class="config-box">
-                    <h4>MasterDNS Config (also in <code>masterdns-instructions.txt</code>)</h4>
+                    <h4>MasterDNS Config (also in <code>masterdns-client_config.toml</code>)</h4>
                     <div class="config-value multiline" onclick="copyConfig(this)" style="font-size: 11px; max-height: 220px; overflow-y: auto; white-space: pre-wrap;">{{CONFIG_MASTERDNS}}</div>
                 </div>
                 <p style="color: var(--text-muted); font-size: 12px; margin-top: 12px;">The key is shared by everyone on this server — keep it private. Telegram &amp; light chat only.</p>
@@ -1258,7 +1258,7 @@
             <div class="protocol-content">
                 <p class="protocol-desc">Tunnels traffic through a Google Apps Script you deploy in your own Google account (fronted as <code>google.com</code>) to this server's exit, encrypted with AES-256-GCM. Bundled in MahsaNG v16. Useful when direct connections to the server are blocked but Google is reachable.</p>
                 <div class="config-box">
-                    <h4>GooseRelay Config (also in <code>gooserelay-instructions.txt</code>)</h4>
+                    <h4>GooseRelay Config (also in <code>gooserelay-client_config.json</code>)</h4>
                     <div class="config-value multiline" onclick="copyConfig(this)" style="font-size: 11px; max-height: 260px; overflow-y: auto; white-space: pre-wrap;">{{CONFIG_GOOSERELAY}}</div>
                 </div>
                 <p style="color: var(--text-muted); font-size: 12px; margin-top: 12px;">Requires deploying a small Google Apps Script (steps in the config above). The tunnel key is shared by everyone on this server — keep it private.</p>
@@ -2174,7 +2174,7 @@
             <div class="protocol-content">
                 <p class="protocol-desc">تونل DNS پیشرفته (با ARQ و توزیع بار روی چند resolver) که به‌صورت داخلی در اپ MahsaNG نسخه ۱۶ هست — معمولاً سریع‌تر و پایدارتر از dnstt/Slipstream در قطعی‌های شدید. وقتی همه‌چیز جز DNS بسته شده کار می‌کنه. مناسب تلگرام و چت سبک.</p>
                 <div class="config-box">
-                    <h4>کانفیگ MasterDNS (در فایل <code>masterdns-instructions.txt</code> هم هست)</h4>
+                    <h4>کانفیگ MasterDNS (در فایل <code>masterdns-client_config.toml</code> هم هست)</h4>
                     <div class="config-value multiline" onclick="copyConfig(this)" style="font-size: 11px; max-height: 220px; overflow-y: auto; white-space: pre-wrap;">{{CONFIG_MASTERDNS}}</div>
                 </div>
                 <p style="color: var(--text-muted); font-size: 12px; margin-top: 12px;">این کلید بین همه کاربران این سرور مشترکه — خصوصی نگهش دارید. فقط تلگرام و چت سبک.</p>
@@ -2193,7 +2193,7 @@
             <div class="protocol-content">
                 <p class="protocol-desc">ترافیک رو از طریق یک Google Apps Script که خودتون توی اکانت گوگل‌تون می‌سازید (با ظاهر <code>google.com</code>) به خروجی این سرور تونل می‌کنه، با رمزنگاری AES-256-GCM. توی MahsaNG نسخه ۱۶ هست. وقتی اتصال مستقیم به سرور بسته‌ست ولی گوگل در دسترسه مفیده.</p>
                 <div class="config-box">
-                    <h4>کانفیگ GooseRelay (در فایل <code>gooserelay-instructions.txt</code> هم هست)</h4>
+                    <h4>کانفیگ GooseRelay (در فایل <code>gooserelay-client_config.json</code> هم هست)</h4>
                     <div class="config-value multiline" onclick="copyConfig(this)" style="font-size: 11px; max-height: 260px; overflow-y: auto; white-space: pre-wrap;">{{CONFIG_GOOSERELAY}}</div>
                 </div>
                 <p style="color: var(--text-muted); font-size: 12px; margin-top: 12px;">نیاز به ساختن یک Google Apps Script کوچک داره (مراحلش توی کانفیگ بالاست). کلید تونل بین همه کاربران این سرور مشترکه — خصوصی نگهش دارید.</p>

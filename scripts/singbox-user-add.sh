@@ -415,30 +415,6 @@ mtu_size = 1280
 EOF
 
     # Generate human-readable text file
-    cat > "$OUTPUT_DIR/trusttunnel.txt" <<EOF
-TrustTunnel Configuration for $USERNAME
-======================================
-
-IP Address: ${SERVER_IP}:4443
-Domain: ${DOMAIN}
-Username: ${USERNAME}
-Password: ${USER_PASSWORD}
-DNS Servers: tls://1.1.1.1
-
-CLI Client:
------------
-1. Download from: https://github.com/TrustTunnel/TrustTunnelClient/releases
-2. Run: trusttunnel_client trusttunnel.toml
-
-Mobile/Desktop App:
--------------------
-1. Download TrustTunnel from app store or https://trusttunnel.org/
-2. Add new VPN with the settings above
-3. Connect
-
-Note: TrustTunnel supports HTTP/2 and HTTP/3 (QUIC) transports,
-which look like regular HTTPS traffic to network observers.
-EOF
 
     cat > "$OUTPUT_DIR/trusttunnel.json" <<EOF
 {

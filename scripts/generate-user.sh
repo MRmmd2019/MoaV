@@ -488,30 +488,6 @@ mtu_size = 1280
 EOF
 
     # Generate human-readable text file with instructions
-    cat > "$OUTPUT_DIR/trusttunnel.txt" <<EOF
-TrustTunnel Configuration for $USER_ID
-======================================
-
-IP Address: ${SERVER_IP}:4443
-Domain: ${DOMAIN}
-Username: ${USER_ID}
-Password: ${USER_PASSWORD}
-DNS Servers: tls://1.1.1.1
-
-CLI Client:
------------
-1. Download from: https://github.com/TrustTunnel/TrustTunnelClient/releases
-2. Run: trusttunnel_client trusttunnel.toml
-
-Mobile/Desktop App:
--------------------
-1. Download TrustTunnel from app store or https://trusttunnel.org/
-2. Add new VPN with the settings above
-3. Connect
-
-Note: TrustTunnel supports HTTP/2 and HTTP/3 (QUIC) transports,
-which look like regular HTTPS traffic to network observers.
-EOF
 
     # Generate JSON config for programmatic use
     cat > "$OUTPUT_DIR/trusttunnel.json" <<EOF
@@ -587,23 +563,10 @@ if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# Generate dnstt instructions (if enabled)
-# -----------------------------------------------------------------------------
-if [[ "${ENABLE_DNSTT:-true}" == "true" ]]; then
-    if [[ -f "$OUTPUT_DIR/dnstt-instructions.txt" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
-        log_info "  - dnstt instructions exist, skipping"
-    else
-        BUNDLE_CHANGED=true
-        dnstt_generate_client_instructions "$USER_ID" "$OUTPUT_DIR"
-        log_info "  - dnstt instructions generated"
-    fi
-fi
-
-# -----------------------------------------------------------------------------
 # Generate Slipstream instructions (if enabled)
 # -----------------------------------------------------------------------------
 if [[ "${ENABLE_SLIPSTREAM:-true}" == "true" ]]; then
-    if [[ -f "$OUTPUT_DIR/slipstream-instructions.txt" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
+    if [[ -f "$OUTPUT_DIR/slipstream-cert.pem" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - Slipstream instructions exist, skipping"
     else
         BUNDLE_CHANGED=true
@@ -616,7 +579,7 @@ fi
 # Generate MasterDNS instructions (if enabled) — MahsaNG v16 component
 # -----------------------------------------------------------------------------
 if [[ "${ENABLE_MASTERDNS:-true}" == "true" ]]; then
-    if [[ -f "$OUTPUT_DIR/masterdns-instructions.txt" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
+    if [[ -f "$OUTPUT_DIR/masterdns-client_config.toml" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - MasterDNS instructions exist, skipping"
     else
         BUNDLE_CHANGED=true
@@ -629,7 +592,7 @@ fi
 # Generate GooseRelay instructions (if enabled) — MahsaNG v16 component
 # -----------------------------------------------------------------------------
 if [[ "${ENABLE_GOOSERELAY:-false}" == "true" ]]; then
-    if [[ -f "$OUTPUT_DIR/gooserelay-instructions.txt" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
+    if [[ -f "$OUTPUT_DIR/gooserelay-client_config.json" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - GooseRelay instructions exist, skipping"
     else
         BUNDLE_CHANGED=true

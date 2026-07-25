@@ -1398,8 +1398,9 @@ test_slipstream() {
     local config_file=""
     local detail=""
 
-    # Find slipstream instructions file
-    for f in "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
+    # Find slipstream config file (the .conf carries the tunnel domain; keep it
+    # first so it wins over slipstream-cert.pem, which has no domain).
+    for f in "$CONFIG_DIR"/slipstream-client.conf "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
         if [[ -f "$f" ]]; then
             config_file="$f"
             break

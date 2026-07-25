@@ -452,12 +452,6 @@ echo ""
 STATE_DIR="${STATE_DIR:-state}"
 GOOSERELAY_CONFIG_DIR="configs/gooserelay"   # host path (lib defaults to the container /configs)
 
-if [[ "${ENABLE_DNSTT:-true}" == "true" ]] && [[ -s "$STATE_DIR/keys/dnstt-server.pub.hex" ]]; then
-    if dnstt_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
-        log_info "✓ dnstt instructions generated"
-    fi
-fi
-
 if [[ "${ENABLE_SLIPSTREAM:-true}" == "true" ]] && [[ -f "$STATE_DIR/keys/slipstream-cert.pem" ]]; then
     if slipstream_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
         log_info "✓ Slipstream instructions generated"

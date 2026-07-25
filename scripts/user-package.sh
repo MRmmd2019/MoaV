@@ -103,9 +103,8 @@ DNSTT_DOMAIN="${DNSTT_SUBDOMAIN:-t}.${DOMAIN}"
 DNSTT_PUBKEY=""
 if [[ -f "outputs/dnstt/server.pub" ]]; then
     DNSTT_PUBKEY=$(cat "outputs/dnstt/server.pub" 2>/dev/null || echo "")
-elif [[ -f "$BUNDLE_DIR/dnstt-instructions.txt" ]]; then
-    # Extract from instructions file
-    DNSTT_PUBKEY=$(grep -A1 "Server Public Key" "$BUNDLE_DIR/dnstt-instructions.txt" 2>/dev/null | tail -1 | tr -d '# ' || echo "")
+elif [[ -f "state/keys/dnstt-server.pub.hex" ]]; then
+    DNSTT_PUBKEY=$(cat "state/keys/dnstt-server.pub.hex" 2>/dev/null || echo "")
 fi
 
 # -----------------------------------------------------------------------------
