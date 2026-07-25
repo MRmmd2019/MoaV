@@ -99,9 +99,12 @@ if os.environ.get("RB_IS_DEMO_USER", "false") == "true":
 
 # --- placeholder → value map --------------------------------------------------
 xdns_present = os.path.isfile(os.path.join(OUT, "xdns-config.json"))
+slipstream_present = os.path.isfile(os.path.join(OUT, "slipstream-cert.pem"))
 cdn = link("cdn-vless.txt")
-md = instr("masterdns-instructions.txt")
-gr = instr("gooserelay-instructions.txt")
+# MasterDNS/GooseRelay embed their canonical client-config artifact (the setup
+# guide lives in this README, not a separate instructions .txt).
+md = instr("masterdns-client_config.toml")
+gr = instr("gooserelay-client_config.json")
 
 repl = {
     "USERNAME": os.environ.get("RB_USERNAME", ""),
@@ -127,7 +130,7 @@ repl = {
     "CONFIG_WIREGUARD_WSTUNNEL": val_or(conf("wireguard-wstunnel.conf"),
                                         "No WireGuard-wstunnel config available"),
     "CONFIG_AMNEZIAWG": val_or(conf("amneziawg.conf"), "No AmneziaWG config available"),
-    "CONFIG_SLIPSTREAM": val_or(instr("slipstream-instructions.txt"), "Slipstream not enabled"),
+    "CONFIG_SLIPSTREAM": "" if slipstream_present else "display:none",
 
     "CONFIG_XDNS": instr("xdns-config.json") if xdns_present else "XDNS not enabled",
     "CONFIG_XDNS_DIRECT": (val_or(instr("xdns-direct-config.json"), "XDNS direct config not available")
@@ -139,7 +142,7 @@ repl = {
     "CONFIG_GOOSERELAY": val_or(gr, absent_extra("GooseRelay")),
     "GOOSERELAY_DISPLAY": "" if gr else "display:none",
 
-    "TRUSTTUNNEL_PASSWORD": val_or(os.environ.get("RB_USER_PASSWORD", ""), "See trusttunnel.txt"),
+    "TRUSTTUNNEL_PASSWORD": val_or(os.environ.get("RB_USER_PASSWORD", ""), "See trusttunnel.json"),
     "DEMO_NOTICE_EN": demo_en,
     "DEMO_NOTICE_FA": demo_fa,
 

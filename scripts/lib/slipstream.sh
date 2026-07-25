@@ -65,67 +65,6 @@ slipstream_generate_client_instructions() {
         cp "$STATE_DIR/keys/slipstream-cert.pem" "$output_dir/slipstream-cert.pem"
     fi
 
-    cat > "$output_dir/slipstream-instructions.txt" <<EOF
-# Slipstream DNS Tunnel Instructions
-# ====================================
-# QUIC-over-DNS tunnel - faster than dnstt (1.5-5x speedup).
-# Use when other methods are blocked. DNS tunneling works when other protocols fail.
-#
-# Project: https://github.com/Mygod/slipstream-rust
 
-# Tunnel Domain:
-$slipstream_domain
-
-# Certificate: slipstream-cert.pem (included in this bundle)
-
-# -------------------------
-# Option 1: Resolver Mode (RECOMMENDED - stealthier)
-# -------------------------
-
-# Download slipstream-client from:
-# https://github.com/net2share/slipstream-rust-build/releases
-
-# Run (creates a local SOCKS5 proxy on port 1080):
-slipstream-client --domain $slipstream_domain --cert slipstream-cert.pem --dns-server 1.1.1.1:53 --socks-listen 127.0.0.1:1080
-
-# Then configure your apps to use SOCKS5 proxy: 127.0.0.1:1080
-
-# -------------------------
-# Option 2: Authoritative/Direct Mode (FASTER but less stealthy)
-# -------------------------
-
-# Connects directly to the server (bypasses DNS resolvers):
-# slipstream-client --domain $slipstream_domain --cert slipstream-cert.pem --authoritative SERVER_IP:${PORT_DNS:-53} --socks-listen 127.0.0.1:1080
-
-# Replace SERVER_IP with the actual server IP address.
-# PORT_DNS defaults to 53. Check your .env if changed (e.g. 5353 when XDNS uses port 53).
-# This mode is ~5x faster but reveals the server IP to network observers.
-
-# -------------------------
-# Alternative DNS Resolvers (if one is blocked, try another):
-# -------------------------
-# - Cloudflare: 1.1.1.1:53
-# - Google: 8.8.8.8:53
-# - Quad9: 9.9.9.9:53
-# - OpenDNS: 208.67.222.222:53
-
-# -------------------------
-# Performance Notes:
-# -------------------------
-# - Resolver mode: ~60 KB/s (good for chat, email, light browsing)
-# - Authoritative mode: ~3-4 MB/s (suitable for most tasks)
-# - Use resolver mode in censored environments for stealth
-# - Use authoritative mode on trusted networks for speed
-
-# -------------------------
-# Troubleshooting:
-# -------------------------
-# - Ensure the cert file (slipstream-cert.pem) is in the same directory
-# - If resolver mode is slow, try a different DNS resolver
-# - DNS tunneling works best when other methods are blocked
-# - Keep slipstream-client running while you need the connection
-# - Traffic exits through the MoaV server (your IP appears as server IP)
-EOF
-
-    log_info "Generated Slipstream instructions for $user_id"
+    log_info "Copied Slipstream cert for $user_id"
 }

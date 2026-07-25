@@ -148,57 +148,16 @@ masterdns_generate_client_instructions() {
     local md_key="KEY_NOT_GENERATED"
     [[ -s "$key_file" ]] && md_key=$(tr -d '\n\r ' < "$key_file")
 
-    cat > "$output_dir/masterdns-instructions.txt" <<EOF
-# MasterDNS Tunnel Instructions
-# =============================
-# Advanced DNS tunnel (low-overhead ARQ + resolver load-balancing).
-# Faster and more loss-tolerant than dnstt; bundled in MahsaNG v16.
-# Use when other methods are blocked — DNS tunnels work when little else does.
-#
-# Project: https://github.com/masterking32/MasterDnsVPN
-# Bundled in: MahsaNG (https://github.com/GFW-knocker/MahsaNG)
-
-# Tunnel Domain:
-$md_domain
-
-# Data encryption method (must match server):
-$MASTERDNS_ENC_METHOD   # 5 = AES-256-GCM
-
-# Encryption key (keep secret — anyone with this key can use the tunnel):
-$md_key
-
-# -------------------------
-# Option A: MahsaNG (Android) — easiest
-# -------------------------
-# 1. Install MahsaNG v16+ from https://github.com/GFW-knocker/MahsaNG/releases
-# 2. Add a MasterDNS config with the domain, encryption method and key above.
-
-# -------------------------
-# Option B: MasterDnsVPN standalone client
-# -------------------------
-# Download the client for your OS from:
-#   https://github.com/masterking32/MasterDnsVPN/releases
-#
-# Minimal client_config.toml:
-#   DOMAINS = ["$md_domain"]
-#   DATA_ENCRYPTION_METHOD = $MASTERDNS_ENC_METHOD
-#   ENCRYPTION_KEY = "$md_key"
-#   PROTOCOL_TYPE = "SOCKS5"
-#   LISTEN_IP = "127.0.0.1"
-#   LISTEN_PORT = 18000
-#
-# Run the client, then point your apps at SOCKS5 127.0.0.1:18000.
-# The client also needs a resolver list (client_resolvers) — use the sample
-# bundled with the client and/or public resolvers (1.1.1.1:53, 8.8.8.8:53).
-
-# -------------------------
-# Notes:
-# -------------------------
-# - DNS tunneling is slow by design but extremely hard to block.
-# - Faster and more stable under packet loss than dnstt/Slipstream.
-# - Traffic exits through the MoaV server (your IP appears as the server IP).
-# - The NS record for $md_domain must delegate to this server (see https://moav.sh/docs/DNS).
+    cat > "$output_dir/masterdns-client_config.toml" <<EOF
+# MasterDNS client config (MasterDnsVPN / MahsaNG v16). The setup guide
+# lives in README.html; once running, point apps at SOCKS5 127.0.0.1:18000.
+DOMAINS = ["$md_domain"]
+DATA_ENCRYPTION_METHOD = $MASTERDNS_ENC_METHOD   # 5 = AES-256-GCM
+ENCRYPTION_KEY = "$md_key"
+PROTOCOL_TYPE = "SOCKS5"
+LISTEN_IP = "127.0.0.1"
+LISTEN_PORT = 18000
 EOF
 
-    log_info "Generated MasterDNS instructions for $user_id"
+    log_info "Generated MasterDNS client config for $user_id"
 }

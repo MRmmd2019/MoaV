@@ -679,16 +679,18 @@ def list_users():
         has_wireguard = (user_dir / "wireguard.conf").exists()
         has_hysteria2 = (user_dir / "hysteria2.yaml").exists() or (user_dir / "hysteria2.txt").exists()
         has_trojan = (user_dir / "trojan.txt").exists()
-        has_trusttunnel = (user_dir / "trusttunnel.toml").exists() or (user_dir / "trusttunnel.txt").exists()
+        has_trusttunnel = (user_dir / "trusttunnel.toml").exists() or (user_dir / "trusttunnel.json").exists()
         has_cdn = (user_dir / "cdn-vless.txt").exists()
         has_amneziawg = (user_dir / "amneziawg.conf").exists()
         has_telemt = (user_dir / "telegram-proxy-link.txt").exists()
         has_xhttp = (user_dir / "xhttp-vless.txt").exists()
         has_xdns = (user_dir / "xdns-config.json").exists()
-        has_dnstt = (user_dir / "dnstt-instructions.txt").exists()
-        has_slipstream = (user_dir / "slipstream-instructions.txt").exists() or (user_dir / "slipstream-cert.pem").exists()
-        has_masterdns = (user_dir / "masterdns-instructions.txt").exists()
-        has_gooserelay = (user_dir / "gooserelay-instructions.txt").exists()
+        # dnstt is server-shared (no per-user bundle artifact) — detect it from the
+        # server pubkey next to the bundles dir.
+        has_dnstt = (bundle_path.parent / "dnstt" / "server.pub").exists()
+        has_slipstream = (user_dir / "slipstream-cert.pem").exists()
+        has_masterdns = (user_dir / "masterdns-client_config.toml").exists()
+        has_gooserelay = (user_dir / "gooserelay-client_config.json").exists()
 
         # Check if zip already exists
         zip_exists = (bundle_path / f"{username}.zip").exists()

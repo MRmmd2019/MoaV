@@ -835,8 +835,8 @@ connect_slipstream() {
 connect_trusttunnel() {
     local config_file=""
 
-    # Look for TOML config first (full config), then fall back to JSON/txt
-    for f in "$CONFIG_DIR"/trusttunnel.toml "$CONFIG_DIR"/trusttunnel.json "$CONFIG_DIR"/trusttunnel.txt; do
+    # Look for TOML config first (full config), then fall back to JSON
+    for f in "$CONFIG_DIR"/trusttunnel.toml "$CONFIG_DIR"/trusttunnel.json; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
 
