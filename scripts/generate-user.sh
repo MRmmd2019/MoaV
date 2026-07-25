@@ -16,6 +16,7 @@ source /app/lib/masterdns.sh
 source /app/lib/gooserelay.sh
 source /app/lib/telemt.sh
 source /app/lib/sing-box.sh
+source /app/lib/xray.sh
 source /app/lib/bundle-readme.sh
 
 # Default state directory if not set
@@ -535,51 +536,7 @@ if [[ "${ENABLE_XHTTP:-true}" == "true" ]]; then
     log_info "  - XHTTP config exists, skipping"
   else
     BUNDLE_CHANGED=true
-    # XHTTP Reality target host (strip port)
-    _xhttp_target="${XHTTP_REALITY_TARGET:-dl.google.com:443}"
-    _xhttp_target_host="${_xhttp_target%%:*}"
-    _xhttp_port="${PORT_XHTTP:-2096}"
-
-    # Generate VLESS XHTTP share link
-    XHTTP_LINK="vless://${USER_UUID}@${SERVER_IP}:${_xhttp_port}?type=xhttp&security=reality&sni=${_xhttp_target_host}&fp=chrome&headers=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&encryption=none#MoaV-XHTTP-${USER_ID}"
-
-    echo "$XHTTP_LINK" > "$OUTPUT_DIR/xhttp-vless.txt"
-
-    # Generate QR code
-    if command -v qrencode &>/dev/null; then
-        qrencode -o "$OUTPUT_DIR/xhttp-qr.png" -s 6 -m 2 "$XHTTP_LINK"
-    fi
-
-    # Generate human-readable text file
-    cat > "$OUTPUT_DIR/xhttp.txt" <<EOF
-XHTTP (VLESS+XHTTP+Reality) Configuration for $USER_ID
-=======================================================
-
-Protocol: VLESS + XHTTP + Reality (via Xray-core)
-Server: ${SERVER_IP}
-Port: ${_xhttp_port}
-UUID: ${USER_UUID}
-SNI: ${_xhttp_target_host}
-Reality Public Key: ${REALITY_PUBLIC_KEY}
-Short ID: ${REALITY_SHORT_ID}
-Fingerprint: chrome
-Transport: xhttp
-
-Share Link:
-${XHTTP_LINK}
-
-Client Apps:
-- Android: V2rayNG, Hiddify
-- iOS: Streisand, V2Box
-- Windows: Hiddify, V2rayN
-- macOS: V2rayU, Hiddify
-
-Instructions:
-1. Install a compatible client app
-2. Import using the share link above or scan the QR code
-3. Connect
-EOF
-
+    xray_write_xhttp_bundle "$OUTPUT_DIR" "$USER_ID"
     log_info "  - XHTTP config generated"
   fi
 fi
@@ -702,45 +659,9 @@ if [[ "${ENABLE_XDNS:-false}" == "true" ]] && [[ -n "${DOMAIN:-}" ]]; then
         log_info "  - XDNS config exists, skipping"
     else
         BUNDLE_CHANGED=true
-        _xdns_domain="${XDNS_SUBDOMAIN:-x}.${DOMAIN}"
-        _xdns_mtu="${XDNS_MTU:-35}"
-        # Multi-resolver round-robin for DNS-tunnel mode (Xray v26.4.13+, PR #5872).
-        # Direct mode omits resolvers since it bypasses public DNS.
-        _xdns_resolvers_csv="${XDNS_RESOLVERS:-1.1.1.1,8.8.8.8}"
-        # Record mode for the finalmask resolver: txt (default, widest client
-        # compat) or aaaa (Xray >= v26.6.1, higher throughput per query, #6123).
-        _xdns_method="${XDNS_METHOD:-txt}"
-        _xdns_finalmask_settings=$(XDNS_DOMAIN="$_xdns_domain" XDNS_RESOLVERS_CSV="$_xdns_resolvers_csv" XDNS_METHOD="$_xdns_method" python3 -c '
-import os, json
-domain = os.environ["XDNS_DOMAIN"]
-csv = os.environ.get("XDNS_RESOLVERS_CSV", "").strip()
-method = os.environ.get("XDNS_METHOD", "txt").strip().lower()
-# txt is the default record mode and is expressed by omitting the suffix.
-suffix = "" if method in ("", "txt") else ":" + method
-ips = [x.strip() for x in csv.split(",") if x.strip()] if csv else []
-if not ips:
-    ips = ["1.1.1.1"]
-# Xray v26.x finalmask: the client side uses "resolvers", each formatted as
-# "domain[:method]+udp://server:port". The old singular "domain" field was
-# removed; "domains" is server-side only.
-resolvers = [domain + suffix + "+udp://" + (ip if ":" in ip else ip + ":53") for ip in ips]
-print(json.dumps({"resolvers": resolvers}))
-')
-        _xdns_finalmask_settings_direct=$(XDNS_DOMAIN="$_xdns_domain" XDNS_DIRECT_TARGET="${SERVER_IP}:${PORT_XDNS:-5356}" XDNS_METHOD="$_xdns_method" python3 -c '
-import os, json
-domain = os.environ["XDNS_DOMAIN"]
-target = os.environ["XDNS_DIRECT_TARGET"]
-method = os.environ.get("XDNS_METHOD", "txt").strip().lower()
-suffix = "" if method in ("", "txt") else ":" + method
-# Direct mode: send xdns-encoded queries straight to the server XDNS port
-# (host PORT_XDNS -> xray:5355), with no public recursive resolver in between.
-print(json.dumps({"resolvers": [domain + suffix + "+udp://" + target]}))
-')
-
-        # Load user UUID. credentials.env (sourced above) already provides
-        # USER_UUID on current installs; older installs kept it in a separate
-        # uuid.env. Prefer whatever's already loaded, then let uuid.env override
-        # if it exists — don't blank it out when uuid.env is absent.
+        # Resolve the user UUID: credentials.env (sourced above) provides
+        # USER_UUID on current installs; older installs kept it in uuid.env —
+        # let that override when present, but don't blank it out when absent.
         _xdns_uuid="${USER_UUID:-}"
         if [[ -f "$STATE_DIR/users/$USER_ID/uuid.env" ]]; then
             source "$STATE_DIR/users/$USER_ID/uuid.env"
@@ -748,82 +669,7 @@ print(json.dumps({"resolvers": [domain + suffix + "+udp://" + target]}))
         fi
 
         if [[ -n "$_xdns_uuid" ]]; then
-            # DNS resolver config
-            cat > "$OUTPUT_DIR/xdns-config.json" <<XDNSEOF
-{
-  "remarks": "MoaV-XDNS-${USER_ID} (via DNS)",
-  "log": {"loglevel": "warning"},
-  "inbounds": [{"listen": "127.0.0.1", "port": 7891, "protocol": "socks", "settings": {"auth": "noauth", "udp": true}}],
-  "outbounds": [
-    {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "8.8.8.8", "port": 53, "users": [{"id": "$_xdns_uuid", "encryption": "none"}]}]}, "streamSettings": {"network": "kcp", "kcpSettings": {"mtu": $_xdns_mtu, "tti": 100, "uplinkCapacity": 0, "downlinkCapacity": 0, "congestion": true}, "finalmask": {"udp": [{"type": "xdns", "settings": ${_xdns_finalmask_settings}}]}}},
-    {"tag": "direct", "protocol": "freedom"}
-  ],
-  "routing": {"rules": [{"type": "field", "ip": ["::/0"], "outboundTag": "direct"}]}
-}
-XDNSEOF
-
-            # Direct connection config
-            cat > "$OUTPUT_DIR/xdns-direct-config.json" <<XDNSEOF2
-{
-  "remarks": "MoaV-XDNS-${USER_ID} (direct)",
-  "log": {"loglevel": "warning"},
-  "inbounds": [{"listen": "127.0.0.1", "port": 7891, "protocol": "socks", "settings": {"auth": "noauth", "udp": true}}],
-  "outbounds": [
-    {"tag": "proxy", "protocol": "vless", "settings": {"vnext": [{"address": "${SERVER_IP}", "port": ${PORT_XDNS:-5356}, "users": [{"id": "$_xdns_uuid", "encryption": "none"}]}]}, "streamSettings": {"network": "kcp", "kcpSettings": {"mtu": $_xdns_mtu, "tti": 100, "uplinkCapacity": 0, "downlinkCapacity": 0, "congestion": true}, "finalmask": {"udp": [{"type": "xdns", "settings": ${_xdns_finalmask_settings_direct}}]}}},
-    {"tag": "direct", "protocol": "freedom"}
-  ],
-  "routing": {"rules": [{"type": "field", "ip": ["::/0"], "outboundTag": "direct"}]}
-}
-XDNSEOF2
-
-            # Human-readable instructions (kept in sync with the JSON above so it
-            # doesn't go stale after a domain/resolver change — see issue #98).
-            cat > "$OUTPUT_DIR/xdns.txt" <<XDNSTXTEOF
-XDNS (DNS Tunnel via Xray mKCP) Configuration for $USER_ID
-============================================================
-
-Protocol: VLESS + mKCP + XDNS FinalMask (via Xray-core)
-Domain: ${_xdns_domain}
-UUID: ${_xdns_uuid}
-MTU: ${_xdns_mtu}
-
-This protocol tunnels VPN traffic through DNS queries.
-It works when almost everything except DNS is blocked.
-Speed is slow but connectivity is reliable.
-
-IMPORTANT: XDNS requires Xray-core v26+ with FinalMask support.
-
-Recommended clients:
-- Happ (iOS/Android/Desktop) — supports FinalMask
-- Xray CLI v26.3+ (any platform) — run: xray run -c xdns-config.json
-
-Two configs included:
-
-  xdns-config.json        Via DNS resolver — stealthier, may reconnect periodically
-  xdns-direct-config.json Via direct server connection — more stable, less stealthy
-
-Setup:
-1. Import one of the configs into an Xray-compatible app with FinalMask support
-2. Use as SOCKS5 proxy: 127.0.0.1:7891
-3. For Telegram: tap https://t.me/socks?server=127.0.0.1&port=7891
-
-Tips:
-- Try the DNS resolver config first (stealthier)
-- Switch to direct if connections keep dropping
-- The DNS-resolver config round-robins across: ${_xdns_resolvers_csv:-(single resolver mode)}
-- If those keep dropping, edit the "resolvers" array in xdns-config.json
-  with DNS servers that actually answer on your network.
-- Scanners that find reachable resolvers:
-    findns   https://github.com/SamNet-dev/findns
-    dns-mns  https://gitlab.com/E-Gurl/dns-mns
-
-MTU tuning (client side only — server uses MTU 900 for return path):
-- MTU ${_xdns_mtu} = safest (works with all resolvers)
-- MTU 67 = works with most resolvers (faster)
-- MTU 130 = unrestricted resolvers only (fastest)
-- MTU depends on domain name length: shorter domain = higher MTU possible
-XDNSTXTEOF
-
+            xray_write_xdns_bundle "$OUTPUT_DIR" "$USER_ID" "$_xdns_uuid"
             log_info "  - XDNS configs generated"
         fi
     fi
