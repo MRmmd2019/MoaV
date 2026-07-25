@@ -11,6 +11,7 @@ cd "$SCRIPT_DIR/.."
 
 source scripts/lib/common.sh
 source scripts/lib/sing-box.sh
+source scripts/lib/xray.sh
 
 # Parse arguments
 USERNAME=""
@@ -130,59 +131,18 @@ fi
 
 log_info "Generated credentials for $USERNAME"
 
-# Add user to sing-box config using jq
-# Create temp file with updated config
-TEMP_CONFIG=$(mktemp)
-
-# Add to Reality users (vless)
-jq --arg name "$USERNAME" --arg uuid "$USER_UUID" \
-    '.inbounds |= map(if .tag == "vless-reality-in" then .users += [{"name": $name, "uuid": $uuid, "flow": "xtls-rprx-vision"}] else . end)' \
-    "$CONFIG_FILE" > "$TEMP_CONFIG"
-
-# Add to Trojan users
-jq --arg name "$USERNAME" --arg pass "$USER_PASSWORD" \
-    '.inbounds |= map(if .tag == "trojan-tls-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to AnyTLS users (no-op if the anytls-in inbound isn't present)
-jq --arg name "$USERNAME" --arg pass "$USER_PASSWORD" \
-    '.inbounds |= map(if .tag == "anytls-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to Hysteria2 users
-jq --arg name "$USERNAME" --arg pass "$USER_PASSWORD" \
-    '.inbounds |= map(if .tag == "hysteria2-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to VLESS WS users (CDN)
-jq --arg name "$USERNAME" --arg uuid "$USER_UUID" \
-    '.inbounds |= map(if .tag == "vless-ws-in" then .users += [{"name": $name, "uuid": $uuid}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to Shadowsocks-2022 users (only if the inbound exists in the current config)
+# Add user to sing-box config (canonical mutation: lib/sing-box.sh). Shadowsocks
+# is included only when it's enabled, its per-user PSK is set, and a
+# shadowsocks-in inbound is actually present in the current config.
+SS_ARG=""
 if [[ "${ENABLE_SS:-true}" == "true" ]] && [[ -n "${SS_USER_PSK:-}" ]] \
-        && jq -e '.inbounds[] | select(.tag == "shadowsocks-in")' "$TEMP_CONFIG" >/dev/null 2>&1; then
-    jq --arg name "$USERNAME" --arg pass "$SS_USER_PSK" \
-        '.inbounds |= map(if .tag == "shadowsocks-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-        "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-    mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
+        && jq -e '.inbounds[] | select(.tag == "shadowsocks-in")' "$CONFIG_FILE" >/dev/null 2>&1; then
+    SS_ARG="$SS_USER_PSK"
 fi
-
-# Validate the new config
-if ! jq empty "$TEMP_CONFIG" 2>/dev/null; then
-    log_error "Generated invalid JSON config"
-    rm -f "$TEMP_CONFIG"
+if ! singbox_add_user "$CONFIG_FILE" "$USERNAME" "$USER_UUID" "$USER_PASSWORD" "$SS_ARG"; then
+    log_error "Failed to add $USERNAME to sing-box config (invalid JSON or no matching inbound)"
     exit 1
 fi
-
-# Apply the config — cat-overwrite (not mv-replace) so the original file's
-# inode/mode/owner survive across sudo'd CLI vs admin-container user mismatches.
-cat "$TEMP_CONFIG" > "$CONFIG_FILE"
-rm -f "$TEMP_CONFIG"
 
 log_info "Added $USERNAME to sing-box config"
 
@@ -498,27 +458,12 @@ XRAY_CONFIG="configs/xray/config.json"
 if [[ "${ENABLE_XHTTP:-true}" == "true" ]] && [[ -f "$XRAY_CONFIG" ]]; then
     log_info "Adding $USERNAME to Xray (XHTTP)..."
 
-    # Check if user already exists. Xray's v26.5.9 schema kept `clients` as an
-    # alias of the new `users` field — bootstrap writes via template put users
-    # under `settings.users`, legacy add wrote `settings.clients`. Match either.
-    if jq -e --arg uuid "$USER_UUID" '
-            .inbounds[]? |
-            (.settings.clients[]?, .settings.users[]?) |
-            select(.id == $uuid)
-        ' "$XRAY_CONFIG" >/dev/null 2>&1; then
-        log_info "User '$USERNAME' already exists in Xray config, skipping..."
-    else
-        # Add to the canonical `settings.users` field (the new Xray schema name
-        # since v26.5.9; older clients/`clients` alias still works). Adding to
-        # `users` keeps the template's path and the add-path consistent.
-        jq --arg id "$USER_UUID" --arg email "${USERNAME}@moav" \
-            '(.inbounds[] | select(.protocol == "vless" and .tag != null and (.tag | startswith("vless-")))).settings.users += [{"id": $id, "email": $email, "flow": ""}]' \
-            "$XRAY_CONFIG" > /tmp/xray.tmp
-        # Preserve original config's perms/owner (cat-overwrite, not mv-replace) so
-        # admin container keeps write access on subsequent operations.
-        cat /tmp/xray.tmp > "$XRAY_CONFIG"
-        rm -f /tmp/xray.tmp
+    # Canonical mutation (lib/xray.sh): idempotent insert into every vless-*
+    # inbound, into whichever field (settings.users/clients) the config uses.
+    if xray_add_user "$XRAY_CONFIG" "$USER_UUID" "$USERNAME"; then
         log_info "Added $USERNAME to Xray config (all VLESS inbounds)"
+    else
+        log_info "User '$USERNAME' already in Xray config (or unchanged), skipping..."
     fi
 
     # Generate XHTTP client configs

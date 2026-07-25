@@ -8,6 +8,7 @@ set -euo pipefail
 
 source /app/lib/common.sh
 source /app/lib/sing-box.sh
+source /app/lib/xray.sh
 source /app/lib/wireguard.sh
 source /app/lib/amneziawg.sh
 source /app/lib/dnstt.sh
