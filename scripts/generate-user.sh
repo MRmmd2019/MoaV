@@ -545,11 +545,10 @@ fi
 # Generate WireGuard config (if enabled)
 # -----------------------------------------------------------------------------
 if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]]; then
-    # Always add peer to server config (wireguard_add_peer has its own guard)
-    PEER_COUNT=$(grep -c '^\[Peer\]' "$WG_CONFIG_DIR/wg0.conf" 2>/dev/null) || true
-    PEER_COUNT=${PEER_COUNT:-0}
-    PEER_NUM=$((PEER_COUNT + 1))
-    wireguard_add_peer "$USER_ID" "$PEER_NUM"
+    # Always add peer to server config (wireguard_add_peer has its own guard).
+    # It now allocates the next free octet by scanning wg0.conf, so no peer-count
+    # is passed (the old count+1 collided with revoked-user gaps).
+    wireguard_add_peer "$USER_ID"
 
     if [[ -f "$OUTPUT_DIR/wireguard.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - WireGuard config exists, skipping"
@@ -569,11 +568,10 @@ fi
 # Generate AmneziaWG config (if enabled)
 # -----------------------------------------------------------------------------
 if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]]; then
-    # Always add peer to server config (amneziawg_add_peer has its own guard)
-    AWG_PEER_COUNT=$(grep -c '^\[Peer\]' "$AWG_CONFIG_DIR/awg0.conf" 2>/dev/null) || true
-    AWG_PEER_COUNT=${AWG_PEER_COUNT:-0}
-    AWG_PEER_NUM=$((AWG_PEER_COUNT + 1))
-    amneziawg_add_peer "$USER_ID" "$AWG_PEER_NUM"
+    # Always add peer to server config (amneziawg_add_peer has its own guard).
+    # It now allocates the next free octet by scanning awg0.conf, so no peer-count
+    # is passed (the old count+1 collided with revoked-user gaps).
+    amneziawg_add_peer "$USER_ID"
 
     if [[ -f "$OUTPUT_DIR/amneziawg.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - AmneziaWG config exists, skipping"

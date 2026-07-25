@@ -57,3 +57,27 @@ wstunnel_client_cmd() {
     fi
     echo "wstunnel client -L udp://127.0.0.1:51820:moav-wireguard:51820 ${pathopt}${url}"
 }
+
+# -----------------------------------------------------------------------------
+# net_next_free_octet <config_file> <subnet_prefix> [extra_used_octet ...]
+# Next free host octet (2..254) in a /24 for a wg/awg peer. Scans <config_file>
+# for "AllowedIPs = <prefix>.N" and merges any extra octets (e.g. scraped from a
+# live `wg/awg show <if> allowed-ips` on the host). Picks max-used + 1 so it is
+# collision-safe across revoked-user gaps. Echoes the octet, or returns 1 (full).
+# -----------------------------------------------------------------------------
+net_next_free_octet() {
+    local config_file="$1"; local prefix="$2"; shift 2
+    local used="$*"
+    local esc="${prefix//./\\.}"
+    if [[ -f "$config_file" ]]; then
+        used+=" $(grep "AllowedIPs = ${esc}\." "$config_file" 2>/dev/null \
+            | sed "s|.*${esc}\.\([0-9]*\).*|\1|" | tr '\n' ' ')"
+    fi
+    local next=2 o
+    for o in $used; do
+        [[ "$o" =~ ^[0-9]+$ ]] || continue
+        (( o >= next )) && next=$((o + 1))
+    done
+    (( next > 254 )) && return 1
+    printf '%s\n' "$next"
+}
