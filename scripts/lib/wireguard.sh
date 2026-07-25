@@ -66,8 +66,10 @@ EOF
 
 # Add a WireGuard peer
 wireguard_add_peer() {
-    local user_id="$1"
-    local peer_num="$2"
+    local user_id="$1"; shift
+    # Remaining args: octets already in use on a live interface (host path scrapes
+    # `wg show wg0 allowed-ips`). Merged with the config scan for collision safety.
+    local extra_used="$*"
 
     local client_private_key
     local client_public_key
@@ -86,12 +88,18 @@ wireguard_add_peer() {
         # Generate new client keys (lib/keys.sh — CRLF-safe)
         { read -r client_private_key && read -r client_public_key; } < <(wg_keypair)
 
-        # Calculate client IP (IPv4)
-        client_ip="10.66.66.$((peer_num + 1))"
+        # Allocate the next free host octet (collision-safe across revoked-user
+        # gaps; supersedes the old peer-count+1 scheme that reused freed IPs).
+        local octet
+        octet=$(net_next_free_octet "$WG_CONFIG_DIR/wg0.conf" "10.66.66" $extra_used) || {
+            log_error "No available IPs in WireGuard network"
+            return 1
+        }
+        client_ip="10.66.66.$octet"
 
         # Calculate client IPv6 if server has IPv6
         if [[ -n "${SERVER_IPV6:-}" ]]; then
-            client_ip_v6="fd00:cafe:beef::$((peer_num + 1))"
+            client_ip_v6="fd00:cafe:beef::$octet"
         fi
 
         # Save client credentials

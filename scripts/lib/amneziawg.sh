@@ -125,8 +125,10 @@ EOF
 
 # Add an AmneziaWG peer
 amneziawg_add_peer() {
-    local user_id="$1"
-    local peer_num="$2"
+    local user_id="$1"; shift
+    # Remaining args: octets already in use on a live interface (host path scrapes
+    # `awg show awg0 allowed-ips`). Merged with the config scan for collision safety.
+    local extra_used="$*"
 
     local client_private_key
     local client_public_key
@@ -145,12 +147,18 @@ amneziawg_add_peer() {
         # Generate client keys (lib/keys.sh — CRLF-safe; standard WG format, AWG-compatible)
         { read -r client_private_key && read -r client_public_key; } < <(wg_keypair)
 
-        # Calculate client IP (IPv4)
-        client_ip="10.67.67.$((peer_num + 1))"
+        # Allocate the next free host octet (collision-safe across revoked-user
+        # gaps; supersedes the old peer-count+1 scheme that reused freed IPs).
+        local octet
+        octet=$(net_next_free_octet "$AWG_CONFIG_DIR/awg0.conf" "10.67.67" $extra_used) || {
+            log_error "No available IPs in AmneziaWG network"
+            return 1
+        }
+        client_ip="10.67.67.$octet"
 
         # Calculate client IPv6 if server has IPv6
         if [[ -n "${SERVER_IPV6:-}" ]]; then
-            client_ip_v6="fd00:cafe:dead::$((peer_num + 1))"
+            client_ip_v6="fd00:cafe:dead::$octet"
         fi
 
         # Save client credentials
