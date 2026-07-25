@@ -185,6 +185,7 @@ cat > "$OUTPUT_DIR/wireguard.conf" <<EOF
 PrivateKey = $CLIENT_PRIVATE_KEY
 Address = $CLIENT_ADDRESSES
 DNS = 1.1.1.1, 8.8.8.8
+MTU = 1280
 
 [Peer]
 PublicKey = $SERVER_PUBLIC_KEY
@@ -202,6 +203,7 @@ if [[ -n "$SERVER_IPV6" ]]; then
 PrivateKey = $CLIENT_PRIVATE_KEY
 Address = $CLIENT_ADDRESSES
 DNS = 1.1.1.1, 2606:4700:4700::1111
+MTU = 1280
 
 [Peer]
 PublicKey = $SERVER_PUBLIC_KEY
@@ -218,6 +220,7 @@ cat > "$OUTPUT_DIR/wireguard-wstunnel.conf" <<EOF
 PrivateKey = $CLIENT_PRIVATE_KEY
 Address = $CLIENT_ADDRESSES
 DNS = 1.1.1.1, 8.8.8.8
+MTU = 1280
 
 [Peer]
 PublicKey = $SERVER_PUBLIC_KEY
@@ -228,54 +231,9 @@ EOF
 
 log_info "Generated wstunnel-mode config"
 
-# Generate wstunnel instructions
+# wstunnel client command — shown in the terminal summary below. The full
+# wstunnel setup guide (download, run, connect) lives in README.html.
 WSTUNNEL_CMD="$(wstunnel_client_cmd)"
-if [[ -n "${DOMAIN:-}" && "${DOMAIN:-}" != "YOUR_DOMAIN" ]]; then
-    WSTUNNEL_SERVER_URL="wss://${DOMAIN}:8080"
-else
-    WSTUNNEL_SERVER_URL="ws://${SERVER_IP}:8080"
-fi
-cat > "$OUTPUT_DIR/wireguard-instructions.txt" <<EOF
-# WireGuard over WebSocket (wstunnel) Instructions
-# ================================================
-#
-# This setup tunnels WireGuard through WebSocket to bypass firewalls.
-# You need to run wstunnel client BEFORE connecting WireGuard.
-
-# Step 1: Download wstunnel
-# -------------------------
-# - Windows/Mac/Linux: https://github.com/erebe/wstunnel/releases
-# - Or: cargo install wstunnel
-
-# Step 2: Run wstunnel client
-# ---------------------------
-# This creates a local UDP tunnel to the server:
-
-${WSTUNNEL_CMD}
-
-# Step 3: Connect WireGuard
-# -------------------------
-# Import wireguard-wstunnel.conf into your WireGuard app.
-# The config points to 127.0.0.1:51820 (the local wstunnel endpoint).
-
-# For Android/iOS:
-# ----------------
-# 1. Install WireGuard app AND a wstunnel-compatible app (or Termux)
-# 2. Run wstunnel in background
-# 3. Then activate WireGuard
-
-# For desktop:
-# ------------
-# Terminal 1: ${WSTUNNEL_CMD}
-# Terminal 2: wg-quick up ./wireguard-wstunnel.conf
-
-# Server info:
-# ------------
-# wstunnel server: ${WSTUNNEL_SERVER_URL}
-# Your WireGuard IP: $CLIENT_IP
-EOF
-
-log_info "Generated wstunnel instructions"
 
 # Hot-add peer to running WireGuard if available (unless --no-reload)
 if [[ "$NO_RELOAD" != "true" ]]; then
@@ -309,7 +267,6 @@ if [[ -n "$SERVER_IPV6" ]]; then
     echo "  - wireguard-ipv6.conf     (direct mode - IPv6 endpoint)"
 fi
 echo "  - wireguard-wstunnel.conf (wstunnel mode - for restrictive networks)"
-echo "  - wireguard-instructions.txt (setup guide)"
 echo ""
 
 # Generate QR images for user bundle
