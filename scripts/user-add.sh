@@ -304,22 +304,17 @@ for USERNAME in "${USERNAMES[@]}"; do
                 exit 1
             fi
 
-            # Find next available IP (extract actual used IPs from config AND running interface)
-            USED_AWG_IPS=$(grep 'AllowedIPs = 10\.67\.67\.' "configs/amneziawg/awg0.conf" 2>/dev/null | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
+            # Find next available IP: scan the config file (via net_next_free_octet)
+            # plus the running interface's allowed-ips, so a config/runtime drift
+            # can't hand out a colliding octet.
+            RUNNING_AWG_IPS=""
             if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
                 RUNNING_AWG_IPS=$(compose_timeout exec -T amneziawg awg show awg0 allowed-ips 2>/dev/null | grep '10\.67\.67\.' | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
-                USED_AWG_IPS="$USED_AWG_IPS $RUNNING_AWG_IPS"
             fi
-            AWG_NEXT_IP=2  # Start from .2 (server is .1)
-            for _ip in $USED_AWG_IPS; do
-                if [[ $_ip -ge $AWG_NEXT_IP ]]; then
-                    AWG_NEXT_IP=$((_ip + 1))
-                fi
-            done
-            if [[ $AWG_NEXT_IP -gt 254 ]]; then
+            AWG_NEXT_IP=$(net_next_free_octet "configs/amneziawg/awg0.conf" "10.67.67" $RUNNING_AWG_IPS) || {
                 log_error "No available IPs in AmneziaWG network"
                 exit 1
-            fi
+            }
             AWG_CLIENT_IP="10.67.67.$AWG_NEXT_IP"
 
             # Calculate client IPv6 if server has IPv6
