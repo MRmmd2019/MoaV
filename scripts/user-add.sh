@@ -305,58 +305,34 @@ for USERNAME in "${USERNAMES[@]}"; do
     if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]] && [[ -f "configs/amneziawg/awg0.conf" ]]; then
         log_info "[3/3] Adding to AmneziaWG..."
         (
-            # Generate client keys (lib/keys.sh picks a wg/awg generator, CRLF-safe).
-            # Standard WG key format, compatible with AmneziaWG.
-            if ! { read -r AWG_CLIENT_PRIVATE && read -r AWG_CLIENT_PUBLIC; } < <(wg_keypair); then
-                log_error "No wg/awg command available (install wireguard-tools or ensure the amneziawg/wireguard container is running)"
-                exit 1
-            fi
-
-            # Find next available IP: scan the config file (via net_next_free_octet)
-            # plus the running interface's allowed-ips, so a config/runtime drift
-            # can't hand out a colliding octet.
+            # Generate the keypair, allocate the next free IP and append the
+            # [Peer] block via the shared lib — the same code the container path
+            # runs. Pass the running interface's in-use octets as extra "used"
+            # values (the lib's trailing args), so a config/runtime drift can't
+            # hand out a colliding address; that parameter exists for this caller.
             RUNNING_AWG_IPS=""
             if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
                 RUNNING_AWG_IPS=$(compose_timeout exec -T amneziawg awg show awg0 allowed-ips 2>/dev/null | grep '10\.67\.67\.' | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
             fi
-            AWG_NEXT_IP=$(net_next_free_octet "configs/amneziawg/awg0.conf" "10.67.67" $RUNNING_AWG_IPS) || {
-                log_error "No available IPs in AmneziaWG network"
-                exit 1
-            }
-            AWG_CLIENT_IP="10.67.67.$AWG_NEXT_IP"
 
-            # Calculate client IPv6 if server has IPv6
-            AWG_CLIENT_IP_V6=""
-            if [[ -n "${SERVER_IPV6:-}" ]]; then
-                AWG_CLIENT_IP_V6="fd00:cafe:dead::$AWG_NEXT_IP"
+            mkdir -p "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
+            # shellcheck disable=SC2086  # word-splitting is intended: one arg per octet
+            if ! amneziawg_add_peer "$USERNAME" $RUNNING_AWG_IPS; then
+                log_error "Failed to add AmneziaWG peer for $USERNAME"
+                exit 1
             fi
 
-            # Save client credentials to bundle dir and host state dir
-            cat > "$OUTPUT_DIR/amneziawg.env" <<CREDEOF
-AWG_PRIVATE_KEY=$AWG_CLIENT_PRIVATE
-AWG_PUBLIC_KEY=$AWG_CLIENT_PUBLIC
-AWG_CLIENT_IP=$AWG_CLIENT_IP
-AWG_CLIENT_IP_V6=$AWG_CLIENT_IP_V6
-CREDEOF
-            # Also save to host state dir for bootstrap sync
-            # $STATE_DIR (not a hardcoded ./state) so the client-config generator
-            # below reads back the same file.
-            mkdir -p "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
-            cp "$OUTPUT_DIR/amneziawg.env" "$STATE_DIR/users/$USERNAME/amneziawg.env" 2>/dev/null || true
+            # Read back what the lib allocated: needed for the bundle copy and for
+            # the hot-add below (the lib only writes config + state).
+            # shellcheck source=/dev/null
+            source "$STATE_DIR/users/$USERNAME/amneziawg.env"
+            cp "$STATE_DIR/users/$USERNAME/amneziawg.env" "$OUTPUT_DIR/amneziawg.env" 2>/dev/null || true
 
-            # Add peer to server config
+            AWG_CLIENT_PUBLIC="$AWG_PUBLIC_KEY"
             AWG_ALLOWED="$AWG_CLIENT_IP/32"
-            if [[ -n "$AWG_CLIENT_IP_V6" ]]; then
+            if [[ -n "${AWG_CLIENT_IP_V6:-}" ]]; then
                 AWG_ALLOWED="$AWG_CLIENT_IP/32, $AWG_CLIENT_IP_V6/128"
             fi
-
-            cat >> "configs/amneziawg/awg0.conf" <<PEEREOF
-
-[Peer]
-# $USERNAME
-PublicKey = $AWG_CLIENT_PUBLIC
-AllowedIPs = $AWG_ALLOWED
-PEEREOF
 
             # Hot-add peer to running AmneziaWG (unless batch mode — batch reloads later)
             if [[ "$BATCH_MODE" != "true" ]]; then
