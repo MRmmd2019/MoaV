@@ -26,6 +26,7 @@ cd "$SCRIPT_DIR/.."
 
 source scripts/lib/common.sh
 source scripts/lib/keys.sh
+source scripts/lib/amneziawg.sh   # AWG_CONFIG_DIR is re-set to the host path below
 source scripts/lib/bundle-readme.sh
 source scripts/lib/dnstt.sh
 source scripts/lib/slipstream.sh
@@ -235,6 +236,13 @@ fi
 # -----------------------------------------------------------------------------
 # Create each user
 # -----------------------------------------------------------------------------
+# Host paths for the shared libs (they default to the container's /configs,
+# /state). Set before the per-user loop so both the AmneziaWG client-config
+# generator and the DNS-family instruction generators below see them.
+STATE_DIR="${STATE_DIR:-state}"
+AWG_CONFIG_DIR="configs/amneziawg"
+GOOSERELAY_CONFIG_DIR="configs/gooserelay"
+
 for USERNAME in "${USERNAMES[@]}"; do
     OUTPUT_DIR="outputs/bundles/$USERNAME"
     mkdir -p "$OUTPUT_DIR"
@@ -331,8 +339,10 @@ AWG_CLIENT_IP=$AWG_CLIENT_IP
 AWG_CLIENT_IP_V6=$AWG_CLIENT_IP_V6
 CREDEOF
             # Also save to host state dir for bootstrap sync
-            mkdir -p "./state/users/$USERNAME" 2>/dev/null || true
-            cp "$OUTPUT_DIR/amneziawg.env" "./state/users/$USERNAME/amneziawg.env" 2>/dev/null || true
+            # $STATE_DIR (not a hardcoded ./state) so the client-config generator
+            # below reads back the same file.
+            mkdir -p "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
+            cp "$OUTPUT_DIR/amneziawg.env" "$STATE_DIR/users/$USERNAME/amneziawg.env" 2>/dev/null || true
 
             # Add peer to server config
             AWG_ALLOWED="$AWG_CLIENT_IP/32"
@@ -363,73 +373,15 @@ PEEREOF
                 fi
             fi
 
-            # Read obfuscation params and server key from the server config (bind mount)
-            AWG_SERVER_PUB=$(cat "configs/amneziawg/server.pub")
-            AWG_JC=$(grep '^Jc' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_JMIN=$(grep '^Jmin' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_JMAX=$(grep '^Jmax' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_S1=$(grep '^S1' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_S2=$(grep '^S2' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H1=$(grep '^H1' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H2=$(grep '^H2' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H3=$(grep '^H3' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H4=$(grep '^H4' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
+            # Render the client configs (direct + optional IPv6) via the shared
+            # lib, so host and container AmneziaWG bundles are byte-identical. It
+            # reads the keys/IPs from the amneziawg.env written above, and the
+            # server key + obfuscation params from $AWG_CONFIG_DIR (host path set
+            # before the loop); honors SERVER_IPV6 + PORT_AMNEZIAWG.
+            amneziawg_generate_client_config "$USERNAME" "$OUTPUT_DIR"
 
-            AWG_ADDRESSES="$AWG_CLIENT_IP/32"
-            if [[ -n "$AWG_CLIENT_IP_V6" ]]; then
-                AWG_ADDRESSES="$AWG_CLIENT_IP/32, $AWG_CLIENT_IP_V6/128"
-            fi
-
-            cat > "$OUTPUT_DIR/amneziawg.conf" <<CONFEOF
-[Interface]
-PrivateKey = $AWG_CLIENT_PRIVATE
-Address = $AWG_ADDRESSES
-DNS = 1.1.1.1, 8.8.8.8
-MTU = 1280
-Jc = $AWG_JC
-Jmin = $AWG_JMIN
-Jmax = $AWG_JMAX
-S1 = $AWG_S1
-S2 = $AWG_S2
-H1 = $AWG_H1
-H2 = $AWG_H2
-H3 = $AWG_H3
-H4 = $AWG_H4
-
-[Peer]
-PublicKey = $AWG_SERVER_PUB
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = ${SERVER_IP}:${PORT_AMNEZIAWG:-51821}
-PersistentKeepalive = 25
-CONFEOF
-
-            # Generate QR code
             qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg.conf" 2>/dev/null || true
-
-            # IPv6 endpoint config
-            if [[ -n "${SERVER_IPV6:-}" ]]; then
-                cat > "$OUTPUT_DIR/amneziawg-ipv6.conf" <<CONFEOF
-[Interface]
-PrivateKey = $AWG_CLIENT_PRIVATE
-Address = $AWG_ADDRESSES
-DNS = 1.1.1.1, 2606:4700:4700::1111
-MTU = 1280
-Jc = $AWG_JC
-Jmin = $AWG_JMIN
-Jmax = $AWG_JMAX
-S1 = $AWG_S1
-S2 = $AWG_S2
-H1 = $AWG_H1
-H2 = $AWG_H2
-H3 = $AWG_H3
-H4 = $AWG_H4
-
-[Peer]
-PublicKey = $AWG_SERVER_PUB
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = [${SERVER_IPV6}]:${PORT_AMNEZIAWG:-51821}
-PersistentKeepalive = 25
-CONFEOF
+            if [[ -f "$OUTPUT_DIR/amneziawg-ipv6.conf" ]]; then
                 qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg-ipv6.conf" 2>/dev/null || true
             fi
         ) && log_info "✓ AmneziaWG peer added" || {
@@ -448,9 +400,8 @@ echo ""
 # Rendered by the shared lib/<proto>.sh generators (the same code the container
 # generate-user.sh uses) so host and container bundles never drift. Keys come
 # from the canonical $STATE_DIR/keys/*; a file is only emitted when the protocol
-# is enabled and its key/config is present.
-STATE_DIR="${STATE_DIR:-state}"
-GOOSERELAY_CONFIG_DIR="configs/gooserelay"   # host path (lib defaults to the container /configs)
+# is enabled and its key/config is present. ($STATE_DIR + the host lib config
+# dirs are set above, before the per-user loop.)
 
 if [[ "${ENABLE_SLIPSTREAM:-true}" == "true" ]] && [[ -f "$STATE_DIR/keys/slipstream-cert.pem" ]]; then
     if slipstream_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
