@@ -71,7 +71,18 @@ run info "moav user revoke $SMOKE_USER" -- "$MOAV" user revoke "$SMOKE_USER"
 run must "moav user add --package"       -- "$MOAV" user add "${SMOKE_USER}p" --package
 run must "packaged guide fully rendered" -- bash -c '
     zip="outputs/bundles/'"${SMOKE_USER}"'p-configs.zip"
-    [[ -f "$zip" ]] || { echo "no package zip at $zip"; exit 1; }
+    # zip/unzip are NOT install prerequisites — without them --package cannot
+    # produce an archive at all, so report a skip rather than a false failure.
+    if ! command -v zip >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+        echo "skipped: zip/unzip not installed on this host (--package cannot run)"
+        exit 0
+    fi
+    if [[ ! -f "$zip" ]]; then
+        echo "no package zip at $zip"
+        echo "  bundle dir:  $(ls -d "outputs/bundles/'"${SMOKE_USER}"'p" 2>/dev/null || echo MISSING)"
+        echo "  bundle guide: $(ls "outputs/bundles/'"${SMOKE_USER}"'p/README.html" 2>/dev/null || echo MISSING)"
+        exit 1
+    fi
     tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
     unzip -q "$zip" -d "$tmp" || exit 1
     readme=$(find "$tmp" -name README.html | head -1)

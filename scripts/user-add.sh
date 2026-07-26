@@ -494,10 +494,15 @@ fi
     # -------------------------------------------------------------------------
     if [[ "$CREATE_PACKAGE" == "true" ]]; then
         log_info "Creating package for $USERNAME..."
+        # NOTE: packaging runs after this user's pass/fail accounting (above) and
+        # inside an `if`, so a failure here is reported but does NOT fail the
+        # command — the user itself was created fine, only the extra archive is
+        # missing. user-package.sh now fails loudly (e.g. "zip command not
+        # found") instead of silently producing nothing.
         if "$SCRIPT_DIR/user-package.sh" "$USERNAME"; then
-            log_info "✓ Package created: outputs/bundles/$USERNAME.zip"
+            log_info "✓ Package created: outputs/bundles/${USERNAME}-configs.zip"
         else
-            log_error "✗ Failed to create package for $USERNAME"
+            log_error "✗ Failed to create package for $USERNAME (user was still created)"
         fi
     fi
 

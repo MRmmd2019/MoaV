@@ -27,6 +27,20 @@ if [[ -z "$USERNAME" ]]; then
     exit 1
 fi
 
+# `zip` is required and is NOT part of the install prerequisites. Check it up
+# front: without this guard the failure surfaced deep in the run, and
+# user-add.sh's `--package` call absorbs a non-zero exit (it runs inside an
+# `if`), so a host without zip silently produced no archive while `moav user add
+# --package` still reported success. Matches the guards in `moav user package`
+# and `moav user base64`.
+if ! command -v zip &>/dev/null; then
+    log_error "zip command not found — cannot create the package archive."
+    log_error "  Debian/Ubuntu: sudo apt install zip"
+    log_error "  RHEL/Fedora:   sudo dnf install zip"
+    log_error "  macOS:         brew install zip"
+    exit 1
+fi
+
 # Check if user bundle exists
 BUNDLE_DIR="outputs/bundles/$USERNAME"
 if [[ ! -d "$BUNDLE_DIR" ]]; then
