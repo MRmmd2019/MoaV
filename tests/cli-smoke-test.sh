@@ -70,21 +70,25 @@ run info "moav user revoke $SMOKE_USER" -- "$MOAV" user revoke "$SMOKE_USER"
 # exactly why the regression shipped.
 run must "moav user add --package"       -- "$MOAV" user add "${SMOKE_USER}p" --package
 run must "packaged guide fully rendered" -- bash -c '
-    zip="outputs/bundles/'"${SMOKE_USER}"'p-configs.zip"
-    # zip/unzip are NOT install prerequisites — without them --package cannot
-    # produce an archive at all, so report a skip rather than a false failure.
-    if ! command -v zip >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
-        echo "skipped: zip/unzip not installed on this host (--package cannot run)"
-        exit 0
-    fi
+    user="'"${SMOKE_USER}"'p"
+    zip="outputs/bundles/${user}-configs.zip"
+    # No skipping: zip/unzip/qrencode are installed by the e2e preflight, and a
+    # missing tool is a suite bug to fix, not a test to opt out of.
+    for t in zip unzip; do
+        command -v "$t" >/dev/null 2>&1 || { echo "$t is not installed — the e2e preflight should have installed it"; exit 1; }
+    done
     if [[ ! -f "$zip" ]]; then
+        # Self-diagnosing: user-add.sh runs the packager inside an `if`, so its
+        # failure is absorbed and invisible. Re-run it here to surface the cause.
         echo "no package zip at $zip"
-        echo "  bundle dir:  $(ls -d "outputs/bundles/'"${SMOKE_USER}"'p" 2>/dev/null || echo MISSING)"
-        echo "  bundle guide: $(ls "outputs/bundles/'"${SMOKE_USER}"'p/README.html" 2>/dev/null || echo MISSING)"
+        echo "  bundle dir:   $(ls -d "outputs/bundles/$user" 2>/dev/null || echo MISSING)"
+        echo "  bundle guide: $(ls "outputs/bundles/$user/README.html" 2>/dev/null || echo MISSING)"
+        echo "  --- re-running the packager to show why ---"
+        ./scripts/user-package.sh "$user" 2>&1 | tail -15 | sed "s/^/  | /"
         exit 1
     fi
     tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
-    unzip -q "$zip" -d "$tmp" || exit 1
+    unzip -q "$zip" -d "$tmp" || { echo "unzip failed on $zip"; exit 1; }
     readme=$(find "$tmp" -name README.html | head -1)
     [[ -n "$readme" ]] || { echo "package contains no README.html"; exit 1; }
     left=$(grep -oE "\{\{[A-Z0-9_]+\}\}" "$readme" | sort -u | tr "\n" " ")
