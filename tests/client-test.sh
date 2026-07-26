@@ -1546,6 +1546,32 @@ test_trusttunnel() {
     local endpoint="" username="" password="" server_ip="" host="" port=""
 
     if [[ "$config_file" == *.toml ]]; then
+        # Validate it really is TOML before field-scraping. The per-field greps
+        # below "succeed" even on a syntactically broken file — which is how a
+        # malformed `has_ipv6` shipped unnoticed (a shell expression concatenated
+        # "true" with the IPv6 address, e.g. `has_ipv6 = true2001:db8::1`): every
+        # field still grepped fine, yet the client could not parse the config —
+        # and only on IPv6-capable servers, which this runner is not.
+        if python3 -c 'import tomllib' 2>/dev/null; then
+            if ! python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' "$config_file" 2>/dev/null; then
+                detail="TrustTunnel config is not valid TOML: $config_file"
+                log_error "$detail"
+                RESULTS[trusttunnel]="fail"; DETAILS[trusttunnel]="$detail"
+                return
+            fi
+        fi
+        # Bare-boolean check — catches the same class even without tomllib.
+        local _ttkey
+        for _ttkey in has_ipv6 killswitch_enabled post_quantum_group_enabled skip_verification anti_dpi; do
+            if grep -qE "^${_ttkey}[[:space:]]*=" "$config_file" \
+               && ! grep -qE "^${_ttkey}[[:space:]]*=[[:space:]]*(true|false)[[:space:]]*$" "$config_file"; then
+                detail="TrustTunnel config has a malformed boolean: $(grep -E "^${_ttkey}[[:space:]]*=" "$config_file" | head -1)"
+                log_error "$detail"
+                RESULTS[trusttunnel]="fail"; DETAILS[trusttunnel]="$detail"
+                return
+            fi
+        done
+
         # Parse TOML config
         host=$(grep -E '^hostname\s*=' "$config_file" | head -1 | sed 's/.*=\s*"\([^"]*\)".*/\1/' || true)
         server_ip=$(grep -E '^addresses\s*=' "$config_file" | head -1 | sed 's/.*\["\([^"]*\)".*/\1/' | cut -d: -f1 || true)
