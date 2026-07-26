@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0-rc.1] - 2026-07-26
+
+First release candidate for v2.0.0. Please test on a non-critical server before
+you rely on it, and report anything odd.
+
+**Fixes you can feel.** Three bugs that quietly shipped broken configs to users
+are gone. `moav user add --package` was handing out a zip whose guide still had
+26 unfilled `{{PLACEHOLDER}}` markers, wiping out the correctly rendered one, and
+it silently produced no archive at all on hosts without `zip`. TrustTunnel client
+configs were invalid TOML on every IPv6 capable server, so the client refused to
+load them. WireGuard and AmneziaWG peers could be handed an IP address that
+another user already had, which is why two users sometimes fought over one
+tunnel: on one real server this had already produced 26 duplicate WireGuard
+addresses and 28 duplicate AmneziaWG ones.
+
+**Sturdier user provisioning.** `moav bootstrap` and `moav regenerate-users` now
+share one implementation for turning your user state into configs and bundles,
+with one error contract. Previously they diverged, which is why
+`regenerate-users` could heal a server that `bootstrap` silently aborted on.
+
+**Internals.** The provisioning code that was duplicated between the host and
+container paths (keys, WireGuard and AmneziaWG, the client guide, the sing-box
+and xray server mutations, XHTTP and XDNS, TrustTunnel) is now single sourced in
+`scripts/lib/`, and the 9,500 line `moav.sh` has started splitting into modules.
+Bundles ship one guide, `README.html`, instead of a pile of per protocol
+instruction text files.
+
+**Testing.** The end to end suite now installs its own tooling and refuses to
+skip a check when something is missing, which is how several of the bugs above
+were found. New gates cover the packaged bundle, the peer IP allocator, and
+TrustTunnel config validity.
+
 ### Internal
 - **Provisioning refactor A8 — one shared "materialize every user" path (`scripts/lib/provision.sh`); completes Workstream A.** `bootstrap` and `moav regenerate-users` both have to make the server match the user state, and both implemented it separately — with **different shell-safety contracts**, which is the divergence behind two incidents this cycle. `bootstrap.sh` sourced `lib/sync.sh` under `set -euo pipefail`, so a single user's failed field-parse aborted the whole reconcile silently; `moav regenerate-users` ran the same code in a `docker … -c` shell **without** `set -e` and therefore survived — which is exactly why "regenerate-users fixes it but bootstrap doesn't" was a real thing operators hit. Both now call `provision_all_users [force]`: mirror host state (authoritative — the import loops skip existing dirs, so a stale/partial one is otherwise never repaired) → materialize a bundle for every user that has credentials → reconcile into the sing-box/xray configs. **Every step is individually guarded**, so the function behaves identically whether or not the caller uses `set -e`: one user's failure never aborts the run, and the reconcile *always* gets a chance to run (a partial bundle is recoverable; an unreconciled server config means users cannot connect at all). Verified with a harness that runs the real function twice — once under `set -euo pipefail`, once without — against a seeded state containing a user whose bundle generation fails and a user with no credentials: **identical output in both modes**, the failing user is reported and skipped, the credential-less user is ignored without error, and the reconcile runs in both cases. `moav regenerate-users` also gets simpler and faster: it was doing one `docker compose run` **per user** (re-passing ~50 `-e` variables each time) plus a second, separate run for the reconcile; it is now a single run that provisions and reconciles, then reloads the proxies. Bootstrap additionally now heals a user that exists in state but never got a bundle. Net +112/−32 lines (a new 82-line lib against inline duplication).
 - **Provisioning refactor A7d — host AmneziaWG peer-add via the shared lib; completes A7 and Workstream A's WG/AWG unification.** The host `moav user add` path still generated the AmneziaWG keypair, allocated the client IP and appended the `[Peer]` block itself, even though `lib/amneziawg.sh`'s `amneziawg_add_peer` did exactly that — and had been written *for this caller*: its trailing `extra_used` octet arguments exist so the host can pass the octets scraped from a live `awg show awg0 allowed-ips`, and that parameter had never been wired up. A3b moved the host to the lib's *client-config* renderer; this moves the *peer-add* half, so the host now only scrapes the live octets, calls the lib, reads back the allocated values and keeps its own hot-add (`awg set`) and bundle copy. Two behaviour improvements come with it: the insert is now **idempotent** (the lib skips a user already present in `awg0.conf`; the inline block would have appended a duplicate `[Peer]`), and a keypair already in state is reused instead of silently regenerated. Verified with a harness on a seeded config containing both a revoked-user gap and live-only octets: the allocated address is `max(config, live)+1`, the `amneziawg.env` field set/order and the appended `[Peer]` block are unchanged, and a repeat call adds no second peer. Net −24 lines. **Workstream A's WG/AWG duplication is now fully retired** — both protocols, both halves (allocation + rendering), on both paths.
