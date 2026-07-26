@@ -71,6 +71,21 @@ jobs:
           fi
           test -n "$MOAV_ADMIN_PASSWORD"  || { echo "::error::secret E2E_ADMIN_PASSWORD is not set"; exit 1; }
           docker --version && docker compose version
+          # Tooling the SUITE needs (not MoaV runtime prerequisites): qrencode for
+          # bundle QR codes, zip/unzip for `moav user add --package` and the smoke
+          # assertion that inspects the produced archive. Ensure them here — a
+          # missing tool must never become a silently skipped test.
+          missing=""
+          for t in zip unzip qrencode; do command -v "$t" >/dev/null 2>&1 || missing="$missing $t"; done
+          if [ -n "$missing" ]; then
+            echo "Installing missing test tooling:$missing"
+            sudo apt-get update -qq && sudo apt-get install -y -qq $missing
+          fi
+          for t in zip unzip qrencode; do
+            command -v "$t" >/dev/null 2>&1 \
+              || { echo "::error::$t is required by the e2e suite and could not be installed"; exit 1; }
+          done
+          echo "suite tooling: zip=$(command -v zip) unzip=$(command -v unzip) qrencode=$(command -v qrencode)"
 
       - name: Prepare .env
         run: |
