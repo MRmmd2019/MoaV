@@ -21,15 +21,27 @@ parallel-run diff before deleting the old path.
 ever since — the source of the SS/XHTTP placeholder gap, the CRLF-key bug, and the
 subscription-coupling bug this cycle.
 
+Originally (v1.9.x), the two stacks looked like this — the state the estimates
+below were made against:
+
 ```
 moav user add NAME            [HOST]         moav bootstrap / regenerate / donate  [CONTAINER]
-  scripts/user-add.sh                          scripts/generate-single-user.sh
-    ├ singbox-user-add.sh                         └ generate-user.sh
-    ├ wg-user-add.sh (ignores lib/wireguard.sh)      ├ lib/{wireguard,amneziawg,dnstt,…}
-    ├ <inline> AmneziaWG (dup of lib)                ├ lib/sing-box.sh (links)
-    ├ <inline> dns-family text (dup of libs)         └ <inline> reality/trojan/…/xhttp/xdns
-    └ <inline> README.html + subscription.txt        └ <inline> README.html + subscription.txt
+  scripts/user-add.sh                          scripts/generate-user.sh
+    ├ singbox-user-add.sh                         ├ lib/{wireguard,amneziawg,dnstt,…}
+    ├ wg-user-add.sh (ignored lib/wireguard.sh)    ├ lib/sing-box.sh (links)
+    ├ <inline> AmneziaWG (dup of lib)              └ <inline> reality/trojan/…/xhttp/xdns
+    ├ <inline> dns-family text (dup of libs)
+    └ <inline> README.html + subscription.txt      └ <inline> README.html + subscription.txt
 ```
+
+(`scripts/generate-single-user.sh` was a third, **orphaned** copy of the container
+driver — no callers, not mounted by compose, not `COPY`'d into the image, so it
+could never run. Deleted in A7b. The container entry point is `generate-user.sh`,
+called by `bootstrap.sh` and `moav regenerate-users`.)
+
+Most `<inline>` markers above are now retired: A1 (keys), A2 (dns-family text),
+A3+A3b (WG/AWG allocation **and** client-config rendering), A4 (server-config
+mutation), A5 (README + subscription), A6 (XHTTP/XDNS).
 
 ~**1,100–1,300 duplicated lines**. The two README renders (~290 ln each), XDNS
 (~150), host WG (~180) / AWG (~160), the dns-family instruction text (~200),
@@ -49,12 +61,43 @@ points become thin "mutate server config (lib) → render bundle (lib)" drivers.
 | **A4 (done)** | One canonical sing-box/xray server-config `jq` mutation: `singbox_add_user` (lib/sing-box.sh) + new `lib/xray.sh` `xray_add_user`, based on sync.sh's dual-dedup + field-adaptive form. Rewired the live sites (sync.sh reconcile + host singbox-user-add.sh); removed the dead lib helpers. `generate-single-user.sh`'s orphan copy left for A7. Verified: golden links test + isolation harness on a live 146-user config (0-change convergence = byte-identical to old output; drop+re-add reproduces membership incl SS). | srv-mutation drift | e2e per-protocol reachability; golden links test |
 | **A5 ⭐** | `lib/bundle-readme.sh`: `render_bundle_readme <bundle> <key_src>` + **unconditional** `write_subscription <bundle>`. Delete both ~290-ln inline blocks. | **SS/XHTTP placeholder gap + subscription coupling** | `test_readme_bundle` (a: no leftover `{{}}`, b: every enabled link rendered) + new "subscription.txt exists after no-op regenerate" smoke check |
 | **A6 (done)** | `lib/xray.sh`: `xray_write_xhttp_bundle` + `xray_write_xdns_bundle` (+ `xray_xdns_finalmask` python helper). Host + container both call them; container form canonical (byte-identical), host XDNS reconciled up to it (gains XDNS_METHOD + uuid fallback). −194 ln. Verified byte-equivalence harness (old container code vs new fns: all 5 emitted files identical) + golden links test. `generate-single-user.sh`'s dead XHTTP copy left for A7. Stacks on A4. | XHTTP/XDNS dup | e2e xhttp/xdns + `test_readme_bundle` |
-| **A7** | Collapse `user-add.sh` + `generate-single-user.sh` into one driver behind a host/container flag (differs only in paths + reload strategy). **Last — touches orchestration/reload.** | the two-stacks split itself | full e2e + cli-smoke |
+| **A7 (RESCOPED)** | ~~Collapse `user-add.sh` + `generate-single-user.sh` into one driver behind a host/container flag~~ — **premise falsified, see below.** Now four independent low-risk PRs: **A7a (done)** fix `--package` shipping an unrendered guide + guard missing `zip`; **A7b (done)** delete the dead `generate-single-user.sh` + the stale docs that described it as live; **A7c** new `lib/trusttunnel.sh` (~47 ln dup; fixes host hardcoding `has_ipv6=false` on IPv6 servers); **A7d** wire the host AmneziaWG block to `amneziawg_add_peer` (~53 ln; the lib's `extra_used` param was written for this caller and never wired). | the remaining real duplication | full e2e + cli-smoke |
 | **A8** | Split `bootstrap` vs `regenerate-users` responsibilities and share the provisioning/reconcile path. `bootstrap` should own **first-run infra only** (keys, certs, state init, config templates from `envsubst`) and then **delegate** "materialize every user into configs + bundles" to the *same* implementation `moav regenerate-users` calls — one code path, one shell-safety contract. Today they overlap and diverge: both regen bundles and both reconcile, but bootstrap runs the reconcile sourced under `set -euo pipefail` while regenerate runs it in a `docker … -c` shell **without** `set -e`. That divergence caused two prod incidents this cycle — the stale-volume orphan and the set-e silent bootstrap abort (bootstrap died exactly where regenerate-users survived). Builds on A4/A7 (shared server-mutation + single user driver). | bootstrap↔regenerate drift; divergent set-e contract | e2e: fresh bootstrap **and** `regenerate-users` both yield identical reconciled configs (`tests/assert-users-reconciled.sh`); re-bootstrap on a many-user + SS-less state never aborts |
 
 **Highest ROI = A5** (retires 2 of 3 drift classes, largest single block, fully
 machine-checked by `test_readme_bundle`). **A1 first** (near-zero risk, spans the
 most files, retires the CRLF class).
+
+### Why A7 was rescoped (survey, 2026-07-26)
+
+The original A7 assumed the two entry points "differ only in paths + reload
+strategy". After A1–A6 + A3b that is no longer true — and the survey showed it was
+never quite true:
+
+- `scripts/user-add.sh` (~610 ln) **generates** credentials, mutates six server
+  configs, hot-reloads services, and owns batch / `--package` / donate mode plus
+  the failure summary. It runs under three privilege models (CLI root, sudo user,
+  unprivileged `moav` in the admin container against a `:ro` `/project`).
+- `scripts/generate-user.sh` (~656 ln) **reads existing state only** (hard-exits if
+  `credentials.env` is absent), creates no credentials, never touches
+  sing-box/xray/trusttunnel/telemt server config, never reloads, and is
+  force-idempotent per artifact for re-runs.
+- Directly between the two, essentially **nothing** is still duplicated. The real
+  remaining duplication sits in *sibling* files (trusttunnel client artifacts → A7c;
+  the inline AmneziaWG peer-add → A7d).
+- The two also carry **incompatible `set -e` contracts** — `user-add.sh` wraps each
+  service in `if …`/subshells so one protocol failing is non-fatal; `generate-user.sh`
+  fails fast and lets its callers absorb it.
+- And `admin/main.py` **screen-scrapes `user-add.sh`'s stdout** (it regex-matches the
+  `User '<name>' created` line to discover results), so the host driver's output is a
+  load-bearing interface, not just logging.
+
+Merging them would mean a `if [[ $MODE == host ]]` maze across credentials, server
+mutation, reload, packaging, batch, donate, privilege handling and two error models —
+for almost no line reduction, while six callers depend on the current behaviour. The
+split is a genuine responsibility boundary (**mutate + reload** vs **render from
+state**), so it is kept deliberately; A7 instead retires the duplication that is
+actually left.
 
 ---
 
