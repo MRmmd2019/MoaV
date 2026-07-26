@@ -8700,12 +8700,15 @@ cmd_regenerate_users() {
     local port_dns=$(get_env_val "PORT_DNS" .env "53")
     local port_xdns=$(get_env_val "PORT_XDNS" .env "53")
 
-    # Run the regeneration using bootstrap container
-    # This mounts all necessary volumes and has the generate scripts
-    for username in $users_found; do
-        echo -n "  Regenerating $username... "
-
-        if docker compose run --rm -T \
+    # ONE container run for the whole job, via the shared provisioning path
+    # (lib/provision.sh `provision_all_users force`) — the SAME implementation
+    # bootstrap.sh uses, so the two can no longer drift. This replaces a
+    # per-user `docker compose run` (which re-passed ~50 -e vars for every
+    # user) plus a second, separate run for the reconcile whose shell lacked
+    # `set -e` while bootstrap's had it — exactly the divergence that made
+    # "regenerate-users works but bootstrap aborts" possible.
+    echo "  Regenerating bundles + reconciling server configs..."
+    if docker compose run --rm -T \
             -e "SERVER_IP=$server_ip" \
             -e "SERVER_IPV6=$server_ipv6" \
             -e "DOMAIN=$domain" \
@@ -8749,30 +8752,21 @@ cmd_regenerate_users() {
             -e "XDNS_RESOLVERS=${xdns_resolvers:-1.1.1.1,8.8.8.8}" \
             -e "PORT_DNS=${port_dns:-53}" \
             -e "PORT_XDNS=${port_xdns:-53}" \
-            --entrypoint /bin/sh \
-            bootstrap -c 'mkdir -p /state/users; cp -a /host-state/users/. /state/users/ 2>/dev/null || true; exec /app/generate-user.sh "$1" force' sh "$username" >/dev/null 2>&1; then
-            echo -e "${GREEN}✓${NC}"
-            ((user_count++)) || true
-        else
-            echo -e "${RED}✗${NC}"
-            warn "    Failed to regenerate $username"
-        fi
-    done
+        --entrypoint /bin/bash \
+        bootstrap -c 'source /app/lib/common.sh; source /app/lib/sing-box.sh; source /app/lib/xray.sh; source /app/lib/sync.sh; source /app/lib/provision.sh; provision_all_users force'; then
+        user_count=$(echo "$users_found" | wc -w | tr -d ' ')
+        echo -e "  ${GREEN}✓${NC} provisioning run finished"
+    else
+        echo -e "  ${RED}✗${NC} provisioning run failed"
+        warn "    See the output above for the failing user(s)"
+    fi
 
     echo ""
 
-    # Reconcile the server proxy configs with user state — re-add every user
-    # (with their STORED credentials) into sing-box/xray, then reload. Heals a
-    # config that drifted from state (e.g. an update regenerated it from the
-    # template and dropped `moav user add` users). Idempotent. (lib/sync.sh)
-    echo -n "  Syncing server configs with user state... "
-    if docker compose run --rm -T --entrypoint /bin/bash bootstrap \
-        -c 'mkdir -p /state/users; cp -a /host-state/users/. /state/users/ 2>/dev/null || true; source /app/lib/common.sh; source /app/lib/sing-box.sh; source /app/lib/xray.sh; source /app/lib/sync.sh; sync_server_users' >/dev/null 2>&1; then
-        echo -e "${GREEN}✓${NC}"
-        docker compose restart sing-box xray >/dev/null 2>&1 || true
-    else
-        echo -e "${YELLOW}skipped${NC}"
-    fi
+    # The reconcile happened inside the run above (provision_all_users does
+    # bundles THEN sync_server_users, always reaching the reconcile even if a
+    # bundle failed). Reload the proxies so the re-inserted users take effect.
+    docker compose restart sing-box xray >/dev/null 2>&1 || true
     echo ""
 
     if [[ $user_count -gt 0 ]]; then
