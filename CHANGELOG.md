@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+- **`moav.sh` decomposition B1 — `lib/nettune.sh`.** Second module out of the monolith (after B0's `lib/common.sh`): the self-contained network-tuning block — BBR/qdisc detection, socket-buffer sizing, the sysctl bundle render/apply/revert, `nt_status`, the PMTU/drops/CGNAT/MTU checks and the `moav net` command — moves verbatim into a top-level `lib/nettune.sh`, along with its only global (`NT_CONF_PATH`). Sourced right after `common` and before the doctor checks, since `doctor_check_net` calls `nt_status`/`nt_check_*` (modules are sourced into one shell, so this is documentation of intent rather than a hard requirement). `moav.sh` 9,257 → 8,872 lines. Verified: the top-level function count is conserved exactly (182 = 153 + 17 + 12) with no duplicate definitions; `moav net status`, `moav version` and `moav help` produce **byte-identical output and exit codes** to `dev`; and `moav doctor` — which calls across the new module boundary — differs only in the line number quoted by a pre-existing `set -u` error, exactly as expected after removing 380 lines. `bash -n` + `shellcheck --severity=error` clean.
+
 ## [2.0.0-rc.1] - 2026-07-26
 
 First release candidate for v2.0.0. Please test on a non-critical server before
