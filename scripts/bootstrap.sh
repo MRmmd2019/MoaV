@@ -17,6 +17,7 @@ source /app/lib/masterdns.sh
 source /app/lib/gooserelay.sh
 source /app/lib/telemt.sh
 source /app/lib/sync.sh
+source /app/lib/provision.sh   # shared "materialize every user" path (see A8)
 
 log_info "Starting MoaV bootstrap..."
 
@@ -951,11 +952,14 @@ fi
 # creds, re-orphaning them on every bootstrap. Host state is authoritative.
 # (mirrors what `moav regenerate-users` does)
 # -----------------------------------------------------------------------------
-if [[ -d /host-state/users ]]; then
-    mkdir -p "$STATE_DIR/users"
-    cp -a /host-state/users/. "$STATE_DIR/users/" 2>/dev/null || true
-fi
-sync_server_users "/configs/sing-box/config.json" "/configs/xray/config.json" "$STATE_DIR/users"
+# Delegated to lib/provision.sh — the SAME implementation `moav regenerate-users`
+# calls, so the two can no longer drift. It mirrors host state, materializes a
+# bundle for every user that has credentials (healing any user in state that
+# never got one), then reconciles. Every step is individually guarded, so it
+# behaves identically under bootstrap's `set -euo pipefail` and in the regenerate
+# path's non-`set -e` shell — the divergence behind the silent mid-reconcile
+# abort. Not `force`: existing bundle artifacts are left alone here.
+provision_all_users "" "/configs/sing-box/config.json" "/configs/xray/config.json" "$STATE_DIR/users"
 
 # -----------------------------------------------------------------------------
 # Fix permissions on generated configs (admin container runs as non-root uid 1000)
