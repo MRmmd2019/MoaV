@@ -61,6 +61,36 @@ run info "moav conduit-offsets status"  -- "$MOAV" conduit-offsets status
 # --- user lifecycle (mutating but reversible) ---
 run must "moav user add $SMOKE_USER"    -- "$MOAV" user add "$SMOKE_USER"
 run info "moav user revoke $SMOKE_USER" -- "$MOAV" user revoke "$SMOKE_USER"
+
+# --package must ship the FULLY RENDERED guide. The packager used to re-render the
+# template itself, substituting only a subset of the placeholders and overwriting
+# the correct README.html — so the zip went out with ~26 raw {{PLACEHOLDER}}
+# markers (Shadowsocks/XHTTP/AmneziaWG/Telegram/XDNS sections). Assert on the
+# ZIP's guide, not just the bundle's: this path had no coverage at all, which is
+# exactly why the regression shipped.
+run must "moav user add --package"       -- "$MOAV" user add "${SMOKE_USER}p" --package
+run must "packaged guide fully rendered" -- bash -c '
+    zip="outputs/bundles/'"${SMOKE_USER}"'p-configs.zip"
+    # zip/unzip are NOT install prerequisites — without them --package cannot
+    # produce an archive at all, so report a skip rather than a false failure.
+    if ! command -v zip >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+        echo "skipped: zip/unzip not installed on this host (--package cannot run)"
+        exit 0
+    fi
+    if [[ ! -f "$zip" ]]; then
+        echo "no package zip at $zip"
+        echo "  bundle dir:  $(ls -d "outputs/bundles/'"${SMOKE_USER}"'p" 2>/dev/null || echo MISSING)"
+        echo "  bundle guide: $(ls "outputs/bundles/'"${SMOKE_USER}"'p/README.html" 2>/dev/null || echo MISSING)"
+        exit 1
+    fi
+    tmp=$(mktemp -d); trap "rm -rf $tmp" EXIT
+    unzip -q "$zip" -d "$tmp" || exit 1
+    readme=$(find "$tmp" -name README.html | head -1)
+    [[ -n "$readme" ]] || { echo "package contains no README.html"; exit 1; }
+    left=$(grep -oE "\{\{[A-Z0-9_]+\}\}" "$readme" | sort -u | tr "\n" " ")
+    [[ -z "$left" ]] || { echo "unsubstituted placeholders in packaged guide: $left"; exit 1; }
+'
+run info "moav user revoke (package)"   -- "$MOAV" user revoke "${SMOKE_USER}p"
 run must "moav user add --batch 2"      -- "$MOAV" user add --batch 2 --prefix "${SMOKE_USER}b"
 run info "moav user revoke (batch)"     -- "$MOAV" user revoke "${SMOKE_USER}b01" "${SMOKE_USER}b02"
 
