@@ -11,6 +11,7 @@ cd "$SCRIPT_DIR/.."
 
 source scripts/lib/common.sh
 source scripts/lib/keys.sh
+source scripts/lib/wireguard.sh   # WG_CONFIG_DIR is re-set to the host path below
 
 # Parse arguments
 USERNAME=""
@@ -170,66 +171,11 @@ EOF
 
 log_info "Added peer to wg0.conf"
 
-# Get WireGuard port from env or default
-WG_PORT="${PORT_WIREGUARD:-51820}"
-
-# Build client address (IPv4 + optional IPv6)
-CLIENT_ADDRESSES="$CLIENT_IP/32"
-if [[ -n "$CLIENT_IP_V6" ]]; then
-    CLIENT_ADDRESSES="$CLIENT_IP/32, $CLIENT_IP_V6/128"
-fi
-
-# Generate DIRECT client config (simple, for mobile) - IPv4 endpoint
-cat > "$OUTPUT_DIR/wireguard.conf" <<EOF
-[Interface]
-PrivateKey = $CLIENT_PRIVATE_KEY
-Address = $CLIENT_ADDRESSES
-DNS = 1.1.1.1, 8.8.8.8
-MTU = 1280
-
-[Peer]
-PublicKey = $SERVER_PUBLIC_KEY
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = ${SERVER_IP}:${WG_PORT}
-PersistentKeepalive = 25
-EOF
-
-log_info "Generated direct WireGuard config"
-
-# Generate IPv6 endpoint config if server has IPv6
-if [[ -n "$SERVER_IPV6" ]]; then
-    cat > "$OUTPUT_DIR/wireguard-ipv6.conf" <<EOF
-[Interface]
-PrivateKey = $CLIENT_PRIVATE_KEY
-Address = $CLIENT_ADDRESSES
-DNS = 1.1.1.1, 2606:4700:4700::1111
-MTU = 1280
-
-[Peer]
-PublicKey = $SERVER_PUBLIC_KEY
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = [${SERVER_IPV6}]:${WG_PORT}
-PersistentKeepalive = 25
-EOF
-    log_info "Generated IPv6 endpoint WireGuard config"
-fi
-
-# Generate wstunnel config (for restrictive networks)
-cat > "$OUTPUT_DIR/wireguard-wstunnel.conf" <<EOF
-[Interface]
-PrivateKey = $CLIENT_PRIVATE_KEY
-Address = $CLIENT_ADDRESSES
-DNS = 1.1.1.1, 8.8.8.8
-MTU = 1280
-
-[Peer]
-PublicKey = $SERVER_PUBLIC_KEY
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = 127.0.0.1:51820
-PersistentKeepalive = 25
-EOF
-
-log_info "Generated wstunnel-mode config"
+# Generate the client configs (direct + optional IPv6 + wstunnel) via the shared
+# lib, so host and container WireGuard bundles are byte-identical. It reads the
+# private key + client IPs from wireguard.env (written above) and the server key
+# from $WG_CONFIG_DIR/server.pub (synced above); honors SERVER_IPV6 + PORT_WIREGUARD.
+wireguard_generate_client_config "$USERNAME" "$OUTPUT_DIR"
 
 # wstunnel client command — shown in the terminal summary below. The full
 # wstunnel setup guide (download, run, connect) lives in README.html.
