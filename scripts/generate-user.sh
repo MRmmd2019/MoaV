@@ -480,9 +480,14 @@ if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]]; then
     # Always add peer to server config (wireguard_add_peer has its own guard).
     # It now allocates the next free octet by scanning wg0.conf, so no peer-count
     # is passed (the old count+1 collided with revoked-user gaps).
-    wireguard_add_peer "$USER_ID"
-
-    if [[ -f "$OUTPUT_DIR/wireguard.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
+    # rc=2 => the server has a peer for this user but state has no key
+    # material; the private key is unrecoverable, so DON'T re-render the
+    # client config from bogus state — that would hand them credentials the
+    # server does not know. Leave their working bundle exactly as it is.
+    _peer_rc=0; wireguard_add_peer "$USER_ID" || _peer_rc=$?
+    if [[ "$_peer_rc" -eq 2 ]]; then
+        log_warn "  - WireGuard left untouched for $USER_ID (no key material in state)"
+    elif [[ -f "$OUTPUT_DIR/wireguard.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - WireGuard config exists, skipping"
     else
         BUNDLE_CHANGED=true
@@ -503,9 +508,14 @@ if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]]; then
     # Always add peer to server config (amneziawg_add_peer has its own guard).
     # It now allocates the next free octet by scanning awg0.conf, so no peer-count
     # is passed (the old count+1 collided with revoked-user gaps).
-    amneziawg_add_peer "$USER_ID"
-
-    if [[ -f "$OUTPUT_DIR/amneziawg.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
+    # rc=2 => the server has a peer for this user but state has no key
+    # material; the private key is unrecoverable, so DON'T re-render the
+    # client config from bogus state — that would hand them credentials the
+    # server does not know. Leave their working bundle exactly as it is.
+    _peer_rc=0; amneziawg_add_peer "$USER_ID" || _peer_rc=$?
+    if [[ "$_peer_rc" -eq 2 ]]; then
+        log_warn "  - AmneziaWG left untouched for $USER_ID (no key material in state)"
+    elif [[ -f "$OUTPUT_DIR/amneziawg.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - AmneziaWG config exists, skipping"
     else
         BUNDLE_CHANGED=true

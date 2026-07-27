@@ -68,6 +68,7 @@ trap goodbye SIGINT
 # -----------------------------------------------------------------------------
 source "$SCRIPT_DIR/lib/common.sh"
 source "$SCRIPT_DIR/lib/nettune.sh"   # before doctor: doctor_check_net calls nt_*
+source "$SCRIPT_DIR/lib/peers.sh"     # doctor_check_peers + the --fix repair
 source "$SCRIPT_DIR/lib/donate.sh"
 source "$SCRIPT_DIR/lib/cert.sh"
 
@@ -3451,8 +3452,36 @@ doctor_check_updates() {
     fi
 }
 
+# Registry of diagnostic checks: "<name>:<description>" -> doctor_check_<name>.
+# Lives with cmd_doctor (it was briefly carried along by the nettune extraction).
+DOCTOR_CHECKS=(
+    "docker:Check Docker and prerequisites"
+    "memory:Check available RAM"
+    "disk:Check available disk space"
+    "logs:Check container log file sizes (offers to truncate oversized)"
+    "dns:Check DNS records for enabled protocols"
+    "services:Check running services vs enabled config"
+    "config:Check config files and keys from bootstrap"
+    "ports:Check required ports are available"
+    "conflicts:Check for conflicting services (e.g. DNS tunnels on port 53)"
+    "reality:Check Reality fallback targets resolve and are reachable"
+    "net:Check BBR/sysctl tuning + packet drops + PMTU + CGNAT + MTU"
+    "peers:Check for duplicate WireGuard/AmneziaWG peer addresses (--fix repairs)"
+    "env:Compare .env with .env.example for missing vars"
+    "updates:Check for MoaV updates"
+)
+
 cmd_doctor() {
     local requested_check="${1:-}"
+    # `moav doctor peers --fix [--yes]` — the only check that can repair what
+    # it finds. Deliberately not a blanket `doctor --fix`: the repair rotates
+    # peer addresses and keys, which invalidates those users' existing bundles.
+    if [[ "$requested_check" == "peers" ]] && [[ "${2:-}" == "--fix" ]]; then
+        print_section "Repair duplicate peer addresses"
+        peers_report || true
+        peers_repair "${3:-}"
+        return $?
+    fi
     local selected_checks=()
     local check_spec=""
     local check_name=""
