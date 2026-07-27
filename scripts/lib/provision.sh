@@ -72,11 +72,33 @@ provision_all_users() {
         done
     fi
 
+    # 2b. Bundles with no state entry. This loop is driven by state, whereas the
+    # older `moav regenerate-users` was driven by outputs/bundles — so a bundle
+    # without credentials would now be passed over in silence. Say so instead:
+    # it means the user's credentials were lost, and only a revoke + re-add can
+    # rebuild them.
+    local bundles_dir="${OUTPUTS_DIR:-/outputs}/bundles" b bu orphan=0
+    if [[ -d "$bundles_dir" ]]; then
+        for b in "$bundles_dir"/*/; do
+            [[ -d "$b" ]] || continue
+            bu=$(basename "$b")
+            [[ -f "$users_dir/$bu/credentials.env" ]] && continue
+            echo "  $bu … SKIPPED (bundle exists but no credentials in state)"
+            orphan=$((orphan + 1))
+        done
+    fi
+
     # 3. reconcile — must run even if some bundles failed above
     if sync_server_users "$sb" "$xr" "$users_dir"; then
-        log_info "Provisioned $ok user(s) into configs + bundles${failed:+, $failed failed}"
+        # $((x)) not ${x:+…}: the latter expands for the STRING "0" too, so a
+        # clean run printed ", 0 failed, 0 skipped".
+        local extra=""
+        [[ "$failed" -gt 0 ]] && extra="$extra, $failed failed"
+        [[ "$orphan" -gt 0 ]] && extra="$extra, $orphan skipped (no credentials in state)"
+        log_info "Provisioned $ok user(s) into configs + bundles$extra"
     else
         log_error "Reconcile of the server proxy configs failed"
     fi
+    [[ "$orphan" -gt 0 ]] && log_warn "$orphan bundle(s) have no credentials in state — re-issue with: moav user revoke <u> && moav user add <u>"
     return 0
 }
