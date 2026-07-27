@@ -210,13 +210,6 @@ get_grafana_cdn_url() {
     fi
 }
 
-get_cdn_url() {
-    local cdn_subdomain=$(get_env_val "CDN_SUBDOMAIN" .env "")
-    local domain=$(get_env_val "DOMAIN" .env "")
-    if [[ -n "$cdn_subdomain" ]] && [[ -n "$domain" ]]; then
-        echo "https://${cdn_subdomain}.${domain}"
-    fi
-}
 
 run_command() {
     local cmd="$1"
