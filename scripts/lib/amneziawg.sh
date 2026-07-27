@@ -143,6 +143,17 @@ amneziawg_add_peer() {
         client_ip="$AWG_CLIENT_IP"
         client_ip_v6="${AWG_CLIENT_IP_V6:-}"
         log_info "Loaded existing AmneziaWG keys for $user_id"
+    elif grep -q "# $user_id$" "${AWG_CONFIG_DIR}/awg0.conf" 2>/dev/null; then
+        # Third state: the server already has a peer for this user, but their key
+        # material is NOT in state. The private key only ever existed in their
+        # bundle, so it cannot be recovered — minting a fresh keypair here would
+        # write a bundle whose key the server does not know (the append below is
+        # skipped for an existing peer), silently breaking a user who works today.
+        # Leave both the peer and any existing bundle alone and tell the caller.
+        log_warn "AmneziaWG: $user_id has a server peer but no key material in state"
+        log_warn "  leaving the existing peer and bundle untouched (private key is unrecoverable)"
+        log_warn "  to re-issue this user: moav user revoke $user_id && moav user add $user_id"
+        return 2
     else
         # Generate client keys (lib/keys.sh — CRLF-safe; standard WG format, AWG-compatible)
         { read -r client_private_key && read -r client_public_key; } < <(wg_keypair)
