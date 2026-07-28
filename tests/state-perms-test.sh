@@ -39,11 +39,29 @@ echo k > "$STATE_DIR/keys/wg-server.key"; chmod 600 "$STATE_DIR/keys/wg-server.k
 
 secure_state_keys "$STATE_DIR/keys" >/dev/null 2>&1
 
-for f in reality.env clash-api.env cdn.env amneziawg.env shadowsocks-server.psk \
+for f in reality.env cdn.env amneziawg.env shadowsocks-server.psk \
          wstunnel-path.secret masterdns-encrypt.key gooserelay-tunnel.key slipstream-key.pem; do
     m=$(mode "$STATE_DIR/keys/$f")
     [[ "$m" == "600" ]] && ok "secret $f -> 0600" || bad "secret $f is $m (expected 600)"
 done
+
+# clash-api.env is a deliberate exception: admin/main.py reads it and the admin
+# container runs as a NON-root user (uid 100), so 0600 crash-loops it with
+# PermissionError. Tightening this one regressed a live e2e -- assert it stays
+# readable so the exception cannot be "helpfully" removed later.
+# REPAIR case: an earlier build of secure_state_keys already tightened this file,
+# and the state volume survives upgrades -- so the exemption must actively restore
+# readability, not merely skip. A skip-only version passed the test above while
+# leaving already-damaged installs permanently crash-looping.
+chmod 600 "$STATE_DIR/keys/clash-api.env"
+secure_state_keys "$STATE_DIR/keys" >/dev/null 2>&1
+m=$(mode "$STATE_DIR/keys/clash-api.env")
+[[ "$m" == "644" ]] && ok "clash-api.env already at 0600 is REPAIRED back to readable" \
+                    || bad "clash-api.env stayed $m — an install damaged by the earlier bug stays broken"
+
+m=$(mode "$STATE_DIR/keys/clash-api.env")
+[[ "$m" == "644" ]] && ok "clash-api.env left readable for the non-root admin ($m)" \
+                    || bad "clash-api.env is $m — the admin container cannot read it and will crash-loop"
 
 for f in wg-server.pub awg-server.pub dnstt-server.pub.hex slipstream-cert.pem; do
     m=$(mode "$STATE_DIR/keys/$f")
