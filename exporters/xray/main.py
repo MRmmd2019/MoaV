@@ -135,16 +135,13 @@ def query_xray_stats():
             return
 
         if stats_query_count == 0:
-            print(f"Stats API raw: stdout={len(user_output)} bytes, stderr={len(result.stderr)} bytes")
-            if user_output:
-                print(f"Stats stdout preview: {user_output[:200]}")
-            if result.stderr and not user_output:
-                print(f"Stats stderr preview: {result.stderr[:200]}")
+            print(f"Stats snapshot: {len(user_output)} bytes")
+            print(f"Stats preview: {user_output[:200]}")
 
-        # xray may output to stdout or stderr depending on version
+        # Snapshot file contents (the docker-exec stderr fallback died with the
+        # socket removal; a leftover `result.stderr` reference here raised
+        # NameError on every poll).
         output = user_output.strip()
-        if not output:
-            output = result.stderr.strip()
         if not output:
             return
 

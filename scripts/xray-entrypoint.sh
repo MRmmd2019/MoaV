@@ -59,8 +59,15 @@ if [ -d "$METRICS_STATE_DIR" ]; then
     # the exporter's tail (both detect the shrink and continue).
     ACCESS_LOG="$METRICS_STATE_DIR/xray-access.log"
     ACCESS_LOG_MAX_BYTES="${ACCESS_LOG_MAX_BYTES:-33554432}"   # 32 MiB
+    # Pre-create the log readable: xray-core creates it 0600, and the exporter
+    # (root but cap_drop ALL, no DAC_OVERRIDE) reads a moav-owned file only via
+    # the world bits. We own the file, so the chmod always works; the loop
+    # below re-applies it in case xray ever recreates the file itself.
+    : >> "$ACCESS_LOG" 2>/dev/null || true
+    chmod 644 "$ACCESS_LOG" 2>/dev/null || true
     cap_access_log() {
         [ -f "$ACCESS_LOG" ] || return 0
+        chmod 644 "$ACCESS_LOG" 2>/dev/null || true
         _sz=$(stat -c %s "$ACCESS_LOG" 2>/dev/null || stat -f %z "$ACCESS_LOG" 2>/dev/null || echo 0)
         if [ "${_sz:-0}" -gt "$ACCESS_LOG_MAX_BYTES" ]; then
             : > "$ACCESS_LOG"

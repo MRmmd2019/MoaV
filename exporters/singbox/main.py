@@ -68,10 +68,19 @@ GEOIP_POLL_INTERVAL = int(os.environ.get("SINGBOX_POLL_INTERVAL", "15"))
 
 
 def load_clash_secret():
-    """Try to load the Clash API secret from state volume or environment."""
+    """Try to load the Clash API secret from environment or state volume."""
     global CLASH_SECRET
 
-    # Try state volume (source of truth from bootstrap)
+    # Environment first: compose passes CLASH_TOKEN, and the state file is 0600
+    # root-only since the admin env-handoff change. This container is
+    # cap_drop ALL without DAC_OVERRIDE, so even as root it can only read
+    # state files it owns; a PermissionError here used to crash-loop it.
+    CLASH_SECRET = os.environ.get("CLASH_TOKEN", "").strip().strip('"').strip("'")
+    if CLASH_SECRET:
+        print(f"Loaded Clash API secret from environment ({len(CLASH_SECRET)} chars)")
+        return
+
+    # Fall back to the state volume; any read failure must be non-fatal.
     for path in ["/state/keys/clash-api.env", "/state/clash_api_secret"]:
         try:
             with open(path) as f:
@@ -86,11 +95,8 @@ def load_clash_secret():
                         CLASH_SECRET = line
                         print(f"Loaded Clash API secret from {path}")
                         return
-        except FileNotFoundError:
+        except OSError:
             continue
-
-    # Fall back to environment
-    CLASH_SECRET = os.environ.get("CLASH_TOKEN", "").strip().strip('"').strip("'")
     if CLASH_SECRET:
         print(f"Loaded Clash API secret from environment ({len(CLASH_SECRET)} chars)")
     else:

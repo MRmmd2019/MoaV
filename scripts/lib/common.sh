@@ -126,18 +126,34 @@ grant_admin_rw() {
 # at 0644, while the raw *.key files beside them were correctly 0600.
 #
 # Idempotent: safe to call on every bootstrap, and it repairs existing installs.
-# Public counterparts (*.pub, certs) are skipped — other parties must read those.
-# Every container that mounts the state volume runs as root, so tightening the
-# mode cannot lock a service out of its own key material.
+# Public counterparts (*.pub, certs) stay 644 — other parties must read those.
+#
+# OWNERSHIP is normalized to root, not just the mode: live installs carry keys
+# owned by whatever uid the old per-container flows wrote them as (a real
+# server had uid-999 files from the v1 dnstt image), and a cap_drop-ALL
+# container without DAC_OVERRIDE cannot read a 0600 file it does not own even
+# as in-container root. The earlier claim that "every state-volume container
+# runs as root" was wrong twice over: root there does not bypass modes, and
+# dnstt/masterdns/slipstream run their daemons as USER moav (uid ~100). Those
+# three read their own key directly, so their key files stay world-readable
+# INSIDE the volume (644) — the volume boundary is the actual control, as it
+# always was — while everything else goes 0600 root.
 secure_state_keys() {
     local keys_dir="${1:-$STATE_DIR/keys}"
     [[ -d "$keys_dir" ]] || return 0
+    chown 0:0 "$keys_dir" 2>/dev/null || true
     local f base fixed=0
     for f in "$keys_dir"/*; do
         [[ -f "$f" ]] || continue
         base="$(basename "$f")"
+        chown 0:0 "$f" 2>/dev/null || true
         case "$base" in
-            *.pub|*.pub.hex|*-cert.pem|*.crt|*.csr) continue ;;   # public by design
+            *.pub|*.pub.hex|*-cert.pem|*.crt|*.csr)
+                chmod 644 "$f" 2>/dev/null || true   # public by design
+                continue ;;
+            dnstt-server.key.hex|masterdns-encrypt.key|slipstream-key.pem)
+                chmod 644 "$f" 2>/dev/null || true   # non-root daemon reads it
+                continue ;;
         esac
         # clash-api.env is no longer an exception: the root admin entrypoint now
         # reads it and hands the secret to the non-root app via env, so 0600 is

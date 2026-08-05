@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Four upgrade regressions found on the first live 1.9.1 → v2 upgrade.** The key-permissions repair normalized modes but not OWNERSHIP: live installs carry state keys owned by old per-container uids (uid 999 from the v1 dnstt image), and a `cap_drop: ALL` container without `DAC_OVERRIDE` cannot read a 0600 file it does not own even as in-container root. The repair now chowns to root. Second, dnstt, masterdns and slipstream run their daemons as `USER moav` and read their own key directly, so those three keys stay 644 inside the state volume (the mount boundary is the control) — 0600 silently killed all three tunnels. Third, the singbox-exporter crash-looped on the now-0600 Clash secret file: it reads the env var first now (compose already passed it) and any file-read failure is non-fatal. Fourth, the xray access-log tailer could never read the log (xray-core creates it 0600 under xray's non-root uid; the exporter has no DAC_OVERRIDE) — the xray entrypoint now keeps it 644 — and a leftover `result.stderr` reference raised NameError on every stats poll.
+
+### Added
+- **Community links in `moav start` and `moav status` output.** Telegram and X shown after "Services started!" and as a footer under the status table.
+
 ### Security
 - **The Clash API secret file is now 0600 like every other key.** `clash-api.env` was the one deliberate world-readable exception under `state/keys` because the non-root admin app read it directly. The root admin entrypoint now reads it and hands the secret over via environment, so the exception (and the code that actively restored 0644 on every pass) is gone. Requires the admin image to be rebuilt, which `moav update` does.
 - **The key-permissions repair now actually reaches existing installs.** The rc.2 fix that tightened `state/keys` to 0600 only ran at the end of a fresh bootstrap; already-bootstrapped installs exit earlier and upgrades never run the bootstrap container at all, so the installs the repair was written for never got it. The repair now also runs inside the early-exit guard and, host-side, on every `moav up`/`moav start`.

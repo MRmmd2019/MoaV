@@ -27,7 +27,8 @@ source "$ROOT/scripts/lib/common.sh" 2>/dev/null || { echo "cannot source common
 
 # Secrets, deliberately created loose (0644) the way the heredoc writers do.
 for f in reality.env clash-api.env cdn.env amneziawg.env shadowsocks-server.psk \
-         wstunnel-path.secret masterdns-encrypt.key gooserelay-tunnel.key slipstream-key.pem; do
+         wstunnel-path.secret gooserelay-tunnel.key \
+         dnstt-server.key.hex masterdns-encrypt.key slipstream-key.pem; do
     echo "SECRET=x" > "$STATE_DIR/keys/$f"; chmod 644 "$STATE_DIR/keys/$f"
 done
 # Public counterparts must stay readable -- other parties consume them.
@@ -40,10 +41,34 @@ echo k > "$STATE_DIR/keys/wg-server.key"; chmod 600 "$STATE_DIR/keys/wg-server.k
 secure_state_keys "$STATE_DIR/keys" >/dev/null 2>&1
 
 for f in reality.env clash-api.env cdn.env amneziawg.env shadowsocks-server.psk \
-         wstunnel-path.secret masterdns-encrypt.key gooserelay-tunnel.key slipstream-key.pem; do
+         wstunnel-path.secret gooserelay-tunnel.key; do
     m=$(mode "$STATE_DIR/keys/$f")
     [[ "$m" == "600" ]] && ok "secret $f -> 0600" || bad "secret $f is $m (expected 600)"
 done
+
+# dnstt/masterdns/slipstream run their daemons as USER moav (uid ~100) and read
+# their own key directly, so those three must stay readable INSIDE the volume:
+# 0600 root there means the service silently cannot start (hit live on a v1.9.1
+# upgrade, where the keys were also owned by the old image's uid 999).
+for f in dnstt-server.key.hex masterdns-encrypt.key slipstream-key.pem; do
+    chmod 600 "$STATE_DIR/keys/$f"
+done
+secure_state_keys "$STATE_DIR/keys" >/dev/null 2>&1
+for f in dnstt-server.key.hex masterdns-encrypt.key slipstream-key.pem; do
+    m=$(mode "$STATE_DIR/keys/$f")
+    [[ "$m" == "644" ]] && ok "non-root-daemon key $f restored to 644" \
+                        || bad "$f is $m — its non-root daemon cannot read it and the service dies"
+done
+
+# Ownership must be normalized to root, not just the mode: cap_drop-ALL
+# container roots read a 0600 file only as OWNER, and live installs carry keys
+# owned by old per-container uids. (chown needs root; assert statically.)
+grep -q 'chown 0:0' "$ROOT/scripts/lib/common.sh" \
+    && ok "secure_state_keys normalizes key ownership to root" \
+    || bad "secure_state_keys no longer chowns to root — uid-999 keys stay unreadable for DAC-less containers"
+grep -q 'chown 0:0' "$ROOT/lib/service.sh" \
+    && ok "host-side repair normalizes key ownership to root" \
+    || bad "repair_state_key_perms no longer chowns — upgraded installs keep old-uid keys"
 
 # clash-api.env used to be a deliberate 0644 exception (the non-root admin app
 # read it directly). The root admin entrypoint now hands the secret over via
