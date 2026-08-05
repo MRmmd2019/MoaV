@@ -139,7 +139,20 @@ done
 for _f in configs/sing-box/config.json configs/xray/config.json \
           configs/wireguard/wg0.conf configs/amneziawg/awg0.conf \
           configs/trusttunnel/credentials.toml configs/telemt/config.toml; do
-    [[ -f "$_f" ]] && chmod a+rw "$_f" 2>/dev/null || true
+    # owner root + group admin write, never world-write. wg0.conf/awg0.conf
+    # (server private keys, container-root consumers) drop world-read too; the
+    # other four are read by non-root daemons and keep it.
+    # Only when WE cannot write it: chowning to root while running non-root
+    # (e2e runner, sudo-less operator) would revoke our own access mid-run —
+    # container-facing ownership is re-asserted by every `moav up` anyway.
+    if [[ -f "$_f" ]] && [[ ! -w "$_f" ]]; then
+        case "$_f" in
+            configs/wireguard/*|configs/amneziawg/*) _m=660 ;;
+            *)                                       _m=664 ;;
+        esac
+        chown "0:$ADMIN_GID" "$_f" 2>/dev/null || sudo chown "0:$ADMIN_GID" "$_f" 2>/dev/null || true
+        chmod "$_m" "$_f" 2>/dev/null || sudo chmod "$_m" "$_f" 2>/dev/null || true
+    fi
 done
 
 # Load environment
@@ -203,14 +216,23 @@ FAILED_USERS=()
 
 # Ensure directories exist and are writable (Docker creates them as root)
 # Try: direct mkdir → sudo mkdir → su-exec root mkdir (admin container has su-exec)
+# Unwritable dirs go to owner=caller, group=admin, setgid 2770 (was chmod 777 —
+# world-writable bundles hold client private keys): the invoking user and the
+# uid-2000 admin app can both write, nobody else can even read.
 _fix_perms() {
-    local dir="$1"
+    local dir="$1" _owner
+    # configs are read by cap_drop-ALL containers whose root lacks DAC_OVERRIDE:
+    # owner must stay root (they read as owner); the admin app writes via group.
+    # Everything else goes to the caller so direct host runs keep working.
+    case "$dir" in configs/*) _owner=0 ;; *) _owner=$(id -u) ;; esac
     mkdir -p "$dir" 2>/dev/null || \
         sudo mkdir -p "$dir" 2>/dev/null || \
         su-exec root mkdir -p "$dir" 2>/dev/null || true
     if [[ -d "$dir" ]] && [[ ! -w "$dir" ]]; then
-        sudo chmod 777 "$dir" 2>/dev/null || \
-            su-exec root chmod 777 "$dir" 2>/dev/null || true
+        sudo chown "$_owner:$ADMIN_GID" "$dir" 2>/dev/null || \
+            su-exec root chown "$_owner:$ADMIN_GID" "$dir" 2>/dev/null || true
+        sudo chmod 2770 "$dir" 2>/dev/null || \
+            su-exec root chmod 2770 "$dir" 2>/dev/null || true
     fi
 }
 
@@ -220,16 +242,19 @@ done
 # Also fix state/ parent and config files that may be root-owned
 for _dir in "state" "configs/amneziawg" "configs/wireguard"; do
     _fix_perms "$_dir"
-    # Fix root-owned config files so we can append peers
+    # Fix root-owned config files so we can append peers (owner change, not a
+    # world-writable 666 — wg0.conf/awg0.conf hold the server private key)
     for _f in "$_dir"/*.conf; do
         if [[ -f "$_f" ]] && [[ ! -w "$_f" ]]; then
-            sudo chmod 666 "$_f" 2>/dev/null || \
-                su-exec root chmod 666 "$_f" 2>/dev/null || true
+            sudo chown "0:$ADMIN_GID" "$_f" 2>/dev/null || \
+                su-exec root chown "0:$ADMIN_GID" "$_f" 2>/dev/null || true
+            sudo chmod 660 "$_f" 2>/dev/null || \
+                su-exec root chmod 660 "$_f" 2>/dev/null || true
         fi
     done
 done
 if [[ ! -w "outputs/bundles" ]]; then
-    log_error "Cannot write to outputs/bundles/ — try: sudo chmod 777 outputs/bundles"
+    log_error "Cannot write to outputs/bundles/ — try: sudo chown -R $(id -u):$ADMIN_GID outputs/bundles && sudo chmod -R ug+rwX,o-rwx outputs/bundles"
     exit 1
 fi
 
@@ -431,6 +456,10 @@ fi
     # -------------------------------------------------------------------------
     # Summary for this user
     # -------------------------------------------------------------------------
+    # Root-run paths (bootstrap container, host) leave root-owned files the
+    # admin app could not touch; hand the bundle + state to the admin uid with
+    # no world bits.
+    grant_admin_rw "$OUTPUT_DIR" "$STATE_DIR/users/$USERNAME"
     echo ""
     if [[ ${#ERRORS[@]} -gt 0 ]]; then
         log_error "User '$USERNAME' failed: ${ERRORS[*]}"

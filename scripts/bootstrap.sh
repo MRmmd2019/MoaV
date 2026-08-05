@@ -976,12 +976,26 @@ fi
 provision_all_users "" "/configs/sing-box/config.json" "/configs/xray/config.json" "$STATE_DIR/users"
 
 # -----------------------------------------------------------------------------
-# Fix permissions on generated configs (admin container runs as non-root uid 1000)
+# Fix permissions on generated configs. The admin app runs as uid 2000 (the old
+# `0:1000` chown targeted a gid the admin user never had — world-read was doing
+# all the work). Strip world bits from the sensitive trees; configs/monitoring
+# keeps world-read because grafana (uid 472) and prometheus (65534) read it.
 # -----------------------------------------------------------------------------
-chown -R 0:1000 /configs/ 2>/dev/null || true
-chmod -R g+r /configs/ 2>/dev/null || true
-chown -R 0:1000 /outputs/ 2>/dev/null || true
-chmod -R g+r /outputs/ 2>/dev/null || true
+chown -R "$ADMIN_UID:$ADMIN_GID" /outputs/ 2>/dev/null || true
+# configs owner stays root: cap_drop-ALL containers without DAC_OVERRIDE
+# (wireguard, amneziawg, telemt, xray) read their config as owner root.
+chown -R "0:$ADMIN_GID" /configs/ 2>/dev/null || true
+chmod -R ug+rwX /configs/ /outputs/ 2>/dev/null || true
+chmod -R o-rwx /outputs/ 2>/dev/null || true
+# wireguard/amneziawg: container-root consumers, fully locked. The other four
+# run non-root daemons that must keep world-read; only world-write is stripped.
+# `|| true`: a missing dir fails the && list, fatal under set -e
+for _d in wireguard amneziawg; do
+    [[ -d "/configs/$_d" ]] && chmod -R o-rwx "/configs/$_d" 2>/dev/null || true
+done
+for _d in sing-box xray trusttunnel telemt; do
+    [[ -d "/configs/$_d" ]] && chmod -R o+rX,o-w "/configs/$_d" 2>/dev/null || true
+done
 
 # state/keys is deliberately NOT part of the g+r pass above: the admin container
 # must read /configs and /outputs, but nothing needs group or world read on the
