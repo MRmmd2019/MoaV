@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Internal
+- **Regression tests for two security fixes that had none.** The admin CIDR-whitelist matcher is now unit-tested (13 cases incl. IPv6, family mismatch, and malformed-fails-closed) after being lifted to a module-level `ip_matches` function; and `.env` being created `0600` is now asserted at both creation sites. The whitelist bug (every CIDR entry denied everyone) had shipped untested because the repo had no Python tests.
+
 ### Fixed
 - **Five `.env` reads bypassed the config accessor, and the test that was supposed to catch them was quote-blind.** Workstream C's "no ad-hoc scrapers" gate grepped only the unquoted `cut -d= -f2`, so five sites written as `cut -d'=' -f2` passed it vacuously — including a `CLASH_API_SECRET` read that truncated any secret containing `=` (a routine base64 character), causing a perpetual "stale secret" resync. All five now use `get_env_val`; the gate matches both quoted and unquoted forms.
 
