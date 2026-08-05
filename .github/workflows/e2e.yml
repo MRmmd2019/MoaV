@@ -109,12 +109,13 @@ jobs:
           else
             sed -i "s|^DOMAIN=.*|DOMAIN=${MOAV_DOMAIN}|"             .env
             sed -i "s|^ACME_EMAIL=.*|ACME_EMAIL=${MOAV_ACME_EMAIL}|" .env
-            # NOTE: ENABLE_ANYTLS is deliberately NOT turned on here yet.
-            # Enabling it (PR #203) made `bootstrap` leave sing-box unconfigured
-            # — `moav user add` then reported "Skipping sing-box (not configured)"
-            # and every bundle came out empty, every protocol skipped. Tracked
-            # as a real AnyTLS-provisioning bug; re-enable once that is fixed and
-            # reproduced. AnyTLS therefore still has no live CI coverage.
+            # AnyTLS is on for the domain pass. The earlier failure (PR #203) was a
+            # STATE-REUSE artifact, not a provisioning bug: the default tier does not
+            # wipe the state volume, so a stale .bootstrapped made bootstrap skip config
+            # regeneration and the anytls inbound was never added. The template renders
+            # valid with AnyTLS on (verified), full/mega wipe state first, and the
+            # hollow-run guard now fails a run that tests nothing.
+            sed -i "s|^ENABLE_ANYTLS=.*|ENABLE_ANYTLS=true|" .env
           fi
           # INITIAL_USERS is a COUNT (not a name) — 1 creates the 'demouser'.
           # We add a named 'e2e-test' user after start (also exercises `user add`).
@@ -327,13 +328,12 @@ jobs:
             echo "::error::e2e connectivity test failed for $fails protocol(s)"
             exit 1
           fi
-          # HOLLOW-RUN GUARD. `skip` never counted as failure, so a broken
-          # bootstrap that left every protocol unconfigured produced all-skip
-          # and passed green — the run tested nothing. (This actually shipped:
-          # ENABLE_ANYTLS=true broke sing-box config generation, every protocol
-          # skipped, e2e stayed green.) Require the core sing-box protocols that
-          # run in EVERY domain pass to actually PASS. reality+ss also run in
-          # the domainless pass, so gate the domain-only ones on DOMAIN.
+          # HOLLOW-RUN GUARD. `skip` never counted as failure, so a broken bootstrap
+          # that left every protocol unconfigured produced all-skip and passed green,
+          # testing nothing. That shipped once and is why this guard exists. Require the
+          # core sing-box protocols that run in EVERY domain pass to actually PASS;
+          # reality+ss also run in the domainless pass, so gate the domain-only ones on
+          # DOMAIN.
           require_pass() {
             local p="$1"
             local st=$(jq -r --arg p "$p" '.tests[$p].status // "absent"' e2e-results.json)
