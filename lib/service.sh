@@ -246,6 +246,8 @@ show_status() {
     echo -e "  ${DIM}Note: certbot is a one-time service that obtains SSL certificates.${NC}"
     echo -e "  ${DIM}      Status 'Exited (0)' means it completed successfully.${NC}"
     echo ""
+    print_community_links
+    echo ""
 }
 
 # Display service selection menu and populate SELECTED_PROFILES array
@@ -768,11 +770,22 @@ repair_bundle_perms() {
 # Runs on every start: idempotent, one alpine one-shot, mirrors
 # secure_state_keys' public-file skips.
 repair_state_key_perms() {
+    # Ownership too, not just mode: live installs carry keys owned by old
+    # per-container uids (999 from the v1 dnstt image on a real server), which
+    # a cap_drop-ALL container root cannot read once 0600. The three keys read
+    # directly by non-root daemons (dnstt/masterdns/slipstream run USER moav)
+    # stay 644 — inside the volume, the mount boundary is the control.
     docker run --rm -v moav_moav_state:/state alpine sh -c '
+        [ -d /state/keys ] || exit 0
+        chown 0:0 /state/keys 2>/dev/null || true
         cd /state/keys 2>/dev/null || exit 0
         for f in *; do
             [ -f "$f" ] || continue
-            case "$f" in *.pub|*.pub.hex|*-cert.pem|*.crt|*.csr) continue ;; esac
+            chown 0:0 "$f" 2>/dev/null || true
+            case "$f" in
+                *.pub|*.pub.hex|*-cert.pem|*.crt|*.csr) chmod 644 "$f"; continue ;;
+                dnstt-server.key.hex|masterdns-encrypt.key|slipstream-key.pem) chmod 644 "$f"; continue ;;
+            esac
             chmod 600 "$f"
         done' 2>/dev/null || true
 }
@@ -948,6 +961,8 @@ start_services() {
             echo ""
         fi
         show_log_help
+        echo ""
+        print_community_links
     fi
 }
 
@@ -1254,6 +1269,8 @@ cmd_start() {
             success "Services started!"
             auto_setup_conduit_offsets
             auto_setup_cert_renew
+            echo ""
+            print_community_links
             return 0
         elif [[ -n "$individual_services" ]]; then
             warn "Ignoring individual services ($individual_services) when mixed with profiles"
@@ -1352,6 +1369,7 @@ cmd_start() {
     if echo "$profiles" | grep -qE "admin|monitoring|proxy|all"; then
         echo ""
     fi
+    print_community_links
     auto_setup_conduit_offsets
     auto_setup_cert_renew
 }

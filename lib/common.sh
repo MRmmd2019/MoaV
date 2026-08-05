@@ -60,6 +60,12 @@ version_gt() {
     return 1
 }
 
+# Footer-style community links, shown after `moav start` success and at the
+# end of `moav status`.
+print_community_links() {
+    echo -e "  ${DIM}Community: https://t.me/motherofallvpns  |  https://x.com/motherofallvpns${NC}"
+}
+
 print_header() {
     # Only clear when stdout is a TTY (avoids "TERM not set" abort under setsid).
     if [[ -t 1 ]]; then
