@@ -10,7 +10,7 @@
     },
     "cache_file": {
       "enabled": true,
-      "path": "/state/sing-box-cache.db"
+      "path": "/var/log/sing-box/sing-box-cache.db"
     }
   },
   "inbounds": [
