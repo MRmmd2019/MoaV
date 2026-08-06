@@ -790,6 +790,19 @@ repair_state_key_perms() {
         done' 2>/dev/null || true
 }
 
+# Single guarded entry for the perms repair. Every start/restart path calls this
+# so an upgraded install's old 0644 keys / mis-owned bundles get fixed no matter
+# HOW containers are brought up — the scattered per-path calls used to miss
+# `moav start <service>` and `moav restart`. Idempotent; runs its two one-shots
+# at most once per `moav` invocation (repeated calls are free).
+_PERMS_REPAIRED=""
+ensure_perms_repaired() {
+    [[ -n "$_PERMS_REPAIRED" ]] && return 0
+    _PERMS_REPAIRED=1
+    repair_state_key_perms
+    repair_bundle_perms
+}
+
 ensure_clash_api_secret() {
     local profiles="$1"
     local env_file="$SCRIPT_DIR/.env"
@@ -917,8 +930,7 @@ start_services() {
         fi
     fi
 
-    repair_state_key_perms
-    repair_bundle_perms
+    ensure_perms_repaired
 
     # Ensure CLASH_API_SECRET is configured for monitoring
     # Returns 1 if user declined monitoring when using 'all' profile
@@ -1265,6 +1277,7 @@ cmd_start() {
         # If we have individual services but no profiles, figure out which profiles they need
         if [[ -n "$individual_services" ]] && [[ -z "$profiles" ]]; then
             info "Starting individual services: $individual_services"
+            ensure_perms_repaired
             docker compose --profile all up -d $individual_services
             success "Services started!"
             auto_setup_conduit_offsets
@@ -1302,8 +1315,7 @@ cmd_start() {
         fi
     fi
 
-    repair_state_key_perms
-    repair_bundle_perms
+    ensure_perms_repaired
 
     # Ensure CLASH_API_SECRET is configured for monitoring
     # Returns 1 if user declined monitoring when using 'all' profile
@@ -1500,6 +1512,10 @@ cmd_stop() {
 }
 
 cmd_restart() {
+    # restart reuses old images but the state volume is shared: an upgraded
+    # install must still get its key/bundle perms repaired here (this path
+    # used to skip it entirely).
+    ensure_perms_repaired
     if [[ $# -eq 0 ]] || [[ "$1" == "all" ]]; then
         info "Restarting all services..."
         docker compose --profile all restart

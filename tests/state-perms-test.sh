@@ -123,13 +123,17 @@ else
     bad "the .bootstrapped guard exits before secure_state_keys — existing installs never get repaired"
 fi
 
-# Upgrades never run the bootstrap container at all, so the host start path must
-# repair the state volume itself.
-if grep -q 'repair_state_key_perms()' "$ROOT/lib/service.sh" \
-   && [[ $(grep -cE '^\s*repair_state_key_perms$' "$ROOT/lib/service.sh") -ge 2 ]]; then
-    ok "moav start paths repair state-key perms (covers upgrades)"
+# Upgrades never run the bootstrap container, so every host start/restart path
+# must repair the state volume — funnelled through one guarded ensure_perms_repaired
+# so no path (moav start <service>, moav restart) can bypass it. Assert the
+# guarded entry exists, calls the state repair, and is wired into >=4 call sites
+# (start_services, cmd_start main + individual-service branch, cmd_restart).
+if grep -q 'ensure_perms_repaired()' "$ROOT/lib/service.sh" \
+   && grep -A5 'ensure_perms_repaired()' "$ROOT/lib/service.sh" | grep -q 'repair_state_key_perms' \
+   && [[ $(grep -cE '^\s*ensure_perms_repaired$' "$ROOT/lib/service.sh") -ge 4 ]]; then
+    ok "every start/restart path repairs state-key perms via ensure_perms_repaired (>=4 sites)"
 else
-    bad "lib/service.sh start paths do not call repair_state_key_perms — upgraded installs keep 0644 keys"
+    bad "a start/restart path can bypass the perms repair (ensure_perms_repaired not wired everywhere)"
 fi
 
 # --- .env is created 0600 -------------------------------------------------------

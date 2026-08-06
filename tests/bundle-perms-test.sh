@@ -110,11 +110,14 @@ grep -q 'grant_admin_rw' "$ROOT/scripts/user-package.sh" \
 
 # Existing installs keep 777 bundles unless something repairs them: the admin
 # entrypoint covers admin-enabled installs, the host start path covers the rest.
-if grep -q 'repair_bundle_perms()' "$ROOT/lib/service.sh" \
-   && [[ $(grep -cE '^\s*repair_bundle_perms$' "$ROOT/lib/service.sh") -ge 2 ]]; then
-    ok "moav start paths repair bundle perms (covers upgrades)"
+# Funnelled through ensure_perms_repaired (calls repair_bundle_perms), which
+# every start/restart path invokes — so no path can bypass the bundle repair.
+if grep -q 'ensure_perms_repaired()' "$ROOT/lib/service.sh" \
+   && grep -A5 'ensure_perms_repaired()' "$ROOT/lib/service.sh" | grep -q 'repair_bundle_perms' \
+   && [[ $(grep -cE '^\s*ensure_perms_repaired$' "$ROOT/lib/service.sh") -ge 4 ]]; then
+    ok "every start/restart path repairs bundle perms via ensure_perms_repaired (>=4 sites)"
 else
-    bad "lib/service.sh start paths do not call repair_bundle_perms — upgraded installs keep 777 bundles"
+    bad "a start/restart path can bypass the bundle-perms repair (ensure_perms_repaired not wired everywhere)"
 fi
 
 # --- monitoring configs must stay world-readable (grafana 472 / prom 65534)
