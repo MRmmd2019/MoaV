@@ -4,7 +4,7 @@
 
 # Mother of all VPNs
 
-**Multi-protocol Internet censorship circumvention stack, optimized for hostile network environments.**
+**Many protocols, one purpose: keeping the open Internet reachable, wherever it's blocked.**
 
 [![Website](https://img.shields.io/badge/website-moav.sh-06b6d4.svg)](https://moav.sh) [![Docs](https://img.shields.io/badge/docs-moav.sh%2Fdocs-06b6d4.svg)](https://moav.sh/docs/) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?label=release&color=3b82f6)](https://github.com/MotherofallVPNs/MoaV/releases/latest) [![Pre-release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?include_prereleases&label=pre-release&color=f59e0b)](https://github.com/MotherofallVPNs/MoaV/releases)
 
