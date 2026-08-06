@@ -57,7 +57,21 @@ assert_reality_in_render() {
     local sid pk
     sid=$(source "$STATE_DIR/keys/reality.env"; printf '%s' "${REALITY_SHORT_ID:-}")
     pk=$(source "$STATE_DIR/keys/reality.env"; printf '%s' "${REALITY_PRIVATE_KEY:-}")
-    if [[ -n "$sid" ]] && ! grep -qF -- "$sid" "$cfg"; then
+    # Check the short_id is a MEMBER of a reality short_id/shortIds array, not a
+    # bare substring (an 8-hex id inside a UUID/key gives a false PASS). Use jq,
+    # not grep: the rendered config is pretty-printed, so the array spans lines
+    # ("short_id": [\n  "id"\n]) and a line-based regex can't match it. jq is
+    # available in the bootstrap container; the grep is a no-jq fallback that
+    # accepts the tiny false-pass risk over a false abort.
+    local sid_present=""
+    if [[ -n "$sid" ]]; then
+        if command -v jq >/dev/null 2>&1; then
+            jq -e --arg s "$sid" '[.inbounds[]? | (.tls.reality.short_id // .streamSettings.realitySettings.shortIds // empty)[]?] | any(. == $s)' "$cfg" >/dev/null 2>&1 && sid_present=yes
+        else
+            grep -qF -- "$sid" "$cfg" && sid_present=yes
+        fi
+    fi
+    if [[ -n "$sid" && -z "$sid_present" ]]; then
         log_error "FATAL: Reality short_id from state is absent in $cfg."
         log_error "  The render read an empty value instead of state — every Reality client"
         log_error "  would be rejected (PR #152 class). Not writing a silently-broken config."
@@ -387,9 +401,15 @@ if [[ -z "${CDN_WS_PATH:-}" || "${CDN_WS_PATH}" == "/ws" ]]; then
     _rand_mid=${_cdn_mids[$((RANDOM % ${#_cdn_mids[@]}))]}
     _rand_file=${_cdn_files[$((RANDOM % ${#_cdn_files[@]}))]}
     _rand_ext=${_cdn_exts[$((RANDOM % ${#_cdn_exts[@]}))]}
-    _rand_num=$((RANDOM % 90 + 10))
+    # Crypto-random unique segment (48 bits) via openssl, NOT bash $RANDOM — the
+    # path is an active-probing barrier for a censorship tool, and $RANDOM is a
+    # predictable 15-bit LCG. The wordlist prefixes stay for realistic
+    # camouflage; the unguessable part is the hex token.
+    _rand_num=$(openssl rand -hex 6 2>/dev/null || printf '%04x%04x%04x' $((RANDOM)) $((RANDOM)) $((RANDOM)))
     CDN_WS_PATH="/${_rand_prefix}/${_rand_mid}/${_rand_file}-${_rand_num}.${_rand_ext}"
-    log_info "Generated CDN WS path: $CDN_WS_PATH"
+    # Do not log the value — it ships in bundles but bootstrap output lands in
+    # docker logs / install transcripts that get pasted around.
+    log_info "Generated CDN WS path"
 
     # Persist for subsequent bootstraps
     mkdir -p "$STATE_DIR/keys"

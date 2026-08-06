@@ -48,7 +48,10 @@ eval "$(awk '/^assert_reality_in_render\(\) \{/,/^\}/' "$ROOT/scripts/bootstrap.
 
 WORK=$(mktemp -d)
 good="$WORK/good.json"; bad_cfg="$WORK/bad.json"
-printf '{"inbounds":[{"tls":{"reality":{"short_id":["deadbeef"],"private_key":"PRIVKEYVALUE123"}}}]}\n' > "$good"
+# Pretty-printed (multi-line) like the REAL rendered config — the array spans
+# lines ("short_id": [\n "deadbeef"\n]). A single-line fixture hid a bug where
+# a line-based grep false-aborted bootstrap on the real (jq-formatted) config.
+printf '{"inbounds":[{"tls":{"reality":{"short_id":["deadbeef"],"private_key":"PRIVKEYVALUE123"}}}]}\n' | jq . > "$good"
 printf '{"inbounds":[{"tls":{"reality":{"short_id":[""],"private_key":""}}}]}\n' > "$bad_cfg"
 
 ( assert_reality_in_render "$good" ) && ok "good config passes the assert" \
@@ -76,6 +79,21 @@ if ( assert_reality_in_render "$dash" ) 2>/dev/null; then
     ok "leading-dash private key present → passes (grep -qF -- honored)"
 else
     bad "leading-dash private key wrongly rejected — grep parsed it as an option (missing --)"
+fi
+
+# The short_id check is anchored to the short_id/shortIds JSON field, not a bare
+# substring: a config whose real short_id field is blank but where the 8-hex
+# value coincidentally appears elsewhere (e.g. inside a UUID) must still ABORT.
+cat > "$STATE_DIR/keys/reality.env" <<EOF
+REALITY_SHORT_ID=deadbeef
+REALITY_PRIVATE_KEY=PRIVKEYVALUE123
+EOF
+fp="$WORK/falsepos.json"
+printf '{"inbounds":[{"users":[{"uuid":"deadbeef-1111-2222"}],"tls":{"reality":{"short_id":[""],"private_key":"PRIVKEYVALUE123"}}}]}\n' > "$fp"
+if ( assert_reality_in_render "$fp" ) 2>/dev/null; then
+    bad "short_id in a UUID gave a false PASS — the check is an unanchored substring"
+else
+    ok "short_id present only outside its field is caught (anchored check)"
 fi
 
 # When state short_id is empty (deliberate empty-short_id setup), no false abort.
