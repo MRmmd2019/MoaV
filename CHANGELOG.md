@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **The state-key / bundle permission repair can no longer be bypassed on an upgrade (security review, item D).** The repair ran only on `moav start <profile>` and interactive start; `moav start <service>`, `moav restart`, and a couple of one-off `up` paths skipped it, so an upgraded install could keep old `0644` keys / mis-owned bundles until a full start happened to run. All start/restart paths now funnel through a single guarded `ensure_perms_repaired` (idempotent, runs its one-shots at most once per invocation), so no path can miss it.
 
+### Internal
+- **Filled the security-review test gaps.** The admin IP-whitelist test now covers the reverse family-mismatch direction (IPv6 client vs IPv4 rule, and vice-versa — must deny, never raise); the entrypoint strict-mode test pins the load-bearing `|| true` on the admin's clash-secret read (its absence crash-loops a secret-less install) and asserts the admin drops to the non-root `moav` user. Plus a migration-guide note on the uid-2000 ownership caveat for the (atypical) multi-user host.
+
 
 ### Security
 - **Hardening from the pre-v2.0.0 security review** (independent adversarial pass over the perms/secret rework since rc.2): the Reality short_id render-guard now anchors to the `short_id`/`shortIds` JSON field instead of a bare substring (an 8-hex id coincidentally appearing inside a UUID could have given a false PASS); the CDN WebSocket path is generated with a 48-bit `openssl` token instead of predictable bash `$RANDOM` (it is an active-probing barrier for a censorship tool); and its value is no longer echoed to the bootstrap log (which lands in transcripts). The review found no critical/high issues — the rc.2→now perms/secret changes are net security-positive.

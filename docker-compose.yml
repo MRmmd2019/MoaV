@@ -74,7 +74,7 @@ services:
     volumes:
       - ./configs/sing-box:/etc/sing-box:ro
       - moav_certs:/certs:ro
-      - moav_state:/state
+      - moav_state:/state:ro                       # keys read-only: sing-box must never chown the secret store (see entrypoint)
       - moav_logs:/var/log/sing-box
     environment:
       - TZ=${TZ:-UTC}
