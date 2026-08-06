@@ -47,8 +47,11 @@ echo "[sing-box] Configuration valid"
 INBOUNDS=$(grep -o '"tag"[[:space:]]*:[[:space:]]*"[^"]*"' "$RUNTIME_CONFIG" | head -10 | sed 's/"tag"[[:space:]]*:[[:space:]]*//g' | tr -d '"' | tr '\n' ', ' | sed 's/,$//' || true)
 echo "[sing-box] Inbounds: $INBOUNDS"
 
-# Fix volume ownership (volumes may be root-owned from previous runs)
-chown -R moav:moav /state /var/log/sing-box 2>/dev/null || true
+# Make the log/cache volume moav-writable. /state is mounted read-only and is
+# NOT chowned: a recursive chown here swept in /state/keys/* and downgraded every
+# state secret from root:root to the moav uid on each start, defeating the
+# ownership hardening. sing-box's only /state need (its cache db) now lives here.
+chown -R moav:moav /var/log/sing-box 2>/dev/null || true
 
 # Copy certs to a moav-readable location (originals are root:root 600, volume is read-only)
 if [ -d /certs/live ]; then
@@ -66,6 +69,11 @@ chown -R moav:moav /tmp/certs 2>/dev/null || true
 
 # Rewrite cert paths in config to use the moav-readable copy
 sed -i 's|/certs/|/tmp/certs/|g' "$RUNTIME_CONFIG"
+
+# Relocate the cache db off the now-read-only /state onto the moav-writable log
+# volume. Rewriting the runtime copy self-heals existing installs whose rendered
+# config still points the cache at /state (no re-bootstrap needed).
+sed -i 's|/state/sing-box-cache.db|/var/log/sing-box/sing-box-cache.db|g' "$RUNTIME_CONFIG"
 
 # Run sing-box as non-root
 echo "[sing-box] Starting proxy server..."
