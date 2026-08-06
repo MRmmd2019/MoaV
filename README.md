@@ -1,10 +1,42 @@
-# MoaV
+<div align="center">
 
-[![Website](https://img.shields.io/badge/website-moav.sh-cyan.svg)](https://moav.sh)  [![Docs](https://img.shields.io/badge/docs-moav.sh%2Fdocs-cyan.svg)](https://moav.sh/docs/)  [![Version](https://img.shields.io/badge/version-1.9.0-blue.svg)](CHANGELOG.md)  [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)  [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns)  [![Twitter](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
+<img src="branding/logo.png" alt="MoaV logo" width="130">
 
-English | **[فارسی](README-fa.md)** 
+# Mother of all VPNs
 
-Multi-protocol Internet censorship circumvention stack optimized for hostile network environments.
+**Multi-protocol Internet censorship circumvention stack, optimized for hostile network environments.**
+
+[![Website](https://img.shields.io/badge/website-moav.sh-06b6d4.svg)](https://moav.sh) [![Docs](https://img.shields.io/badge/docs-moav.sh%2Fdocs-2563eb.svg)](https://moav.sh/docs/) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV/releases/latest) [![Pre-release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?include_prereleases&label=pre-release&color=f59e0b&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV/releases)
+
+[![Protocols](https://img.shields.io/badge/protocols-16%2B-ef4444.svg)](#protocols) [![AI agents](https://img.shields.io/badge/AI_agents-AGENTS.md-8b5cf6.svg)](AGENTS.md) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Stars](https://img.shields.io/github/stars/MotherofallVPNs/MoaV?style=social)](https://github.com/MotherofallVPNs/MoaV/stargazers) [![Forks](https://img.shields.io/github/forks/MotherofallVPNs/MoaV?style=social)](https://github.com/MotherofallVPNs/MoaV/network/members) [![Last commit](https://img.shields.io/github/last-commit/MotherofallVPNs/MoaV/dev?label=last%20commit&color=64748b)](https://github.com/MotherofallVPNs/MoaV/commits/dev)
+
+🇬🇧 [English](README.md) &nbsp;·&nbsp; 🇮🇷 [فارسی](README-fa.md)
+
+Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** community.
+
+**Local client:** **[moav-client](https://github.com/MotherofallVPNs/moav-client)** — the desktop/CLI app that ingests a MoaV subscription bundle and picks the best live endpoint.
+
+</div>
+
+---
+
+## Table of Contents
+
+**Links** &nbsp;·&nbsp; [Website](https://moav.sh) &nbsp;·&nbsp; [Docs](https://moav.sh/docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns) &nbsp;·&nbsp; [moav-client](https://github.com/MotherofallVPNs/moav-client)
+
+**Get started** &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements)
+
+**Use it** &nbsp;·&nbsp; [User Management](#user-management) &nbsp;·&nbsp; [Admin Dashboard & Monitoring](#admin-dashboard--monitoring) &nbsp;·&nbsp; [Service Management](#service-management) &nbsp;·&nbsp; [Testing](#testing) &nbsp;·&nbsp; [Client Apps](#client-apps)
+
+**Under the hood** &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Protocols](#protocols) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Documentation](#documentation)
+
+**Operate** &nbsp;·&nbsp; [Server Migration](#server-migration) &nbsp;·&nbsp; [Security](#security)
+
+**More** &nbsp;·&nbsp; [License](#license) &nbsp;·&nbsp; [Changelog](#changelog) &nbsp;·&nbsp; [Community & Support](#community--support) &nbsp;·&nbsp; [Disclaimer](#disclaimer)
+
+---
 
 ## Features
 
