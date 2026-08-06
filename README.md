@@ -38,6 +38,10 @@ Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** commu
 
 ---
 
+![How it works](https://github.com/user-attachments/assets/60e1726f-2733-4d49-9fa2-30be8c2dbeb5)
+
+---
+
 ## Features
 
 - **Multiple protocols** — 16+ protocols covering every censorship scenario:
