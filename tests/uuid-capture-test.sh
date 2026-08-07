@@ -1,78 +1,94 @@
 #!/bin/bash
-# Regression test: user UUID capture must never yield two UUIDs.
+# Regression test: user credential generation must be local and single-valued,
+# and the add path must survive an unreadable .env.
 #
-# `moav user add` generated the UUID as:
-#   USER_UUID=$(compose_timeout exec -T sing-box sing-box generate uuid \
-#              2>/dev/null || uuidgen | tr ...)
-# When the box was contended the `docker compose exec` emitted a UUID and THEN
-# the timeout wrapper killed it (non-zero), so the `|| uuidgen` fallback ran too
-# and appended a SECOND UUID. USER_UUID became two lines, which:
-#   - corrupts credentials.env — the bare second UUID is sourced as a command
-#     ("<uuid>: command not found"), failing bootstrap and regenerate-users;
-#   - crash-loops xray/sing-box — the two-line UUID is rejected ("invalid UUID").
-# The fix takes the FIRST uuid-shaped token and validates it, falling back to
-# uuidgen only when nothing valid was produced.
+# Two live failures on `moav user add`, same root: generating the UUID via
+# `docker compose exec sing-box sing-box generate uuid` tied a pure-local
+# operation to docker-daemon health.
+#   1. Contended exec emitted a UUID and THEN got killed by the timeout wrapper;
+#      the `|| uuidgen` fallback ran too and appended a SECOND UUID. Two-line
+#      USER_UUID -> corrupt credentials.env (the bare second UUID is sourced as
+#      a command), failed bootstrap/regenerate-users, xray crash-loop.
+#   2. With the fallback removed, set -e/pipefail turned any exec failure (e.g.
+#      sing-box restarting from the PREVIOUS add's hot-reload fallback) into a
+#      silent instant death: "Failed to add sing-box user" with no detail.
+# Fix: generate the UUID locally (/proc/sys/kernel/random/uuid, uuidgen
+# fallback) — any RFC-4122 v4 UUID is valid for VLESS/VMess; the exec bought
+# nothing. Validate before use.
+#
+# Related: .env is root 0600, so the admin container (uid 2000) cannot read the
+# mounted copy — user-add.sh printed "sed: .env: Permission denied". The read is
+# now gated on -r, and compose injects .env via env_file (read host-side).
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 f="$ROOT/scripts/singbox-user-add.sh"
+ua="$ROOT/scripts/user-add.sh"
+compose="$ROOT/docker-compose.yml"
 pass=0; fail=0
 ok()  { printf '  ok    %s\n' "$1"; pass=$((pass+1)); }
 bad() { printf '  FAIL  %s\n' "$1"; fail=$((fail+1)); }
 
-echo "user UUID capture tests"
+echo "user credential generation tests"
 
-UUID_RE='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+UUID_RE='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
-# --- static: the fragile 'exec ... || uuidgen' one-liner must be gone ---------
-if grep -qE 'generate uuid[^|]*\|\| *uuidgen' "$f"; then
-    bad "still has 'exec generate uuid || uuidgen' — a timed-out exec + fallback double-captures"
+# --- UUID generation is local: no docker/compose exec involved ---------------
+if grep -nE 'USER_UUID=.*(compose|docker).*exec' "$f" >/dev/null; then
+    bad "USER_UUID still generated via a container exec — ties user add to docker-daemon health"
 else
-    ok "no 'exec generate uuid || uuidgen' double-capture one-liner"
-fi
-# and the capture must validate the UUID shape before trusting it
-if grep -qE '\[\[ ! "\$USER_UUID" =~' "$f" || grep -qE 'USER_UUID.*=~.*36' "$f"; then
-    ok "USER_UUID is validated before use"
-else
-    bad "USER_UUID is not validated — a malformed value would propagate to configs"
+    ok "USER_UUID is generated locally (no container exec)"
 fi
 
-# --- functional: the sanitizer collapses any output to one valid UUID ---------
-# Mirror the exact fix pipeline and feed it the failure inputs.
-sanitize() {
-    local raw="$1" u
-    u=$(printf '%s' "$raw" | grep -oiE "$UUID_RE" | head -1)
-    if [[ ! "$u" =~ ^[0-9a-fA-F-]{36}$ ]]; then
-        u=$(uuidgen | tr '[:upper:]' '[:lower:]')
+# --- the double-capture shape must never return: a generator that can emit
+# --- output AND fail, chained with || to a second generator -------------------
+if grep -nE 'generate uuid[^|]*\|\| *uuidgen' "$f" >/dev/null; then
+    bad "'exec generate uuid || uuidgen' is back — a timed-out exec double-captures"
+else
+    ok "no exec-then-uuidgen double-capture chain"
+fi
+
+# --- validated before use, with a loud failure path ---------------------------
+grep -qE '\[\[ ! "\$USER_UUID" =~' "$f" \
+    && ok "USER_UUID is validated before use" \
+    || bad "USER_UUID is not validated — a malformed value would reach configs"
+grep -qE 'Could not generate a UUID' "$f" \
+    && ok "generation failure is a loud error, not a silent set -e death" \
+    || bad "no explicit error when no UUID generator exists"
+
+# --- functional: run the exact generation line; must be ONE valid UUID --------
+gen() { cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || true; }
+allok=true
+for i in 1 2 3; do
+    u=$(gen)
+    if ! { [[ "$(printf '%s' "$u" | wc -l)" -eq 0 ]] && printf '%s' "$u" | grep -qE "$UUID_RE"; }; then
+        bad "generation run $i produced invalid output: [$u]"
+        allok=false
+        break
     fi
-    printf '%s' "$u"
-}
-one_line() { [[ "$(printf '%s' "$1" | wc -l)" -eq 0 ]] && [[ -n "$1" ]]; }
+done
+$allok && ok "local generation yields exactly one valid lowercase UUID (3/3 runs)"
 
-# two UUIDs (the bug) -> exactly one, and it's the first
-two=$'ea901364-3597-4598-8628-161a381b63cf\n7f90d9d8-83a5-4e0d-b963-a1a8d268ea48'
-r=$(sanitize "$two")
-if one_line "$r" && [[ "$r" == "ea901364-3597-4598-8628-161a381b63cf" ]]; then
-    ok "two-line output collapses to the first single UUID"
-else
-    bad "two-line output not collapsed cleanly (got: $r)"
-fi
+# --- .env read survives the 0600 perms in the admin container -----------------
+# EVERY provisioning script the admin container runs must gate its .env read on
+# -r, not just -f: the first fix only covered user-add.sh and the web add still
+# died in singbox-user-add.sh's own `source .env` (line: ".env: Permission
+# denied" -> set -e death -> "Failed to add sing-box user").
+for s in user-add.sh singbox-user-add.sh wg-user-add.sh user-revoke.sh user-package.sh; do
+    sf="$ROOT/scripts/$s"
+    if grep -qE '\[\[ -f \.env \]\]' "$sf"; then
+        bad "$s reads .env with only -f — unreadable 0600 .env kills it in the admin container"
+    elif grep -qE '\-f \.env && -r \.env' "$sf"; then
+        ok "$s gates its .env read on readability (-r)"
+    else
+        ok "$s has no unguarded .env read"
+    fi
+done
 
-# empty output -> a freshly generated valid UUID
-r=$(sanitize "")
-if one_line "$r" && [[ "$r" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
-    ok "empty output falls back to a valid single UUID"
-else
-    bad "empty output did not fall back to a valid UUID (got: $r)"
-fi
-
-# already-clean single UUID -> unchanged
-r=$(sanitize "2b2a0db8-b379-4ae6-a524-c6d37f78119b")
-if [[ "$r" == "2b2a0db8-b379-4ae6-a524-c6d37f78119b" ]]; then
-    ok "a clean single UUID passes through unchanged"
-else
-    bad "a clean single UUID was altered (got: $r)"
-fi
+# compose must hand the admin container the full .env via env_file instead
+awk '/^  admin:$/{f=1; next} f && /^  [a-z0-9_-]+:$/{f=0} f && /env_file:/{found=1} END{exit !found}' "$compose" \
+    && ok "compose injects .env into the admin container via env_file" \
+    || bad "admin service has no env_file — web-admin adds lose the ENABLE_*/PORT_* toggles"
 
 echo
 echo "  $pass passed, $fail failed"

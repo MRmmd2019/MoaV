@@ -834,6 +834,15 @@ services:
       - ./state:/project/state                     # Credential sync (read-write for user-add.sh)
       - moav_state:/state:ro                       # Dashboard reads keys from Docker volume
       - moav_certs:/certs:ro                       # SSL certificates
+    # .env is root:root 0600 (holds ADMIN_PASSWORD), so the non-root admin
+    # process cannot read the mounted copy that provisioning scripts source.
+    # env_file injects the full .env as process environment instead — read
+    # host-side (as root) at `up` time, so the file perms don't matter and the
+    # ENABLE_*/PORT_* toggles keep working in the web-admin user-add path.
+    # Explicit `environment:` entries below still take precedence.
+    env_file:
+      - path: .env
+        required: false
     environment:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_IP_WHITELIST=${ADMIN_IP_WHITELIST:-}

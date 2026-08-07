@@ -49,7 +49,10 @@ if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
 fi
 
 # Load environment
-if [[ -f .env ]]; then
+# -r too: .env is root 0600; in the admin container (uid 2000) it exists but
+# is unreadable -- source would die with "Permission denied" under set -e. The
+# container gets the full .env via the compose env_file instead.
+if [[ -f .env && -r .env ]]; then
     set -a
     source .env
     set +a
@@ -87,18 +90,17 @@ fi
 log_info "Adding user '$USERNAME' to sing-box..."
 
 # Generate credentials.
-# Robust against a slow `docker compose exec` that emits a UUID *and then* gets
-# killed by the timeout wrapper (returns non-zero): the old `... || uuidgen`
-# fallback then ran too and appended a SECOND UUID, so USER_UUID became two
-# lines. That poisons everything downstream — credentials.env sources the bare
-# second UUID as a command ("command not found", failing bootstrap/regenerate),
-# and xray/sing-box reject the two-line UUID and crash-loop. Take the FIRST
-# UUID-shaped token from the output, then validate; only fall back to uuidgen if
-# nothing valid came out.
-USER_UUID=$(compose_timeout exec -T sing-box sing-box generate uuid 2>/dev/null \
-    | grep -oiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
-if [[ ! "$USER_UUID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
-    USER_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+# LOCALLY — never via `docker compose exec sing-box generate uuid`. Any RFC-4122
+# v4 UUID is valid for VLESS/VMess; the exec bought nothing and was the root of
+# two real failures: (a) emitting a UUID and THEN getting killed by the timeout
+# wrapper, whose old `|| uuidgen` fallback then appended a SECOND UUID (two-line
+# USER_UUID -> corrupt credentials.env, failed bootstrap/regenerate, xray crash
+# loop); (b) under set -e/pipefail, a restarting sing-box (hot-reload fallback
+# from the PREVIOUS add) made the exec fail and killed this script silently.
+USER_UUID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+if [[ ! "$USER_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+    log_error "Could not generate a UUID (no /proc/sys/kernel/random/uuid or uuidgen)"
+    exit 1
 fi
 USER_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)
 

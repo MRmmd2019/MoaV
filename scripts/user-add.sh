@@ -145,13 +145,18 @@ for _f in configs/sing-box/config.json configs/xray/config.json \
     fi
 done
 
-# Load environment
-if [[ -f .env ]]; then
+# Load environment.
+# -r, not just -f: .env is root-owned 0600 (it holds ADMIN_PASSWORD), so inside
+# the admin container (uid 2000, /project mounted ro) it exists but is NOT
+# readable — the unguarded sed printed "sed: .env: Permission denied" and, under
+# set -e, could kill the add. In the container the full .env is injected as
+# process environment via the compose env_file instead, so skipping the file
+# read there loses nothing.
+if [[ -f .env && -r .env ]]; then
     # Auto-heal: GOPROXY's value is pipe-separated (proxy|proxy|direct). If the
     # line is unquoted (older .env files), `source` below parses the `|` as a
     # shell pipe and tries to run the URLs as commands. Heal in a tempfile —
-    # works even when .env is on a RO mount (admin container), and we only
-    # persist the heal back to .env when it's writable (CLI on the host).
+    # we only persist the heal back to .env when it's writable (CLI on the host).
     _ENV_TMP=$(mktemp)
     sed -E '/^GOPROXY=[^"]*\|/ s/^GOPROXY=(.*)$/GOPROXY="\1"/' .env > "$_ENV_TMP"
     if [[ -w .env ]] && ! cmp -s "$_ENV_TMP" .env; then
