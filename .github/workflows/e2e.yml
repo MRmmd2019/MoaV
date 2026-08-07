@@ -227,13 +227,18 @@ jobs:
           # #220 regression: the AmneziaWG/WireGuard adds must COMPLETE (every
           # container call now has a deadline — a wedged exec used to freeze
           # `user add` forever) AND produce their client configs when enabled.
+          # Configs are named moav-<server>-awg.conf / -wg.conf (clients take the
+          # tunnel name from the filename); the plain names are what pre-rename
+          # bundles used. Accept either so this asserts "a config was produced",
+          # not "a particular filename spelling".
+          _have() { compgen -G "outputs/bundles/e2e-test/$1" >/dev/null; }
           if grep -qE '^ENABLE_AMNEZIAWG=true' .env; then
-            test -f outputs/bundles/e2e-test/amneziawg.conf \
-              || { echo "::error::AmneziaWG enabled but user add produced no amneziawg.conf (#220 regression)"; exit 1; }
+            _have 'moav-*-awg.conf' || _have 'amneziawg.conf' \
+              || { echo "::error::AmneziaWG enabled but user add produced no AmneziaWG config (#220 regression)"; exit 1; }
           fi
           if grep -qE '^ENABLE_WIREGUARD=true' .env; then
-            test -f outputs/bundles/e2e-test/wireguard.conf \
-              || { echo "::error::WireGuard enabled but user add produced no wireguard.conf"; exit 1; }
+            _have 'moav-*-wg.conf' || _have 'wireguard.conf' \
+              || { echo "::error::WireGuard enabled but user add produced no WireGuard config"; exit 1; }
           fi
 
       - name: Regression — added user survives a re-bootstrap (orphan guard)

@@ -131,6 +131,23 @@ for f in wireguard amneziawg; do
     fi
 done
 
+# --- the e2e workflow asserts on bundle contents too -------------------------
+# Missed in the first audit (which only swept scripts/ lib/ admin/ tests/) and
+# caught by e2e itself: the workflow test -f'd amneziawg.conf, so a correctly
+# renamed bundle failed with "AmneziaWG enabled but user add produced no
+# amneziawg.conf". Assert on "a config exists", not on one spelling.
+E2E="$ROOT/.github/workflows/e2e.yml"
+if [ -f "$E2E" ]; then
+    if grep -qE "test -f outputs/bundles/[^ ]*/(wireguard|amneziawg)\.conf" "$E2E"; then
+        bad "e2e.yml still asserts a literal wireguard/amneziawg.conf filename"
+    else
+        ok "e2e.yml does not assert a literal pre-rename filename"
+    fi
+    grep -q "moav-\*-awg.conf" "$E2E" && grep -q "moav-\*-wg.conf" "$E2E" \
+        && ok "e2e.yml accepts the renamed wg and awg configs" \
+        || bad "e2e.yml does not accept the renamed configs — every e2e run will fail"
+fi
+
 # --- the integration harnesses must not report success when they cannot run --
 # client-test.sh used declare -A (bash 4) and, on bash 3.2, died at that line
 # and still exited 0: a crashed run reporting "all protocols fine".
