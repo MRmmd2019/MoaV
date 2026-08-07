@@ -86,8 +86,20 @@ fi
 
 log_info "Adding user '$USERNAME' to sing-box..."
 
-# Generate credentials
-USER_UUID=$(compose_timeout exec -T sing-box sing-box generate uuid 2>/dev/null || uuidgen | tr '[:upper:]' '[:lower:]')
+# Generate credentials.
+# Robust against a slow `docker compose exec` that emits a UUID *and then* gets
+# killed by the timeout wrapper (returns non-zero): the old `... || uuidgen`
+# fallback then ran too and appended a SECOND UUID, so USER_UUID became two
+# lines. That poisons everything downstream — credentials.env sources the bare
+# second UUID as a command ("command not found", failing bootstrap/regenerate),
+# and xray/sing-box reject the two-line UUID and crash-loop. Take the FIRST
+# UUID-shaped token from the output, then validate; only fall back to uuidgen if
+# nothing valid came out.
+USER_UUID=$(compose_timeout exec -T sing-box sing-box generate uuid 2>/dev/null \
+    | grep -oiE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+if [[ ! "$USER_UUID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
+    USER_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+fi
 USER_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)
 
 # Save credentials

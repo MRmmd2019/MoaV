@@ -80,12 +80,39 @@ wg_pubkey() {
     printf '%s' "${1:-}" | "${_keys_prefix[@]}" "$_keys_bin" pubkey 2>/dev/null | tr -d '\r\n'
 }
 
+# Force the docker-run-on-local-image generator, bypassing the running-container
+# `docker exec` path. Used as a retry when exec yields nothing — a container that
+# IS running but whose exec was killed under docker-daemon contention (e.g. the
+# sing-box restart mid `user add`) otherwise leaves no key and no fallback.
+_keys_force_run() {
+    local t=() pair svc bin cname img
+    command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 60)
+    for pair in "wireguard wg" "amneziawg awg"; do
+        svc=${pair% *}; bin=${pair#* }; cname="moav-$svc"
+        img=$("${t[@]}" docker inspect -f '{{.Config.Image}}' "$cname" 2>/dev/null)
+        if [[ -n "$img" ]]; then
+            _keys_bin="$bin"; _keys_prefix=("${t[@]}" docker run --rm -i --entrypoint "" "$img"); _keys_resolved=1; return 0
+        fi
+    done
+    return 1
+}
+
 # wg_keypair — emit "<private>\n<public>" (both CRLF-clean). Returns 1 if no
 # generator produced a key. Callers: { read -r PRIV; read -r PUB; } < <(wg_keypair)
 wg_keypair() {
     local priv pub
     priv=$(wg_privkey)
     pub=$(wg_pubkey "$priv")
+    if [[ -z "$priv" || -z "$pub" ]]; then
+        # The resolved generator produced nothing. If it was a `docker exec` into
+        # a running-but-contended container that got killed, retry once on the
+        # local image via `docker run` (independent of container liveness/exec).
+        _keys_resolved=""
+        if _keys_force_run; then
+            priv=$(wg_privkey)
+            pub=$(wg_pubkey "$priv")
+        fi
+    fi
     [[ -n "$priv" && -n "$pub" ]] || return 1
     printf '%s\n%s\n' "$priv" "$pub"
 }
