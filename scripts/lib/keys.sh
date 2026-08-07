@@ -120,9 +120,12 @@ _keys_resolve() {
 }
 
 # wg_privkey — emit one CRLF-clean private key.
+# `< /dev/null`: genkey reads no input, and `docker exec -i` against the
+# operator's TTY blocks until the timeout kills it (25s, empty output) — the
+# original "no wg/awg key generator available" on an interactive `moav user add`.
 wg_privkey() {
     _keys_resolve
-    "${_keys_prefix[@]}" "$_keys_bin" genkey 2>/dev/null | tr -d '\r\n'
+    "${_keys_prefix[@]}" "$_keys_bin" genkey </dev/null 2>/dev/null | tr -d '\r\n'
 }
 
 # wg_pubkey <private-key> — derive the CRLF-clean public key from a private key.

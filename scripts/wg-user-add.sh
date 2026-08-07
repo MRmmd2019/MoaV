@@ -117,7 +117,12 @@ SERVER_PUBLIC_KEY=""
 
 # If WireGuard is running, get the actual public key and sync it
 if svc_running wireguard; then
-    SERVER_PUBLIC_KEY=$(svc_exec wireguard wg show wg0 public-key 2>/dev/null | tr -d '\r\n')
+    # `|| true`: a plain assignment propagates the command substitution's exit
+    # status, and under set -e + pipefail a failed container call kills the
+    # script HERE — silently, mid-add. The operator saw only "Added WireGuard
+    # peer for X" then "Failed to add WireGuard peer" with no reason. The
+    # fallback below already handles an empty value.
+    SERVER_PUBLIC_KEY=$(svc_exec wireguard wg show wg0 public-key 2>/dev/null | tr -d '\r\n' || true)
     if [[ -n "$SERVER_PUBLIC_KEY" ]]; then
         # Best-effort sync to server.pub. If the caller (e.g. the admin container
         # running as uid 1000) only has read perms on configs/ — set by bootstrap
