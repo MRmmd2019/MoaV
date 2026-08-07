@@ -72,10 +72,11 @@ _keys_bin=""
 _keys_prefix=()   # command prefix as an array (empty for a local binary)
 _keys_resolve() {
     [[ -n "$_keys_resolved" ]] && return 0
-    # 60s, not 20: keygen is instant, but on a small box (1 vCPU / 1 GB) right
-    # after `moav start` the exec's cold-start under container-boot contention
-    # blew a 20s budget, so `moav user add` reported "no key generator" for
-    # wg/awg even though the container was healthy. Seen live on bitchat.
+    # 60s, not 20. The "no key generator on a healthy container" reports that
+    # originally motivated this budget turned out to be the TTY hang (see
+    # wg_privkey), not slowness — but keep the generous deadline: it only ever
+    # applies to a genuinely wedged container, and the openssl path above means
+    # nothing waits on it in the normal case.
     local t=()
     command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 60)
     if command -v wg >/dev/null 2>&1; then
@@ -95,14 +96,11 @@ _keys_resolve() {
             _keys_bin="$bin"; _keys_prefix=("${t[@]}" docker exec -i "$cname"); _keys_resolved=1; return 0
         fi
     done
-    # No wg/awg container is RUNNING yet — the common case in the post-`moav
-    # start`/upgrade boot window, and exactly why `moav user add` reported "no
-    # key generator" while the web admin (hitting it seconds later, containers
-    # up) succeeded. Fall back to a one-shot `docker run` on the SAME
-    # locally-built image the container uses — resolved FROM the container so we
-    # don't guess the compose-auto-named image, works whether it is stopped or
-    # still booting, and it is always present after `moav build`. wg genkey and
-    # awg genkey are format-compatible, so either image's binary serves both.
+    # No wg/awg container running (stopped, or still booting after `moav
+    # start`). Fall back to a one-shot `docker run` on the SAME locally-built
+    # image the container uses — resolved FROM the container so we don't guess
+    # the compose-auto-named image, and always present after `moav build`.
+    # wg genkey and awg genkey are format-compatible, so either serves both.
     # (The old fallback ran lscr.io/linuxserver/wireguard: normally not pulled —
     # so it failed offline — and it ships wg but not awg, so AmneziaWG always
     # died here regardless.)
@@ -144,23 +142,6 @@ wg_pubkey() {
     printf '%s' "${1:-}" | "${_keys_prefix[@]}" "$_keys_bin" pubkey 2>/dev/null | tr -d '\r\n'
 }
 
-# Force the docker-run-on-local-image generator, bypassing the running-container
-# `docker exec` path. Used as a retry when exec yields nothing — a container that
-# IS running but whose exec was killed under docker-daemon contention (e.g. the
-# sing-box restart mid `user add`) otherwise leaves no key and no fallback.
-_keys_force_run() {
-    local t=() pair svc bin cname img
-    command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 60)
-    for pair in "wireguard wg" "amneziawg awg"; do
-        svc=${pair% *}; bin=${pair#* }; cname="moav-$svc"
-        img=$("${t[@]}" docker inspect -f '{{.Config.Image}}' "$cname" 2>/dev/null)
-        if [[ -n "$img" ]]; then
-            _keys_bin="$bin"; _keys_prefix=("${t[@]}" docker run --rm -i --entrypoint "" "$img"); _keys_resolved=1; return 0
-        fi
-    done
-    return 1
-}
-
 # wg_keypair — emit "<private>\n<public>" (both CRLF-clean). Returns 1 if no
 # generator produced a key. Callers: { read -r PRIV; read -r PUB; } < <(wg_keypair)
 wg_keypair() {
@@ -171,24 +152,19 @@ wg_keypair() {
         priv=$(wg_privkey)
         pub=$(wg_pubkey "$priv")
     fi
-    # 2. openssl, entirely local. This is what makes the host CLI reliable: no
-    #    container, no docker daemon, nothing to time out or be mid-restart.
+    # 2. openssl, entirely local — no container, nothing to wedge or time out.
+    #    This is the path the host CLI actually takes.
     if [[ -z "${priv:-}" || -z "${pub:-}" ]] && kp=$(_keys_openssl_keypair); then
         priv=$(printf '%s' "$kp" | head -1)
         pub=$(printf '%s' "$kp" | tail -1)
     fi
-    # 3. Last resort: the containers (running exec, else a one-shot docker run).
+    # 3. Last resort, for a box with neither wg/awg nor openssl: whatever
+    #    _keys_resolve finds (running container exec, else a one-shot docker run
+    #    on the local image).
     if [[ -z "${priv:-}" || -z "${pub:-}" ]]; then
         _keys_resolved=""
         priv=$(wg_privkey)
         pub=$(wg_pubkey "$priv")
-    fi
-    if [[ -z "${priv:-}" || -z "${pub:-}" ]]; then
-        _keys_resolved=""
-        if _keys_force_run; then
-            priv=$(wg_privkey)
-            pub=$(wg_pubkey "$priv")
-        fi
     fi
     [[ -n "${priv:-}" && -n "${pub:-}" ]] || return 1
     printf '%s\n%s\n' "$priv" "$pub"

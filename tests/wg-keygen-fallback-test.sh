@@ -1,22 +1,32 @@
 #!/bin/bash
-# Regression test: wg/awg key generation must survive the wg/awg container not
-# being reachable via `docker exec`.
+# Regression tests for `moav user add` failing on WireGuard/AmneziaWG with
+# "no wg/awg key generator available".
 #
-# `moav user add` generates client keys through scripts/lib/keys.sh. When the
-# wireguard/amneziawg container is running it `docker exec`s into it; otherwise
-# it falls back. The old fallback ran `docker run lscr.io/linuxserver/wireguard`,
-# which (a) is normally NOT pulled on the server, so it failed offline, and
-# (b) ships `wg` but NOT `awg`, so AmneziaWG keygen could never work through it.
-# Live symptom: `moav user add` reported "no wg/awg key generator available" for
-# wireguard AND amneziawg (the resolver's live `docker ps` check flaked under the
-# daemon contention from the sing-box restart earlier in the same add), while the
-# web admin — hitting the same code seconds later — succeeded.
+# THE ROOT CAUSE was stdin being a TTY. `docker exec -i` and `docker compose
+# exec` attach stdin; when stdin is the operator's terminal the exec blocks
+# reading it until the timeout kills it. Measured on a live box, same command,
+# same container:
 #
-# The fix: fall back to a one-shot `docker run` on the SAME locally-built image
-# the container uses, resolved FROM the container (compose auto-names it) with the
-# entrypoint cleared so the wg/awg binary runs. Always present after `moav build`;
-# wg/awg keys are format-compatible. Functional coverage is in the e2e (real
-# containers); this pins the shape that made the fix correct.
+#   docker exec -i … wg show wg0 public-key   (TTY stdin)  -> rc=137, 25s, EMPTY
+#   docker exec -i … wg show wg0 public-key   (</dev/null) -> rc=0,  220ms, key
+#   docker compose exec -T … (the older form) (TTY stdin)  -> 25s, EMPTY
+#
+# So from an interactive shell EVERY container call in the add path silently
+# timed out — keygen, the server public-key read, the hot reloads — while the
+# dashboard, CI and any script (no TTY) always worked. That asymmetry is what
+# made this look like load, timing or permissions for so long.
+#
+# Two independent hardenings are pinned here:
+#   1. stdin is never a TTY for a container exec (compose_timeout, svc_exec,
+#      wg_privkey redirect from /dev/null when `[ -t 0 ]`);
+#   2. keygen does not need a container at all — wg/awg keys ARE X25519 keys,
+#      so openssl mints them locally. Verified live: openssl-derived public keys
+#      are byte-identical to `wg pubkey`/`awg pubkey` for the same private key.
+#
+# Also covered: the old `docker run lscr.io/linuxserver/wireguard` fallback
+# (normally not pulled, and ships `wg` but not `awg`), and the dashboard gate
+# that silently skipped WireGuard. Functional coverage against real containers
+# lives in the e2e.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -111,6 +121,74 @@ for s in user-add.sh wg-user-add.sh; do
         ok "$s uses container-name helpers for wg/awg/sing-box"
     fi
 done
+
+# --- 8. THE ROOT CAUSE: stdin must never be a TTY for a container exec --------
+COMMON="$ROOT/scripts/lib/common.sh"
+for fn in compose_timeout svc_exec; do
+    if awk "/^${fn}\(\)/,/^}/" "$COMMON" | grep -q '\[ -t 0 \]' \
+    && awk "/^${fn}\(\)/,/^}/" "$COMMON" | grep -q '< */dev/null'; then
+        ok "$fn closes stdin when it is a TTY"
+    else
+        bad "$fn can hand the operator's TTY to a container exec — it will hang until the timeout, empty"
+    fi
+done
+grep -q 'genkey </dev/null' "$KEYS" \
+    && ok "wg_privkey runs genkey with stdin closed" \
+    || bad "wg_privkey leaves stdin attached — genkey hangs on a TTY"
+
+# The assignment that turned a failed container call into a silent mid-add death.
+grep -qE 'SERVER_PUBLIC_KEY=\$\(svc_exec[^)]*\|\| true\)' "$ROOT/scripts/wg-user-add.sh" \
+    && ok "SERVER_PUBLIC_KEY assignment cannot kill the script under set -e" \
+    || bad "unguarded SERVER_PUBLIC_KEY=\$(...) — a failed exec kills the add with no message"
+
+# Functional: run a snippet under a REAL pty that never sends EOF (exactly the
+# operator's terminal), and see whether it returns. `cat` stands in for the
+# container exec: both read stdin until EOF. The guarded form must return; the
+# unguarded form must block. Asserting BOTH directions is the point — a probe
+# that only checks the guarded case passes even when it proves nothing (an
+# earlier `script -qec … </dev/null` version did exactly that: the closed stdin
+# gave an instant EOF, so the unguarded form "passed" too).
+_pty_returns() {  # $1 = shell snippet; 0 = returned in time, 1 = blocked
+    python3 - "$1" <<'PY' >/dev/null 2>&1
+import os, pty, select, sys
+snippet = sys.argv[1]
+pid, fd = pty.fork()
+if pid == 0:                       # child: stdin IS a tty, and nothing ever writes to it
+    os.execvp("bash", ["bash", "-c", snippet])
+buf = b""
+deadline = 3.0
+while deadline > 0:
+    r, _, _ = select.select([fd], [], [], 0.25)
+    deadline -= 0.25
+    if r:
+        try:
+            chunk = os.read(fd, 1024)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        if b"RETURNED" in buf:
+            break
+os.kill(pid, 9); os.waitpid(pid, 0)
+sys.exit(0 if b"RETURNED" in buf else 1)
+PY
+}
+if command -v python3 >/dev/null 2>&1; then
+    guarded='f(){ if [ -t 0 ]; then cat < /dev/null; else cat; fi; }; f; echo RETURNED'
+    unguarded='f(){ cat; }; f; echo RETURNED'
+    if _pty_returns "$guarded"; then
+        if _pty_returns "$unguarded"; then
+            bad "pty probe is not discriminating (the unguarded form returned too) — it proves nothing"
+        else
+            ok "under a real pty: guarded returns, unguarded blocks (probe is discriminating)"
+        fi
+    else
+        bad "the guarded stdin pattern still blocks under a real pty"
+    fi
+else
+    ok "no python3 for the pty probe; static guards above still enforced"
+fi
 
 echo
 echo "  $pass passed, $fail failed"
