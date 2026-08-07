@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **sing-box no longer downgrades state-key ownership on every start.** It runs non-root (via `setpriv`) and mounted the state volume read-write only to write its clash cache; the entrypoint's blanket `chown -R moav:moav /state` swept in `state/keys/*` and reset every secret from `root:root` to the moav uid on each start, silently undoing the ownership hardening and the perms repair (this — not stale v1 images — was the real source of 999-owned keys). The cache moves to the moav-owned log volume, `/state` is mounted read-only for sing-box, and the entrypoint chowns only its log dir.
+
+### Fixed
+- **`moav user add` no longer fails on WireGuard/AmneziaWG with "no wg/awg key generator available".** When the wg/awg container was not reachable via `docker exec` — its live check flakes under the docker-daemon contention from the sing-box restart earlier in the same add — keygen fell back to `docker run lscr.io/linuxserver/wireguard`, an image normally not pulled (so it failed offline) that ships `wg` but not `awg` (so AmneziaWG could never work through it). It now falls back to the locally-built `moav-wireguard`/`moav-amneziawg` image — always present after build, correct binaries — resolved from the container.
+- **`moav doctor` no longer fails a healthy sub-2 GB host.** A 1.9 GB box with monitoring enabled was a hard FAIL; the RAM/monitoring check is now advisory (a warning) and only under 1.5 GB.
+- **The Grafana browser-tab favicon is now the MoaV icon.** Grafana serves it from `public/build/img/fav32.png`, but branding only bind-mounted `public/img/` and the entrypoint cannot write `build/img/` (read-only for uid 472); the branded icon is now bind-mounted straight over the served path.
+- **The installer's network-tuning prompt** explains why it matters for circumvention traffic (BBR on long/lossy paths, larger UDP buffers for QUIC/WireGuard) and no longer prints a literal `\033[…m` escape sequence.
+
+### Changed
+- **Monitoring defaults ON above ~1 GB RAM** (was 2 GB — a "2 GB" VPS reports ~1990 MB `MemTotal`, so the old cutoff defaulted those boxes to monitoring off). `moav doctor` and the install prompts describe it as "runs best with 2 GB+" rather than "requires 2GB".
+- **The post-start summary reframes the Psiphon Conduit line as a bandwidth-donation CTA** pointing at `moav donate`.
+
 ### Fixed
 - **The state-key / bundle permission repair can no longer be bypassed on an upgrade (security review, item D).** The repair ran only on `moav start <profile>` and interactive start; `moav start <service>`, `moav restart`, and a couple of one-off `up` paths skipped it, so an upgraded install could keep old `0644` keys / mis-owned bundles until a full start happened to run. All start/restart paths now funnel through a single guarded `ensure_perms_repaired` (idempotent, runs its one-shots at most once per invocation), so no path can miss it.
 
