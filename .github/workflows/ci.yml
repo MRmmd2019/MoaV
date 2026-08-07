@@ -49,6 +49,8 @@ jobs:
         run: bash tests/singbox-state-readonly-test.sh
       - name: wg/awg keygen fallback (local image, not lscr.io)
         run: bash tests/wg-keygen-fallback-test.sh
+      - name: user UUID capture (no two-line double-capture)
+        run: bash tests/uuid-capture-test.sh
       - name: grafana branding non-fatal
         run: bash tests/grafana-branding-test.sh
       - name: env resolution golden-diff
