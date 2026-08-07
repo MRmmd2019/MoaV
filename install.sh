@@ -534,11 +534,14 @@ maybe_offer_net_tuning() {
     current_cc=$(cat /proc/sys/net/ipv4/tcp_congestion_control 2>/dev/null || echo "?")
 
     echo ""
-    echo -e "${CYAN}Enable Linux network tuning (BBR + larger buffers)?${NC}"
+    echo -e "${CYAN}Enable Linux network tuning (BBR congestion control + larger socket buffers)?${NC}"
     echo "  Current: tcp_congestion_control=${current_cc}"
-    echo "  Real-world testing: 2–5× TCP throughput on long-RTT or lossy paths."
-    echo "  Helps UDP/QUIC too (Hysteria2, WireGuard need bigger UDP buffers)."
-    echo "  Reversible: ${WHITE}moav net revert${NC} removes the file + reloads sysctl."
+    echo "  Circumvention traffic takes long, often lossy paths out of censored"
+    echo "  networks. BBR holds throughput where the default (cubic) collapses on"
+    echo "  packet loss — 2–5x TCP throughput on high-RTT/lossy links in testing."
+    echo "  Larger UDP buffers stop the QUIC/UDP protocols (Hysteria2, WireGuard)"
+    echo "  dropping packets under load. Applied via sysctl; reversible any time."
+    echo "  Revert with: moav net revert"
     echo ""
     if ! confirm "Apply network tuning?" "y"; then
         info "Skipping network tuning. You can apply later: moav net apply"

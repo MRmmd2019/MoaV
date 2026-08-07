@@ -126,10 +126,13 @@ doctor_check_memory() {
         echo -e "    ${RED}✗${NC} Less than 1 GB RAM — MoaV may be unstable"
         echo -e "      ${DIM}Upgrade to at least 1 GB (2 GB with monitoring)${NC}"
         return 1
-    elif [[ "$total_mb" -lt 2048 ]] && [[ "$monitoring_enabled" == "true" ]]; then
-        echo -e "    ${YELLOW}○${NC} Less than 2 GB with monitoring enabled — may cause hangs"
-        echo -e "      ${DIM}Upgrade to 2 GB+ or disable monitoring: ENABLE_MONITORING=false${NC}"
-        return 1
+    elif [[ "$total_mb" -lt 1536 ]] && [[ "$monitoring_enabled" == "true" ]]; then
+        # Advisory, not a failure: monitoring runs fine down to ~1.5 GB for light
+        # use. Only flag genuinely tight hosts, and as a warning (rc 2) — a small
+        # box with monitoring on is a tuning note, not a broken install.
+        echo -e "    ${YELLOW}○${NC} Under 1.5 GB with monitoring enabled — may be tight under load"
+        echo -e "      ${DIM}Fine for light use; add swap for headroom, or ENABLE_MONITORING=false${NC}"
+        return 2
     elif [[ "$available_mb" -lt 256 ]]; then
         echo -e "    ${RED}✗${NC} Very low available memory (${available_mb} MB)"
         echo -e "      ${DIM}Check for memory leaks: docker stats --no-stream${NC}"

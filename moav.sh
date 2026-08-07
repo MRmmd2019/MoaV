@@ -355,9 +355,13 @@ validate_reality_targets() {
 
 # Monitoring opt-in default: N below 2 GB (hang risk), Y otherwise.
 monitoring_default_for_ram() {
+    # Default monitoring ON above ~1 GB. Grafana+Prometheus are happiest with
+    # 2 GB, but they run fine on a 1.5-2 GB box for light use, so only a genuinely
+    # tiny host (≤1 GB) defaults to off. (awk reads MemTotal, so a "2 GB" VPS
+    # reports ~1990 MB — a 2048 cutoff wrongly defaulted those to off.)
     local total_mb
     total_mb=$(awk '/MemTotal/ {printf "%.0f", $2/1024}' /proc/meminfo 2>/dev/null || echo 0)
-    if [[ "$total_mb" -gt 0 && "$total_mb" -lt 2048 ]]; then
+    if [[ "$total_mb" -gt 0 && "$total_mb" -le 1024 ]]; then
         echo "n"
     else
         echo "y"
