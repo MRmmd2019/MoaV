@@ -182,8 +182,8 @@ if [[ -z "${REALITY_PUBLIC_KEY:-}" ]] && [[ -n "${REALITY_PRIVATE_KEY:-}" ]]; th
     log_info "Reality public key missing, deriving from private key..."
     # x25519 uses the same curve as WireGuard — convert base64url→base64, use wg pubkey, convert back
     REALITY_KEY_B64=$(echo "${REALITY_PRIVATE_KEY}==" | tr '_-' '/+' | head -c 44)
-    if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
-        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEY_B64" | compose_timeout exec -T wireguard wg pubkey 2>/dev/null | tr -d '\r\n' | tr '/+' '_-' | sed 's/=*$//' || echo "")
+    if svc_running wireguard; then
+        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEY_B64" | svc_exec wireguard wg pubkey 2>/dev/null | tr -d '\r\n' | tr '/+' '_-' | sed 's/=*$//' || echo "")
     elif command -v wg &>/dev/null; then
         REALITY_PUBLIC_KEY=$(echo "$REALITY_KEY_B64" | wg pubkey 2>/dev/null | tr -d '\r\n' | tr '/+' '_-' | sed 's/=*$//' || echo "")
     fi
@@ -449,15 +449,37 @@ if [[ "${ENABLE_TELEMT:-true}" == "true" ]] && [[ -f "$TELEMT_CONFIG" ]]; then
     telemt_add_user_to_config "$USERNAME" "$TELEMT_SECRET" "$TELEMT_CONFIG"
 fi
 
-# Try to reload sing-box (hot reload) unless --no-reload was passed
+# Apply the new user to the running sing-box, unless --no-reload was passed
+# (batch mode reloads once at the end).
+#
+# A restart is the ONLY way: sing-box has no `reload` subcommand (check
+# `sing-box --help`: check / run / tools), and its entrypoint runs from a COPY
+# of the config taken at container start. So a user written to the config file
+# without a restart is simply not there for the running process — every
+# protocol answers "unknown UUID" and the operator gets a working-looking
+# bundle that passes no traffic. That is exactly how it shipped: the dashboard
+# said "sing-box not running, config will apply on next start" (it WAS running;
+# the compose-based check just cannot answer from inside the admin container),
+# skipped the restart, and every user created that way was dead on arrival.
+#
+# So: restart, then VERIFY the user is actually live, and say so loudly if not.
 if [[ "$NO_RELOAD" != "true" ]]; then
-    if compose_timeout ps sing-box --status running 2>/dev/null | tail -n +2 | grep -q .; then
-        log_info "Reloading sing-box..."
-        if compose_timeout exec -T sing-box sing-box reload 2>/dev/null; then
-            log_info "sing-box reloaded successfully"
+    if svc_running sing-box; then
+        log_info "Restarting sing-box to apply the new user..."
+        svc_restart sing-box
+        _live=false
+        for _i in $(seq 1 15); do
+            if svc_exec sing-box grep -q "$USER_UUID" /tmp/sing-box-config.json 2>/dev/null; then
+                _live=true; break
+            fi
+            sleep 1
+        done
+        if [[ "$_live" == true ]]; then
+            log_info "✓ sing-box is serving $USERNAME"
         else
-            log_info "Hot reload failed, restarting sing-box..."
-            COMPOSE_TIMEOUT=60 compose_timeout restart sing-box
+            log_warn "sing-box restarted but $USERNAME is NOT in its running config."
+            log_warn "  The user's Reality/Trojan/Hysteria2/Shadowsocks configs will not connect."
+            log_warn "  Fix with: moav restart sing-box"
         fi
     else
         log_info "sing-box not running, config will apply on next start"
@@ -465,25 +487,25 @@ if [[ "$NO_RELOAD" != "true" ]]; then
 
     # Try to reload TrustTunnel (if running)
     if [[ -f "$TRUSTTUNNEL_CREDS" ]]; then
-        if compose_timeout ps trusttunnel --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running trusttunnel; then
             log_info "Restarting TrustTunnel to apply new credentials..."
-            COMPOSE_TIMEOUT=60 compose_timeout restart trusttunnel
+            svc_restart trusttunnel
         fi
     fi
 
     # Try to reload Xray (if running)
     if [[ -f "$XRAY_CONFIG" ]] && [[ "${ENABLE_XHTTP:-true}" == "true" ]]; then
-        if compose_timeout --profile xhttp ps xray --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running xray; then
             log_info "Restarting Xray to apply new user..."
-            COMPOSE_TIMEOUT=60 compose_timeout --profile xhttp restart xray
+            svc_restart xray
         fi
     fi
 
     # Try to reload telemt (if running)
     if [[ -f "$TELEMT_CONFIG" ]]; then
-        if compose_timeout --profile telegram ps telemt --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running telemt; then
             log_info "Restarting telemt to apply new user..."
-            COMPOSE_TIMEOUT=60 compose_timeout --profile telegram restart telemt
+            svc_restart telemt
         fi
     fi
 fi

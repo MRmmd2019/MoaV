@@ -530,7 +530,7 @@ if [[ "$BATCH_MODE" == "true" ]] && [[ ${#CREATED_USERS[@]} -gt 0 ]]; then
                 log_info "✓ sing-box reloaded"
             else
                 log_info "Hot reload failed, restarting sing-box..."
-                compose_timeout restart sing-box || log_warn "Timed out restarting sing-box"
+                svc_restart sing-box || log_warn "Timed out restarting sing-box"
             fi
         fi
     fi
@@ -540,7 +540,7 @@ if [[ "$BATCH_MODE" == "true" ]] && [[ ${#CREATED_USERS[@]} -gt 0 ]]; then
         if svc_running wireguard; then
             log_info "Syncing WireGuard peers..."
             svc_exec wireguard wg syncconf wg0 <(svc_exec wireguard wg-quick strip wg0) 2>/dev/null || \
-                compose_timeout restart wireguard || log_warn "Timed out restarting WireGuard"
+                svc_restart wireguard || log_warn "Timed out restarting WireGuard"
             log_info "✓ WireGuard synced"
         fi
     fi
@@ -549,34 +549,34 @@ if [[ "$BATCH_MODE" == "true" ]] && [[ ${#CREATED_USERS[@]} -gt 0 ]]; then
     if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]] && [[ -f "configs/amneziawg/awg0.conf" ]]; then
         if svc_running amneziawg; then
             log_info "Restarting AmneziaWG..."
-            compose_timeout restart amneziawg || log_warn "Timed out restarting AmneziaWG"
+            svc_restart amneziawg || log_warn "Timed out restarting AmneziaWG"
             log_info "✓ AmneziaWG restarted"
         fi
     fi
 
     # Reload TrustTunnel
     if [[ -f "configs/trusttunnel/credentials.toml" ]]; then
-        if compose_timeout ps trusttunnel --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running trusttunnel; then
             log_info "Restarting TrustTunnel..."
-            compose_timeout restart trusttunnel || log_warn "Timed out restarting TrustTunnel"
+            svc_restart trusttunnel || log_warn "Timed out restarting TrustTunnel"
             log_info "✓ TrustTunnel restarted"
         fi
     fi
 
     # Reload Xray (XHTTP)
     if [[ -f "configs/xray/config.json" ]]; then
-        if compose_timeout --profile xhttp ps xray --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running xray; then
             log_info "Restarting Xray..."
-            compose_timeout --profile xhttp restart xray || log_warn "Timed out restarting Xray"
+            svc_restart xray || log_warn "Timed out restarting Xray"
             log_info "✓ Xray restarted"
         fi
     fi
 
     # Reload telemt
     if [[ -f "configs/telemt/config.toml" ]]; then
-        if compose_timeout --profile telegram ps telemt --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running telemt; then
             log_info "Restarting telemt..."
-            compose_timeout --profile telegram restart telemt || log_warn "Timed out restarting telemt"
+            svc_restart telemt || log_warn "Timed out restarting telemt"
             log_info "✓ telemt restarted"
         fi
     fi

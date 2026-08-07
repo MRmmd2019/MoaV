@@ -135,6 +135,17 @@ svc_running() {
     "${t[@]}" docker ps --filter "name=^/moav-${1}$" --filter status=running -q 2>/dev/null | grep -q .
 }
 
+# svc_restart <service> — restart by container name. `docker compose restart`
+# needs the compose file + .env interpolation, which the admin container cannot
+# do; a skipped restart is silent and total: sing-box runs from a COPY of the
+# config made at container start, so a user added without a restart is
+# "unknown UUID" on every protocol until something else restarts it.
+svc_restart() {
+    local t=()
+    command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 "${SVC_RESTART_TIMEOUT:-60}")
+    "${t[@]}" docker restart "moav-${1}" >/dev/null 2>&1
+}
+
 # svc_exec <service> <cmd...> — run a command in that container (stdin passes
 # through, so `echo KEY | svc_exec wireguard wg pubkey` works).
 svc_exec() {
