@@ -34,6 +34,16 @@ curl -fsSL https://moav.sh/install.sh | bash    # or: git clone … && ./moav.sh
 moav                                             # guided config + bootstrap + start
 ```
 
+The `moav.sh/install.sh` one-liner installs the latest **stable** release. To
+fresh-install the **latest dev** code instead (e.g. to test an unreleased fix),
+fetch and run `install.sh` from the branch and tell it to clone that branch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MotherofallVPNs/MoaV/dev/install.sh | bash -s -- -b dev
+```
+
+(Swap `dev` for a tag like `v2.0.0-rc.3` to install a specific release candidate.)
+
 **Upgrade in place:** `moav update -b main && moav build && moav start`
 (see [docs/V2-MIGRATION.md](docs/V2-MIGRATION.md) for the 1.9.x → v2 path).
 
