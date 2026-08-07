@@ -89,10 +89,65 @@ net_next_free_octet() {
 # indefinitely. (No global stdin redirect here — callers like
 # `echo KEY | ... awg pubkey` rely on the piped stdin.)
 compose_timeout() {
+    # Never hand a TTY to a container exec. `docker exec -i` / `docker compose
+    # exec` ATTACH stdin, and when stdin is the operator's terminal the exec
+    # blocks reading it until the timeout kills it: measured 25s and EMPTY
+    # output for `wg show wg0 public-key` from an interactive shell, vs 220ms
+    # and the right answer with stdin closed.
+    #
+    # This is why `moav user add` failed from an interactive terminal but
+    # always passed in scripts, CI and the dashboard (none of which have a
+    # TTY): every container call in the add path — wg/awg keygen, the server
+    # public-key read, the sing-box and wg/awg hot reloads — silently timed out.
+    # `-t 0` is safe to branch on: if stdin is a terminal, no caller can be
+    # piping data in (the `echo KEY | … pubkey` callers have a pipe on stdin).
     if command -v timeout >/dev/null 2>&1; then
-        timeout -k 5 "${COMPOSE_TIMEOUT:-20}" docker compose "$@"
+        if [ -t 0 ]; then
+            timeout -k 5 "${COMPOSE_TIMEOUT:-20}" docker compose "$@" < /dev/null
+        else
+            timeout -k 5 "${COMPOSE_TIMEOUT:-20}" docker compose "$@"
+        fi
     else
-        docker compose "$@"
+        if [ -t 0 ]; then
+            docker compose "$@" < /dev/null
+        else
+            docker compose "$@"
+        fi
+    fi
+}
+
+# svc_running / svc_exec — the same two operations by CONTAINER NAME instead of
+# `docker compose <service>`.
+#
+# `docker compose` has to load docker-compose.yml and interpolate .env. Inside
+# the admin container that fails: .env is root 0600 and the app runs as uid 2000.
+# So every `compose ps <svc> --status running` check answered "not running" for
+# containers that were plainly up, and the dashboard silently skipped WireGuard
+# and never hot-applied new peers. Container names are fixed (`container_name:
+# moav-<service>`), and plain `docker exec` works from the host AND through the
+# admin container's docker-proxy — verified live on both.
+#
+# Same hard deadline as compose_timeout: a wedged container must never hang
+# provisioning (#220).
+svc_running() {
+    local t=()
+    command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 "${COMPOSE_TIMEOUT:-20}")
+    "${t[@]}" docker ps --filter "name=^/moav-${1}$" --filter status=running -q 2>/dev/null | grep -q .
+}
+
+# svc_exec <service> <cmd...> — run a command in that container (stdin passes
+# through, so `echo KEY | svc_exec wireguard wg pubkey` works).
+svc_exec() {
+    local svc="$1"; shift
+    local t=()
+    command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 "${COMPOSE_TIMEOUT:-20}")
+    # `< /dev/null` when stdin is a terminal — see compose_timeout: `-i` against
+    # a TTY blocks the exec until the timeout kills it. Piped callers keep their
+    # stdin (a pipe is not a terminal).
+    if [ -t 0 ]; then
+        "${t[@]}" docker exec -i "moav-${svc}" "$@" < /dev/null
+    else
+        "${t[@]}" docker exec -i "moav-${svc}" "$@"
     fi
 }
 

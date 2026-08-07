@@ -301,17 +301,20 @@ for USERNAME in "${USERNAMES[@]}"; do
     # Add to WireGuard
     # -------------------------------------------------------------------------
     if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]] && [[ -f "configs/wireguard/wg0.conf" ]]; then
-        # Check if WireGuard service is actually running or wg tools are available
-        if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q . || command -v wg &>/dev/null; then
-            log_info "[2/3] Adding to WireGuard..."
-            if "$SCRIPT_DIR/wg-user-add.sh" "$USERNAME" $RELOAD_FLAG; then
-                log_info "✓ WireGuard peer added"
-            else
-                ERRORS+=("wireguard")
-                log_error "✗ Failed to add WireGuard peer"
-            fi
+        # No "is the container running?" gate. It used `docker compose ps`, which
+        # needs to interpolate .env — unreadable to the non-root admin container
+        # (root 0600) — so the dashboard silently SKIPPED WireGuard and handed
+        # the user a bundle with no wireguard.conf at all. AmneziaWG never had
+        # this gate, which is why it kept working in the same runs.
+        # It is also no longer needed: keys are generated locally (no container)
+        # and wg-user-add.sh already degrades to "config will apply on next
+        # start" when the container is down, exactly like AmneziaWG.
+        log_info "[2/3] Adding to WireGuard..."
+        if "$SCRIPT_DIR/wg-user-add.sh" "$USERNAME" $RELOAD_FLAG; then
+            log_info "✓ WireGuard peer added"
         else
-            log_info "[2/3] Skipping WireGuard (service not running)"
+            ERRORS+=("wireguard")
+            log_error "✗ Failed to add WireGuard peer"
         fi
     else
         log_info "[2/3] Skipping WireGuard (not enabled or not configured)"
@@ -331,8 +334,8 @@ for USERNAME in "${USERNAMES[@]}"; do
             # values (the lib's trailing args), so a config/runtime drift can't
             # hand out a colliding address; that parameter exists for this caller.
             RUNNING_AWG_IPS=""
-            if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
-                RUNNING_AWG_IPS=$(compose_timeout exec -T amneziawg awg show awg0 allowed-ips 2>/dev/null | grep '10\.67\.67\.' | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
+            if svc_running amneziawg; then
+                RUNNING_AWG_IPS=$(svc_exec amneziawg awg show awg0 allowed-ips 2>/dev/null | grep '10\.67\.67\.' | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
             fi
 
             mkdir -p "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
@@ -356,9 +359,9 @@ for USERNAME in "${USERNAMES[@]}"; do
 
             # Hot-add peer to running AmneziaWG (unless batch mode — batch reloads later)
             if [[ "$BATCH_MODE" != "true" ]]; then
-                if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
+                if svc_running amneziawg; then
                     log_info "Adding peer to running AmneziaWG..."
-                    if compose_timeout exec -T amneziawg awg set awg0 peer "$AWG_CLIENT_PUBLIC" allowed-ips "$AWG_ALLOWED" 2>/dev/null; then
+                    if svc_exec amneziawg awg set awg0 peer "$AWG_CLIENT_PUBLIC" allowed-ips "$AWG_ALLOWED" 2>/dev/null; then
                         log_info "Peer added to running AmneziaWG (hot reload)"
                     else
                         log_info "Hot reload failed, you may need to restart AmneziaWG"
@@ -521,9 +524,9 @@ if [[ "$BATCH_MODE" == "true" ]] && [[ ${#CREATED_USERS[@]} -gt 0 ]]; then
 
     # Reload sing-box
     if [[ -f "configs/sing-box/config.json" ]]; then
-        if compose_timeout ps sing-box --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running sing-box; then
             log_info "Reloading sing-box..."
-            if compose_timeout exec -T sing-box sing-box reload 2>/dev/null; then
+            if svc_exec sing-box sing-box reload 2>/dev/null; then
                 log_info "✓ sing-box reloaded"
             else
                 log_info "Hot reload failed, restarting sing-box..."
@@ -534,9 +537,9 @@ if [[ "$BATCH_MODE" == "true" ]] && [[ ${#CREATED_USERS[@]} -gt 0 ]]; then
 
     # Reload WireGuard (needs to sync peers)
     if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]] && [[ -f "configs/wireguard/wg0.conf" ]]; then
-        if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running wireguard; then
             log_info "Syncing WireGuard peers..."
-            compose_timeout exec -T wireguard wg syncconf wg0 <(compose_timeout exec -T wireguard wg-quick strip wg0) 2>/dev/null || \
+            svc_exec wireguard wg syncconf wg0 <(svc_exec wireguard wg-quick strip wg0) 2>/dev/null || \
                 compose_timeout restart wireguard || log_warn "Timed out restarting WireGuard"
             log_info "✓ WireGuard synced"
         fi
@@ -544,7 +547,7 @@ if [[ "$BATCH_MODE" == "true" ]] && [[ ${#CREATED_USERS[@]} -gt 0 ]]; then
 
     # Reload AmneziaWG
     if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]] && [[ -f "configs/amneziawg/awg0.conf" ]]; then
-        if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running amneziawg; then
             log_info "Restarting AmneziaWG..."
             compose_timeout restart amneziawg || log_warn "Timed out restarting AmneziaWG"
             log_info "✓ AmneziaWG restarted"
