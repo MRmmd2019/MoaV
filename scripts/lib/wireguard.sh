@@ -179,7 +179,7 @@ wireguard_generate_client_config() {
     fi
 
     # Direct WireGuard config (IPv4 endpoint)
-    cat > "$output_dir/wireguard.conf" <<EOF
+    cat > "$output_dir/$(moav_wg_basename wg).conf" <<EOF
 [Interface]
 PrivateKey = $WG_PRIVATE_KEY
 Address = $client_addresses
@@ -195,7 +195,7 @@ EOF
 
     # Generate IPv6 endpoint config if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        cat > "$output_dir/wireguard-ipv6.conf" <<EOF
+        cat > "$output_dir/$(moav_wg_basename wg6).conf" <<EOF
 [Interface]
 PrivateKey = $WG_PRIVATE_KEY
 Address = $client_addresses
@@ -213,7 +213,7 @@ EOF
 
     # WireGuard-wstunnel config (for censored networks)
     # Points to localhost - user must run wstunnel client first
-    cat > "$output_dir/wireguard-wstunnel.conf" <<EOF
+    cat > "$output_dir/$(moav_wg_basename wgws).conf" <<EOF
 [Interface]
 PrivateKey = $WG_PRIVATE_KEY
 Address = $client_addresses

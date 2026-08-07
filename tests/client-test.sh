@@ -985,7 +985,9 @@ test_wireguard() {
     local is_ipv6=false
 
     # Find WireGuard config - prefer IPv4 over IPv6
-    for f in "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
+    # new-style moav-<server>-wg.conf first, then the legacy names so bundles
+    # generated before the rename still validate.
+    for f in "$CONFIG_DIR"/moav-*-wg.conf "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
     if [[ -z "$config_file" ]]; then
@@ -1149,7 +1151,7 @@ test_amneziawg() {
     local detail=""
 
     # Find AmneziaWG config
-    for f in "$CONFIG_DIR"/amneziawg.conf; do
+    for f in "$CONFIG_DIR"/moav-*-awg.conf "$CONFIG_DIR"/amneziawg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
     if [[ -z "$config_file" ]]; then
@@ -2154,7 +2156,7 @@ test_wstunnel() {
     log_info "Testing WireGuard-over-wstunnel..."
 
     local conf="" detail=""
-    for f in "$CONFIG_DIR"/wireguard-wstunnel.conf; do
+    for f in "$CONFIG_DIR"/moav-*-wgws.conf "$CONFIG_DIR"/wireguard-wstunnel.conf; do
         [[ -f "$f" ]] && conf="$f" && break
     done
     if [[ -z "$conf" ]]; then

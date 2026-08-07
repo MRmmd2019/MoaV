@@ -52,29 +52,29 @@ singbox_add_user() {
 
 singbox_reality_link() {
     local label="$1" host="$2"
-    echo "vless://${USER_UUID}@${host}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_TARGET_HOST}&fp=random&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&type=tcp#MoaV-Reality-${label}"
+    echo "vless://${USER_UUID}@${host}:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_TARGET_HOST}&fp=random&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&type=tcp#$(moav_name_prefix)Reality-${label}"
 }
 
 singbox_trojan_link() {
     local label="$1" host="$2"
-    echo "trojan://${USER_PASSWORD}@${host}:8443?security=tls&sni=${DOMAIN}&type=tcp#MoaV-Trojan-${label}"
+    echo "trojan://${USER_PASSWORD}@${host}:8443?security=tls&sni=${DOMAIN}&type=tcp#$(moav_name_prefix)Trojan-${label}"
 }
 
 singbox_anytls_link() {
     local label="$1" host="$2"
-    echo "anytls://${USER_PASSWORD}@${host}:${PORT_ANYTLS:-8445}?sni=${DOMAIN}&insecure=0#MoaV-AnyTLS-${label}"
+    echo "anytls://${USER_PASSWORD}@${host}:${PORT_ANYTLS:-8445}?sni=${DOMAIN}&insecure=0#$(moav_name_prefix)AnyTLS-${label}"
 }
 
 singbox_hysteria2_link() {
     local label="$1" host="$2"
-    echo "hysteria2://${USER_PASSWORD}@${host}:443?sni=${DOMAIN}&obfs=salamander&obfs-password=${HYSTERIA2_OBFS_PASSWORD}#MoaV-Hysteria2-${label}"
+    echo "hysteria2://${USER_PASSWORD}@${host}:443?sni=${DOMAIN}&obfs=salamander&obfs-password=${HYSTERIA2_OBFS_PASSWORD}#$(moav_name_prefix)Hysteria2-${label}"
 }
 
 # CDN routes through a fronting address (CDN_ADDRESS), not the server IP, so it
 # has no IPv6 variant — only the label varies.
 singbox_cdn_link() {
     local label="$1"
-    echo "vless://${USER_UUID}@${CDN_ADDRESS}:443?security=tls&type=${CDN_TRANSPORT}&path=${CDN_WS_PATH}&sni=${CDN_SNI}&host=${CDN_DOMAIN}&fp=random&alpn=http/1.1#MoaV-CDN-${label}"
+    echo "vless://${USER_UUID}@${CDN_ADDRESS}:443?security=tls&type=${CDN_TRANSPORT}&path=${CDN_WS_PATH}&sni=${CDN_SNI}&host=${CDN_DOMAIN}&fp=random&alpn=http/1.1#$(moav_name_prefix)CDN-${label}"
 }
 
 # Shadowsocks-2022 SIP002 userinfo: BASE64URL_NOPAD(method:server_psk:user_psk).
@@ -87,5 +87,5 @@ singbox_ss_userinfo() {
 # host are passed so one builder serves IPv4 and IPv6.
 singbox_ss_link() {
     local label="$1" host="$2" userinfo="$3" port="$4"
-    echo "ss://${userinfo}@${host}:${port}#MoaV-Shadowsocks-${label}"
+    echo "ss://${userinfo}@${host}:${port}#$(moav_name_prefix)Shadowsocks-${label}"
 }

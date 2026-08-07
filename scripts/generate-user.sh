@@ -510,14 +510,14 @@ if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]]; then
     _peer_rc=0; wireguard_add_peer "$USER_ID" || _peer_rc=$?
     if [[ "$_peer_rc" -eq 2 ]]; then
         log_warn "  - WireGuard left untouched for $USER_ID (no key material in state)"
-    elif [[ -f "$OUTPUT_DIR/wireguard.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
+    elif [[ -f "$OUTPUT_DIR/$(moav_wg_basename wg).conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - WireGuard config exists, skipping"
     else
         BUNDLE_CHANGED=true
         wireguard_generate_client_config "$USER_ID" "$OUTPUT_DIR"
-        qrencode -o "$OUTPUT_DIR/wireguard-qr.png" -s 6 -r "$OUTPUT_DIR/wireguard.conf" 2>/dev/null || true
-        qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/wireguard-wstunnel.conf" 2>/dev/null || true
-        if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/wireguard-ipv6.conf" ]]; then
+        qrencode -o "$OUTPUT_DIR/wireguard-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg).conf" 2>/dev/null || true
+        qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wgws).conf" 2>/dev/null || true
+        if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" ]]; then
             qrencode -o "$OUTPUT_DIR/wireguard-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/wireguard-ipv6.conf" 2>/dev/null || true
         fi
         log_info "  - WireGuard config generated (direct + wstunnel${SERVER_IPV6:+ + ipv6})"
@@ -538,12 +538,12 @@ if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]]; then
     _peer_rc=0; amneziawg_add_peer "$USER_ID" || _peer_rc=$?
     if [[ "$_peer_rc" -eq 2 ]]; then
         log_warn "  - AmneziaWG left untouched for $USER_ID (no key material in state)"
-    elif [[ -f "$OUTPUT_DIR/amneziawg.conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
+    elif [[ -f "$OUTPUT_DIR/$(moav_wg_basename awg).conf" ]] && [[ "$FORCE_REGENERATE" != "force" ]]; then
         log_info "  - AmneziaWG config exists, skipping"
     else
         BUNDLE_CHANGED=true
         amneziawg_generate_client_config "$USER_ID" "$OUTPUT_DIR"
-        qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg.conf" 2>/dev/null || true
+        qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg).conf" 2>/dev/null || true
         if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/amneziawg-ipv6.conf" ]]; then
             qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg-ipv6.conf" 2>/dev/null || true
         fi

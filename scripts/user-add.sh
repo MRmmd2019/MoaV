@@ -379,7 +379,7 @@ for USERNAME in "${USERNAMES[@]}"; do
             # before the loop); honors SERVER_IPV6 + PORT_AMNEZIAWG.
             amneziawg_generate_client_config "$USERNAME" "$OUTPUT_DIR"
 
-            qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg.conf" 2>/dev/null || true
+            qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg).conf" 2>/dev/null || true
             if [[ -f "$OUTPUT_DIR/amneziawg-ipv6.conf" ]]; then
                 qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg-ipv6.conf" 2>/dev/null || true
             fi

@@ -45,7 +45,7 @@ xray_xhttp_link() {
     local target="${XHTTP_REALITY_TARGET:-${REALITY_TARGET:-dl.google.com:443}}"
     local host="${target%%:*}"
     local port="${PORT_XHTTP:-2096}"
-    echo "vless://${USER_UUID}@${SERVER_IP}:${port}?type=xhttp&security=reality&sni=${host}&fp=chrome&headers=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&encryption=none#MoaV-XHTTP-${label}"
+    echo "vless://${USER_UUID}@${SERVER_IP}:${port}?type=xhttp&security=reality&sni=${host}&fp=chrome&headers=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&encryption=none#$(moav_name_prefix)XHTTP-${label}"
 }
 
 # xray_write_xhttp_bundle <output_dir> <label> — writes xhttp-vless.txt (the
@@ -116,7 +116,7 @@ xray_write_xdns_bundle() {
 
     cat > "$out/xdns-config.json" <<XDNSEOF
 {
-  "remarks": "MoaV-XDNS-${label} (via DNS)",
+  "remarks": "$(moav_name_prefix)XDNS-${label} (via DNS)",
   "log": {"loglevel": "warning"},
   "inbounds": [{"listen": "127.0.0.1", "port": 7891, "protocol": "socks", "settings": {"auth": "noauth", "udp": true}}],
   "outbounds": [
@@ -129,7 +129,7 @@ XDNSEOF
 
     cat > "$out/xdns-direct-config.json" <<XDNSEOF2
 {
-  "remarks": "MoaV-XDNS-${label} (direct)",
+  "remarks": "$(moav_name_prefix)XDNS-${label} (direct)",
   "log": {"loglevel": "warning"},
   "inbounds": [{"listen": "127.0.0.1", "port": 7891, "protocol": "socks", "settings": {"auth": "noauth", "udp": true}}],
   "outbounds": [

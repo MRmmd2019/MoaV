@@ -195,34 +195,34 @@ if [[ -n "$CLIENT_IP_V6" ]]; then
 fi
 echo ""
 echo "Configs generated:"
-echo "  - wireguard.conf          (direct mode - IPv4 endpoint)"
+echo "  - $(moav_wg_basename wg).conf        (direct mode - IPv4 endpoint)"
 if [[ -n "$SERVER_IPV6" ]]; then
-    echo "  - wireguard-ipv6.conf     (direct mode - IPv6 endpoint)"
+    echo "  - $(moav_wg_basename wg6).conf       (direct mode - IPv6 endpoint)"
 fi
-echo "  - wireguard-wstunnel.conf (wstunnel mode - for restrictive networks)"
+echo "  - $(moav_wg_basename wgws).conf      (wstunnel mode - for restrictive networks)"
 echo ""
 
 # Generate QR images for user bundle
 if command -v qrencode &>/dev/null; then
-    qrencode -o "$OUTPUT_DIR/wireguard-qr.png" -s 6 -r "$OUTPUT_DIR/wireguard.conf" 2>/dev/null && \
+    qrencode -o "$OUTPUT_DIR/wireguard-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg).conf" 2>/dev/null && \
         log_info "QR image saved to: $OUTPUT_DIR/wireguard-qr.png"
 
     # IPv6 QR code
     if [[ -n "$SERVER_IPV6" ]]; then
-        qrencode -o "$OUTPUT_DIR/wireguard-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/wireguard-ipv6.conf" 2>/dev/null && \
+        qrencode -o "$OUTPUT_DIR/wireguard-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" 2>/dev/null && \
             log_info "IPv6 QR image saved to: $OUTPUT_DIR/wireguard-ipv6-qr.png"
     fi
 
     # wstunnel QR code
-    qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/wireguard-wstunnel.conf" 2>/dev/null && \
+    qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wgws).conf" 2>/dev/null && \
         log_info "wstunnel QR image saved to: $OUTPUT_DIR/wireguard-wstunnel-qr.png"
 fi
 
 echo ""
 echo "=== Direct Config (use this for mobile) ==="
-cat "$OUTPUT_DIR/wireguard.conf"
+cat "$OUTPUT_DIR/$(moav_wg_basename wg).conf"
 echo ""
 echo "=== wstunnel Mode (for restrictive networks) ==="
 echo "Run wstunnel first:"
 echo "  ${WSTUNNEL_CMD}"
-echo "Then use wireguard-wstunnel.conf"
+echo "Then use $(moav_wg_basename wgws).conf"
