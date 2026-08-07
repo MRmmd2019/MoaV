@@ -85,8 +85,8 @@ fi
 # hand out a colliding address (the lib merges these with its config scan).
 # compose_timeout: a wedged container must not hang user provisioning (#220).
 RUNNING_IPS=""
-if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
-    RUNNING_IPS=$(compose_timeout exec -T wireguard wg show wg0 allowed-ips 2>/dev/null | grep '10\.66\.66\.' | sed 's/.*10\.66\.66\.\([0-9]*\).*/\1/' || echo "")
+if svc_running wireguard; then
+    RUNNING_IPS=$(svc_exec wireguard wg show wg0 allowed-ips 2>/dev/null | grep '10\.66\.66\.' | sed 's/.*10\.66\.66\.\([0-9]*\).*/\1/' || echo "")
 fi
 
 # Keygen, IP allocation, state write and wg0.conf append all live in the shared
@@ -116,8 +116,8 @@ CLIENT_IP_V6="${WG_CLIENT_IP_V6:-}"
 SERVER_PUBLIC_KEY=""
 
 # If WireGuard is running, get the actual public key and sync it
-if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
-    SERVER_PUBLIC_KEY=$(compose_timeout exec -T wireguard wg show wg0 public-key 2>/dev/null | tr -d '\r\n')
+if svc_running wireguard; then
+    SERVER_PUBLIC_KEY=$(svc_exec wireguard wg show wg0 public-key 2>/dev/null | tr -d '\r\n')
     if [[ -n "$SERVER_PUBLIC_KEY" ]]; then
         # Best-effort sync to server.pub. If the caller (e.g. the admin container
         # running as uid 1000) only has read perms on configs/ — set by bootstrap
@@ -165,11 +165,11 @@ WSTUNNEL_CMD="$(wstunnel_client_cmd)"
 
 # Hot-add peer to running WireGuard if available (unless --no-reload)
 if [[ "$NO_RELOAD" != "true" ]]; then
-    if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
+    if svc_running wireguard; then
         log_info "Adding peer to running WireGuard..."
 
         # Use wg set to add peer dynamically
-        if compose_timeout exec -T wireguard wg set wg0 peer "$CLIENT_PUBLIC_KEY" allowed-ips "$ALLOWED_IPS" 2>/dev/null; then
+        if svc_exec wireguard wg set wg0 peer "$CLIENT_PUBLIC_KEY" allowed-ips "$ALLOWED_IPS" 2>/dev/null; then
             log_info "Peer added to running WireGuard (hot reload)"
         else
             log_info "Hot reload failed, you may need to restart WireGuard"

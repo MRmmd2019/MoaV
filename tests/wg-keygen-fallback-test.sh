@@ -50,10 +50,67 @@ else
     ok "lscr.io/linuxserver/wireguard is not used as a keygen generator"
 fi
 
-# 4. The running-container fast path (docker exec) is still preferred first.
+# 4. The running-container fast path (docker exec) is still available.
 grep -qE 'docker exec -i "\$cname"' "$KEYS" \
-    && ok "running container still preferred via docker exec (fast path intact)" \
-    || bad "the docker exec fast path is gone — every keygen would pay docker-run startup"
+    && ok "running container still available via docker exec" \
+    || bad "the docker exec path is gone"
+
+# --- 5. keygen must not depend on docker AT ALL --------------------------------
+# wg/awg keys ARE X25519 keys, so openssl can mint them locally. This is what
+# made `moav user add` reliable from the host CLI: the bootstrap image ships
+# /usr/bin/wg and the admin container could docker-exec, but the HOST has no
+# wg/awg binary, so the CLI depended entirely on reaching a container and any
+# transient docker hiccup surfaced as "no wg/awg key generator available".
+grep -q '_keys_openssl_keypair()' "$KEYS" \
+    && ok "keys.sh has a local openssl keypair generator" \
+    || bad "no local openssl generator — the host CLI is back to needing a container"
+grep -q '_keys_openssl_pubkey()' "$KEYS" \
+    && ok "keys.sh can derive a pubkey locally with openssl" \
+    || bad "no local openssl pubkey derivation"
+
+# functional: the openssl path yields real 44-char keys and round-trips
+if command -v openssl >/dev/null 2>&1; then
+    # shellcheck disable=SC1090
+    ( set +u; source "$KEYS" >/dev/null 2>&1
+      kp=$(_keys_openssl_keypair) || exit 1
+      p=$(printf '%s' "$kp" | head -1); q=$(printf '%s' "$kp" | tail -1)
+      [ ${#p} -eq 44 ] && [ ${#q} -eq 44 ] || exit 1
+      d=$(_keys_openssl_pubkey "$p") || exit 1
+      [ "$d" = "$q" ] || exit 1 ) \
+      && ok "openssl generator yields 44-char keys whose pubkey re-derives identically" \
+      || bad "openssl keypair/pubkey round-trip failed"
+
+    # ...and wg_keypair itself must succeed with docker made unreachable.
+    ( set +u; source "$KEYS" >/dev/null 2>&1
+      export DOCKER_HOST=tcp://127.0.0.1:1
+      k=$(wg_keypair) || exit 1
+      [ "$(printf '%s' "$k" | wc -l)" -eq 1 ] || exit 1 ) \
+      && ok "wg_keypair succeeds with docker unreachable (no container in the loop)" \
+      || bad "wg_keypair still needs docker — the CLI failure class is back"
+else
+    ok "openssl absent on this runner; skipped functional keygen checks"
+fi
+
+# --- 6. no running-container gate may hide WireGuard from a user --------------
+# `docker compose ps` interpolates .env, which the non-root admin container
+# cannot read, so the gate answered "not running" for a container that was up
+# and the dashboard silently produced a bundle with NO wireguard.conf.
+UA="$ROOT/scripts/user-add.sh"
+grep -q 'Skipping WireGuard (service not running)' "$UA" \
+    && bad "user-add.sh still gates WireGuard on a running check — dashboard users silently lose wireguard.conf" \
+    || ok "no running-container gate around the WireGuard add"
+
+# --- 7. container checks/execs go by container name, not docker compose -------
+grep -q 'svc_running()' "$ROOT/scripts/lib/common.sh" && grep -q 'svc_exec()' "$ROOT/scripts/lib/common.sh" \
+    && ok "common.sh provides container-name svc_running/svc_exec helpers" \
+    || bad "svc_running/svc_exec missing — in-container callers fall back to broken compose lookups"
+for s in user-add.sh wg-user-add.sh; do
+    if grep -qE 'compose_timeout (ps (wireguard|amneziawg|sing-box)|exec -T (wireguard|amneziawg|sing-box))' "$ROOT/scripts/$s"; then
+        bad "$s still uses 'docker compose ps/exec' for wg/awg/sing-box — fails inside the admin container"
+    else
+        ok "$s uses container-name helpers for wg/awg/sing-box"
+    fi
+done
 
 echo
 echo "  $pass passed, $fail failed"

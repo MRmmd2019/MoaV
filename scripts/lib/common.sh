@@ -96,6 +96,34 @@ compose_timeout() {
     fi
 }
 
+# svc_running / svc_exec — the same two operations by CONTAINER NAME instead of
+# `docker compose <service>`.
+#
+# `docker compose` has to load docker-compose.yml and interpolate .env. Inside
+# the admin container that fails: .env is root 0600 and the app runs as uid 2000.
+# So every `compose ps <svc> --status running` check answered "not running" for
+# containers that were plainly up, and the dashboard silently skipped WireGuard
+# and never hot-applied new peers. Container names are fixed (`container_name:
+# moav-<service>`), and plain `docker exec` works from the host AND through the
+# admin container's docker-proxy — verified live on both.
+#
+# Same hard deadline as compose_timeout: a wedged container must never hang
+# provisioning (#220).
+svc_running() {
+    local t=()
+    command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 "${COMPOSE_TIMEOUT:-20}")
+    "${t[@]}" docker ps --filter "name=^/moav-${1}$" --filter status=running -q 2>/dev/null | grep -q .
+}
+
+# svc_exec <service> <cmd...> — run a command in that container (stdin passes
+# through, so `echo KEY | svc_exec wireguard wg pubkey` works).
+svc_exec() {
+    local svc="$1"; shift
+    local t=()
+    command -v timeout >/dev/null 2>&1 && t=(timeout -k 5 "${COMPOSE_TIMEOUT:-20}")
+    "${t[@]}" docker exec -i "moav-${svc}" "$@"
+}
+
 # The admin container's fixed uid/gid (Dockerfile.admin: adduser -u 2000).
 # Bundles and user state must be writable by the non-root admin app AND by the
 # root-run provisioning paths; the old answer was chmod 777 / a+rwX, which left
