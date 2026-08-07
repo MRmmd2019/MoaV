@@ -37,14 +37,35 @@ _keys_resolve() {
     # compose re-parses the whole compose file on every call (~2x slower idle,
     # far worse under load), and this runs three times per peer (ps + genkey +
     # pubkey). Container names are deterministic (moav-<service>).
-    local pair svc bin cname
+    local pair svc bin cname img
     for pair in "wireguard wg" "amneziawg awg"; do
         svc=${pair% *}; bin=${pair#* }; cname="moav-$svc"
         if "${t[@]}" docker ps --filter "name=^/${cname}$" --filter status=running -q 2>/dev/null | grep -q .; then
             _keys_bin="$bin"; _keys_prefix=("${t[@]}" docker exec -i "$cname"); _keys_resolved=1; return 0
         fi
     done
-    _keys_bin=wg; _keys_prefix=("${t[@]}" docker run --rm -i lscr.io/linuxserver/wireguard); _keys_resolved=1; return 0
+    # No wg/awg container is RUNNING yet — the common case in the post-`moav
+    # start`/upgrade boot window, and exactly why `moav user add` reported "no
+    # key generator" while the web admin (hitting it seconds later, containers
+    # up) succeeded. Fall back to a one-shot `docker run` on the SAME
+    # locally-built image the container uses — resolved FROM the container so we
+    # don't guess the compose-auto-named image, works whether it is stopped or
+    # still booting, and it is always present after `moav build`. wg genkey and
+    # awg genkey are format-compatible, so either image's binary serves both.
+    # (The old fallback ran lscr.io/linuxserver/wireguard: normally not pulled —
+    # so it failed offline — and it ships wg but not awg, so AmneziaWG always
+    # died here regardless.)
+    for pair in "wireguard wg" "amneziawg awg"; do
+        svc=${pair% *}; bin=${pair#* }; cname="moav-$svc"
+        img=$("${t[@]}" docker inspect -f '{{.Config.Image}}' "$cname" 2>/dev/null)
+        if [[ -n "$img" ]]; then
+            _keys_bin="$bin"; _keys_prefix=("${t[@]}" docker run --rm -i --entrypoint "" "$img"); _keys_resolved=1; return 0
+        fi
+    done
+    # Nothing resolvable (pre-build, or wg/awg genuinely absent): leave a
+    # host-`wg` resolution that will emit nothing, so wg_keypair returns empty
+    # and the caller reports "no key generator" cleanly rather than hanging.
+    _keys_bin=wg; _keys_prefix=(); _keys_resolved=1; return 0
 }
 
 # wg_privkey — emit one CRLF-clean private key.
