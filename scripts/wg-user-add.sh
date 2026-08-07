@@ -47,7 +47,10 @@ if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
 fi
 
 # Load environment
-if [[ -f .env ]]; then
+# -r too: .env is root 0600; in the admin container (uid 2000) it exists but
+# is unreadable -- source would die with "Permission denied" under set -e. The
+# container gets the full .env via the compose env_file instead.
+if [[ -f .env && -r .env ]]; then
     set -a
     source .env
     set +a
