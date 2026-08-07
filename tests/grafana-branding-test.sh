@@ -42,6 +42,17 @@ else
     bad "guard still aborts under set -e"
 fi
 
+# The browser-tab favicon is served from public/BUILD/img/fav32.png (Grafana
+# renders [[.FavIcon]] to that path). The entrypoint can't write there (read-only
+# for uid 472), so compose must bind-mount the branded icon straight over it —
+# the img/ mount alone leaves the tab on the default icon (verified live).
+compose="$ROOT/docker-compose.yml"
+if grep -qE 'branding/grafana/fav32\.png:/usr/share/grafana/public/build/img/fav32\.png' "$compose"; then
+    ok "branded favicon is bind-mounted over the SERVED path (build/img/fav32.png)"
+else
+    bad "no build/img/fav32.png mount — the served favicon stays the grafana default"
+fi
+
 echo ""
 echo "  $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

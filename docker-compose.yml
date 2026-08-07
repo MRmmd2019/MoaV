@@ -931,7 +931,13 @@ services:
       # works regardless. The tab-title patch still needs a writable image
       # (moav build --local); on the prebuilt image the tab text stays "Grafana".
       - ./branding/grafana/fav32.png:/usr/share/grafana/public/img/fav32.png:ro
+      # Grafana renders [[.FavIcon]] as public/BUILD/img/fav32.png, not img/ —
+      # so the img/ mount alone left the browser tab on the default icon. The
+      # entrypoint's copy into build/img/ fails (dir is read-only for uid 472),
+      # so bind-mount the branded icon straight over the served path.
+      - ./branding/grafana/fav32.png:/usr/share/grafana/public/build/img/fav32.png:ro
       - ./branding/grafana/apple-touch-icon.png:/usr/share/grafana/public/img/apple-touch-icon.png:ro
+      - ./branding/grafana/apple-touch-icon.png:/usr/share/grafana/public/build/img/apple-touch-icon.png:ro
       - ./branding/grafana/grafana_icon.svg:/usr/share/grafana/public/img/grafana_icon.svg:ro
       - ./scripts/grafana-entrypoint.sh:/scripts/grafana-entrypoint.sh:ro
       - moav_grafana:/var/lib/grafana
