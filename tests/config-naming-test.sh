@@ -100,6 +100,51 @@ else
     bad "the wg-family globs overlap — a lookup could pick the wrong config"
 fi
 
+# --- everything that TOUCHES a bundle config must know both names ------------
+# Found by auditing, each one a silent failure rather than an error:
+#   migrate.sh   — rewrites Endpoint= on a server move. Missing the file leaves
+#                  users pointed at the OLD server IP, with a config that looks
+#                  fine and never connects.
+#   admin/main.py— decides whether a user "has" WireGuard in the dashboard.
+#   bundle_readme— _hide() CSS-hides a section whose config is embedded above it.
+grep -q 'moav-\*-wg\.conf' "$ROOT/lib/migrate.sh" && grep -q 'moav-\*-awg\.conf' "$ROOT/lib/migrate.sh" \
+    && ok "migrate.sh rewrites endpoints in renamed wg AND awg configs" \
+    || bad "migrate.sh misses renamed configs — a server move leaves users on the old IP"
+grep -q 'moav-\*-wg6\.conf' "$ROOT/lib/migrate.sh" \
+    && ok "migrate.sh covers the renamed IPv6 configs" \
+    || bad "migrate.sh misses the renamed IPv6 configs"
+grep -q 'glob("moav-\*-wg\.conf")' "$ROOT/admin/main.py" && grep -q 'glob("moav-\*-awg\.conf")' "$ROOT/admin/main.py" \
+    && ok "dashboard detects wg/awg under either name" \
+    || bad "dashboard would show users as having no WireGuard/AmneziaWG"
+grep -A6 'def _hide' "$ROOT/scripts/lib/bundle_readme.py" | grep -q '_candidates' \
+    && ok "_hide resolves renamed configs (section not CSS-hidden)" \
+    || bad "_hide uses a raw isfile — the guide embeds the config then hides the section"
+
+# --- regenerating a pre-rename bundle must not leave a stale duplicate --------
+# The stale copy still carries the old keys/endpoint, so importing it looks fine
+# and silently fails to connect.
+for f in wireguard amneziawg; do
+    if grep -qE "rm -f .*\\\$output_dir/${f}\.conf" "$ROOT/scripts/lib/${f}.sh"; then
+        ok "${f}.sh removes the pre-rename config when regenerating"
+    else
+        bad "${f}.sh leaves a stale ${f}.conf next to the renamed one after regenerate-users"
+    fi
+done
+
+# --- the integration harnesses must not report success when they cannot run --
+# client-test.sh used declare -A (bash 4) and, on bash 3.2, died at that line
+# and still exited 0: a crashed run reporting "all protocols fine".
+for t in client-test.sh cli-smoke-test.sh; do
+    if grep -q 'BASH_VERSINFO' "$ROOT/tests/$t"; then
+        ok "$t refuses to run (non-zero) on bash < 4 instead of reporting success"
+    else
+        bad "$t has no bash-4 guard — it can crash and still exit 0"
+    fi
+done
+grep -q 'rc -eq 127' "$ROOT/tests/cli-smoke-test.sh" \
+    && ok "cli-smoke-test treats command-not-found as a failure, not 'ok'" \
+    || bad "cli-smoke-test still reports 'ok' for exit 127"
+
 echo
 echo "  $pass passed, $fail failed"
 [[ $fail -eq 0 ]]

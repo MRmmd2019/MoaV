@@ -518,7 +518,7 @@ if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]]; then
         qrencode -o "$OUTPUT_DIR/wireguard-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg).conf" 2>/dev/null || true
         qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wgws).conf" 2>/dev/null || true
         if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" ]]; then
-            qrencode -o "$OUTPUT_DIR/wireguard-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/wireguard-ipv6.conf" 2>/dev/null || true
+            qrencode -o "$OUTPUT_DIR/wireguard-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" 2>/dev/null || true
         fi
         log_info "  - WireGuard config generated (direct + wstunnel${SERVER_IPV6:+ + ipv6})"
     fi
@@ -544,8 +544,8 @@ if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]]; then
         BUNDLE_CHANGED=true
         amneziawg_generate_client_config "$USER_ID" "$OUTPUT_DIR"
         qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg).conf" 2>/dev/null || true
-        if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/amneziawg-ipv6.conf" ]]; then
-            qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg-ipv6.conf" 2>/dev/null || true
+        if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/$(moav_wg_basename awg6).conf" ]]; then
+            qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg6).conf" 2>/dev/null || true
         fi
         log_info "  - AmneziaWG config generated (obfuscated WireGuard${SERVER_IPV6:+ + ipv6})"
     fi

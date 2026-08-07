@@ -19,6 +19,17 @@ TEST_URL="${TEST_URL:-https://www.google.com/generate_204}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-10}"
 TEMP_DIR="/tmp/moav-test-$$"
 
+# Requires bash >= 4: this script uses associative arrays (declare -A) for the
+# per-protocol results, exactly like moav.sh's own guard. On macOS's bash 3.2 it
+# used to die at the first `declare -A` with "invalid option" and then EXIT 0 --
+# a crashed run reporting success. Fail loudly and distinctly (2 = could not
+# run, not "all protocols fine").
+if [[ -z "${BASH_VERSINFO:-}" ]] || (( BASH_VERSINFO[0] < 4 )); then
+    echo "moav test requires bash 4.0 or newer (found ${BASH_VERSION:-unknown})." >&2
+    echo "macOS ships bash 3.2; run it on the server, or: brew install bash" >&2
+    exit 2
+fi
+
 # Results storage
 declare -A RESULTS
 declare -A DETAILS

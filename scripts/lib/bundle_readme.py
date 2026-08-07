@@ -72,7 +72,13 @@ def val_or(value, fallback):
 
 
 def _hide(name):       # "" (show) if the artifact exists in the bundle, else CSS hide
-    return "" if os.path.isfile(os.path.join(OUT, name)) else "display:none"
+    # Through _candidates, so a renamed WireGuard config (moav-<server>-wg.conf)
+    # still shows its section. A direct isfile() here would embed the config via
+    # _read() and then CSS-hide the section containing it.
+    for candidate in _candidates(name):
+        if os.path.isfile(os.path.join(OUT, candidate)):
+            return ""
+    return "display:none"
 
 
 # MasterDNS/GooseRelay can't be generated on the host path (server-shared key

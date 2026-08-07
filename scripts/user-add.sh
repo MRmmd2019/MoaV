@@ -380,8 +380,8 @@ for USERNAME in "${USERNAMES[@]}"; do
             amneziawg_generate_client_config "$USERNAME" "$OUTPUT_DIR"
 
             qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg).conf" 2>/dev/null || true
-            if [[ -f "$OUTPUT_DIR/amneziawg-ipv6.conf" ]]; then
-                qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg-ipv6.conf" 2>/dev/null || true
+            if [[ -f "$OUTPUT_DIR/$(moav_wg_basename awg6).conf" ]]; then
+                qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg6).conf" 2>/dev/null || true
             fi
         ) && log_info "✓ AmneziaWG peer added" || {
             ERRORS+=("amneziawg")

@@ -227,5 +227,11 @@ Endpoint = 127.0.0.1:51820
 PersistentKeepalive = 25
 EOF
 
+    # Drop the pre-rename filenames. A regenerated bundle would otherwise ship
+    # two copies of the same tunnel — and the stale one still carries the old
+    # keys/endpoint, so importing it looks fine and silently fails to connect.
+    rm -f "$output_dir/wireguard.conf" "$output_dir/wireguard-wstunnel.conf" \
+          "$output_dir/wireguard-ipv6.conf" 2>/dev/null || true
+
     log_info "Generated WireGuard client config for $user_id"
 }

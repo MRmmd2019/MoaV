@@ -705,12 +705,15 @@ def list_users():
 
         # Check what files exist in the bundle
         has_reality = (user_dir / "reality.txt").exists()
-        has_wireguard = (user_dir / "wireguard.conf").exists()
+        # Either filename generation: bundles now ship moav-<server>-wg.conf,
+        # older ones wireguard.conf. Matching only one hides the protocol in the
+        # dashboard for users who plainly have it.
+        has_wireguard = bool(list(user_dir.glob("moav-*-wg.conf"))) or (user_dir / "wireguard.conf").exists()
         has_hysteria2 = (user_dir / "hysteria2.yaml").exists() or (user_dir / "hysteria2.txt").exists()
         has_trojan = (user_dir / "trojan.txt").exists()
         has_trusttunnel = (user_dir / "trusttunnel.toml").exists() or (user_dir / "trusttunnel.json").exists()
         has_cdn = (user_dir / "cdn-vless.txt").exists()
-        has_amneziawg = (user_dir / "amneziawg.conf").exists()
+        has_amneziawg = bool(list(user_dir.glob("moav-*-awg.conf"))) or (user_dir / "amneziawg.conf").exists()
         has_telemt = (user_dir / "telegram-proxy-link.txt").exists()
         has_xhttp = (user_dir / "xhttp-vless.txt").exists()
         has_xdns = (user_dir / "xdns-config.json").exists()
