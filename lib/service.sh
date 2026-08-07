@@ -372,7 +372,7 @@ select_profiles() {
     echo -e "  ${CYAN}│${NC}  ${BLUE}9${NC}   conduit      Donate bandwidth via Psiphon                  ${CYAN}│${NC}"
     echo -e "  ${CYAN}│${NC}  ${BLUE}10${NC}  snowflake    Donate bandwidth via Tor                      ${CYAN}│${NC}"
     echo -e "  ${CYAN}├─────────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "  ${CYAN}│${NC}  ${BLUE}11${NC}  monitoring   Grafana + Prometheus (requires 2GB RAM)       ${CYAN}│${NC}"
+    echo -e "  ${CYAN}│${NC}  ${BLUE}11${NC}  monitoring   Grafana + Prometheus (2 GB+ RAM)            ${CYAN}│${NC}"
     echo -e "  ${CYAN}├─────────────────────────────────────────────────────────────────┤${NC}"
     echo -e "  ${CYAN}│${NC}  ${GREEN}a${NC}   ${GREEN}ALL${NC}          All services ${GREEN}(Recommended)${NC}                    ${CYAN}│${NC}"
     echo -e "  ${CYAN}│${NC}  ${DIM}0${NC}   ${DIM}Back${NC}         Back to main menu                             ${CYAN}│${NC}"
@@ -469,7 +469,7 @@ select_profiles() {
         elif [[ "$enable_monitoring" != "false" ]]; then
             # Not explicitly set - ask user
             echo ""
-            warn "Monitoring stack (Grafana + Prometheus) requires at least 2GB RAM."
+            warn "Monitoring (Grafana + Prometheus) runs best with 2 GB+ RAM."
             if confirm "Enable monitoring?" "$(monitoring_default_for_ram)"; then
                 update_env_var "$env_file" "ENABLE_MONITORING" "true"
                 SELECTED_PROFILES+=("monitoring")
@@ -861,10 +861,10 @@ ensure_clash_api_secret() {
     if [[ -z "$current_secret" ]] && [[ "$enable_monitoring" != "false" ]]; then
         if echo "$profiles" | grep -qE "\ball\b|--profile all"; then
             echo ""
-            warn "Monitoring requires at least 2GB RAM to run properly."
+            warn "Monitoring (Grafana + Prometheus) runs best with 2 GB+ RAM."
             echo "  The monitoring stack includes Grafana, Prometheus, and exporters."
             echo ""
-            if ! confirm "Enable monitoring? (You can start it later with 'moav start monitoring')" "n"; then
+            if ! confirm "Enable monitoring? (You can start it later with 'moav start monitoring')" "$(monitoring_default_for_ram)"; then
                 info "Skipping monitoring. Starting other services..."
                 return 1  # Signal caller to skip monitoring
             fi
@@ -1374,7 +1374,7 @@ cmd_start() {
     fi
     # Show Conduit sharing hint if conduit was started
     if echo "$profiles" | grep -qE "conduit|all"; then
-        echo -e "  ${CYAN}Psiphon Conduit:${NC} claim link, QR & sharing guide: moav conduit link"
+        echo -e "  ${CYAN}Donate bandwidth:${NC} share protocols & configs to help others bypass censorship: moav donate"
     fi
 
     if echo "$profiles" | grep -qE "admin|monitoring|proxy|all"; then
