@@ -6,6 +6,7 @@ One pass, pure Python: no sed (so no BSD/GNU flavor split), multiline configs an
 passwords with shell-special chars handled natively. subscription.txt is written
 UNCONDITIONALLY (empty when the bundle has no V2Ray-compatible links)."""
 import base64
+import glob
 import os
 import re
 
@@ -14,11 +15,36 @@ CONTEXT = os.environ.get("RB_CONTEXT", "container")
 
 
 def _read(name):
-    try:
-        with open(os.path.join(OUT, name), encoding="utf-8", errors="replace") as f:
-            return f.read()
-    except OSError:
-        return ""
+    for candidate in _candidates(name):
+        try:
+            with open(os.path.join(OUT, candidate), encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError:
+            continue
+    return ""
+
+
+def _candidates(name):
+    """Resolve a logical bundle file to what is actually on disk.
+
+    WireGuard-family configs are named moav-<server>-wg.conf now (clients take
+    the tunnel name from the filename), but bundles generated before the rename
+    use the plain names — and a stale guide would show "No WireGuard config
+    available" for a config that is sitting right there. Try the new glob first,
+    then the legacy name.
+    """
+    globs = {
+        "wireguard.conf":          "moav-*-wg.conf",
+        "wireguard-wstunnel.conf": "moav-*-wgws.conf",
+        "wireguard-ipv6.conf":     "moav-*-wg6.conf",
+        "amneziawg.conf":          "moav-*-awg.conf",
+        "amneziawg-ipv6.conf":     "moav-*-awg6.conf",
+    }
+    pattern = globs.get(name)
+    if pattern:
+        for hit in sorted(glob.glob(os.path.join(OUT, pattern))):
+            yield os.path.basename(hit)
+    yield name
 
 
 def link(name):        # single-line share link (.txt)
@@ -46,7 +72,13 @@ def val_or(value, fallback):
 
 
 def _hide(name):       # "" (show) if the artifact exists in the bundle, else CSS hide
-    return "" if os.path.isfile(os.path.join(OUT, name)) else "display:none"
+    # Through _candidates, so a renamed WireGuard config (moav-<server>-wg.conf)
+    # still shows its section. A direct isfile() here would embed the config via
+    # _read() and then CSS-hide the section containing it.
+    for candidate in _candidates(name):
+        if os.path.isfile(os.path.join(OUT, candidate)):
+            return ""
+    return "display:none"
 
 
 # MasterDNS/GooseRelay can't be generated on the host path (server-shared key

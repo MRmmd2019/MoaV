@@ -135,6 +135,36 @@ svc_running() {
     "${t[@]}" docker ps --filter "name=^/moav-${1}$" --filter status=running -q 2>/dev/null | grep -q .
 }
 
+# moav_server_label — short human label for THIS server, used in every config
+# name so a user importing bundles from several MoaV servers can tell them
+# apart in the VPN app list. DOMAIN's first label (yorkschool.xyz ->
+# yorkschool), else SERVER_IP, else "moav".
+moav_server_label() {
+    local d="${DOMAIN:-}" ip="${SERVER_IP:-}"
+    if [[ -n "$d" ]]; then printf '%s' "${d%%.*}"
+    elif [[ -n "$ip" ]]; then printf '%s' "$ip"
+    fi   # neither: empty, so names stay "MoaV-Reality-alice" / "moav-wg.conf"
+}
+
+# moav_name_prefix — "MoaV-<server>-" for share-link fragments and config
+# remarks. Emits "MoaV-" when there is no label, so a name can never come out
+# as "MoaV--Reality-alice".
+moav_name_prefix() {
+    local l; l=$(moav_server_label)
+    if [[ -n "$l" ]]; then printf 'MoaV-%s-' "$l"; else printf 'MoaV-'; fi
+}
+
+# moav_wg_basename <wg|awg|wgws> — basename (no .conf) for a WireGuard-family
+# config. WireGuard clients take the tunnel name from the FILENAME, and Linux
+# `wg-quick` turns that basename into a network interface, which the kernel
+# caps at 15 characters (verified: 15 accepted, 16 rejected). "moav-" + label +
+# "-wgws" is the longest form, so the label gets 5 characters.
+moav_wg_basename() {
+    local sfx="$1" lbl
+    lbl=$(moav_server_label | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-5)
+    if [[ -n "$lbl" ]]; then printf 'moav-%s-%s' "$lbl" "$sfx"; else printf 'moav-%s' "$sfx"; fi
+}
+
 # svc_restart <service> — restart by container name. `docker compose restart`
 # needs the compose file + .env interpolation, which the admin container cannot
 # do; a skipped restart is silent and total: sing-box runs from a COPY of the

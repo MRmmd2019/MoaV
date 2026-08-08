@@ -481,22 +481,27 @@ cmd_migrate_ip() {
                     rm -f "$user_dir/trojan.txt.bak"
                 fi
 
-                # Update WireGuard direct config (wstunnel uses localhost, no change needed)
-                if [[ -f "$user_dir/wireguard.conf" ]]; then
-                    sed -i.bak "s/Endpoint = $old_ip:/Endpoint = $new_ip:/g" "$user_dir/wireguard.conf"
-                    rm -f "$user_dir/wireguard.conf.bak"
-                fi
+                # Update WireGuard direct config (wstunnel uses localhost, no change needed).
+                # Both filename generations: bundles now ship moav-<server>-wg.conf,
+                # older ones wireguard.conf. Missing either here would leave the
+                # user pointed at the OLD server IP after a migration, silently.
+                for _wgc in "$user_dir"/moav-*-wg.conf "$user_dir"/wireguard.conf; do
+                    [[ -f "$_wgc" ]] || continue
+                    sed -i.bak "s/Endpoint = $old_ip:/Endpoint = $new_ip:/g" "$_wgc"
+                    rm -f "$_wgc.bak"
+                done
 
                 # Update WireGuard IPv6 config if exists
-                if [[ -f "$user_dir/wireguard-ipv6.conf" ]] && [[ -n "$new_ipv6" ]]; then
+                for _wg6 in "$user_dir"/moav-*-wg6.conf "$user_dir"/wireguard-ipv6.conf; do
+                    [[ -f "$_wg6" ]] && [[ -n "$new_ipv6" ]] || continue
                     # Update IPv6 endpoint (format: [ipv6]:port)
                     if [[ -n "$old_ipv6" ]]; then
-                        sed -i.bak "s/Endpoint = \[$old_ipv6\]:/Endpoint = [$new_ipv6]:/g" "$user_dir/wireguard-ipv6.conf"
+                        sed -i.bak "s/Endpoint = \[$old_ipv6\]:/Endpoint = [$new_ipv6]:/g" "$_wg6"
                     else
-                        sed -i.bak "s/Endpoint = \[[^]]*\]:/Endpoint = [$new_ipv6]:/g" "$user_dir/wireguard-ipv6.conf"
+                        sed -i.bak "s/Endpoint = \[[^]]*\]:/Endpoint = [$new_ipv6]:/g" "$_wg6"
                     fi
-                    rm -f "$user_dir/wireguard-ipv6.conf.bak"
-                fi
+                    rm -f "$_wg6.bak"
+                done
 
                 # Update IPv6 link files if they exist
                 for ipv6_file in "$user_dir"/*-ipv6.txt; do
@@ -520,17 +525,19 @@ cmd_migrate_ip() {
                     rm -f "$user_dir/slipstream-instructions.txt.bak"
                 fi
 
-                # Update AmneziaWG configs
-                if [[ -f "$user_dir/amneziawg.conf" ]]; then
-                    sed -i.bak "s/Endpoint = $old_ip:/Endpoint = $new_ip:/g" "$user_dir/amneziawg.conf"
-                    rm -f "$user_dir/amneziawg.conf.bak"
-                fi
-                if [[ -f "$user_dir/amneziawg-ipv6.conf" ]] && [[ -n "$new_ipv6" ]]; then
+                # Update AmneziaWG configs (new moav-<server>-awg.conf and legacy)
+                for _awgc in "$user_dir"/moav-*-awg.conf "$user_dir"/amneziawg.conf; do
+                    [[ -f "$_awgc" ]] || continue
+                    sed -i.bak "s/Endpoint = $old_ip:/Endpoint = $new_ip:/g" "$_awgc"
+                    rm -f "$_awgc.bak"
+                done
+                for _awg6 in "$user_dir"/moav-*-awg6.conf "$user_dir"/amneziawg-ipv6.conf; do
+                    [[ -f "$_awg6" ]] && [[ -n "$new_ipv6" ]] || continue
                     if [[ -n "$old_ipv6" ]]; then
-                        sed -i.bak "s/Endpoint = \[$old_ipv6\]:/Endpoint = [$new_ipv6]:/g" "$user_dir/amneziawg-ipv6.conf"
+                        sed -i.bak "s/Endpoint = \[$old_ipv6\]:/Endpoint = [$new_ipv6]:/g" "$_awg6"
                     fi
-                    rm -f "$user_dir/amneziawg-ipv6.conf.bak"
-                fi
+                    rm -f "$_awg6.bak"
+                done
 
                 # Update Telegram MTProxy links
                 if [[ -f "$user_dir/telegram-proxy-link.txt" ]]; then
@@ -616,10 +623,12 @@ cmd_migrate_ip() {
                     fi
                 done
 
-                # WireGuard QR codes
-                if [[ -f "$user_dir/wireguard.conf" ]]; then
-                    qrencode -o "$user_dir/wireguard-qr.png" -s 6 -r "$user_dir/wireguard.conf" 2>/dev/null && ((qr_count++)) || true
-                fi
+                # WireGuard QR codes (new moav-<server>-wg.conf and legacy)
+                for _wgq in "$user_dir"/moav-*-wg.conf "$user_dir"/wireguard.conf; do
+                    [[ -f "$_wgq" ]] || continue
+                    qrencode -o "$user_dir/wireguard-qr.png" -s 6 -r "$_wgq" 2>/dev/null && ((qr_count++)) || true
+                    break
+                done
             fi
         done
         if [[ $qr_count -gt 0 ]]; then

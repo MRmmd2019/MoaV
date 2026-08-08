@@ -19,6 +19,17 @@ TEST_URL="${TEST_URL:-https://www.google.com/generate_204}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-10}"
 TEMP_DIR="/tmp/moav-test-$$"
 
+# Requires bash >= 4: this script uses associative arrays (declare -A) for the
+# per-protocol results, exactly like moav.sh's own guard. On macOS's bash 3.2 it
+# used to die at the first `declare -A` with "invalid option" and then EXIT 0 --
+# a crashed run reporting success. Fail loudly and distinctly (2 = could not
+# run, not "all protocols fine").
+if [[ -z "${BASH_VERSINFO:-}" ]] || (( BASH_VERSINFO[0] < 4 )); then
+    echo "moav test requires bash 4.0 or newer (found ${BASH_VERSION:-unknown})." >&2
+    echo "macOS ships bash 3.2; run it on the server, or: brew install bash" >&2
+    exit 2
+fi
+
 # Results storage
 declare -A RESULTS
 declare -A DETAILS
@@ -985,7 +996,9 @@ test_wireguard() {
     local is_ipv6=false
 
     # Find WireGuard config - prefer IPv4 over IPv6
-    for f in "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
+    # new-style moav-<server>-wg.conf first, then the legacy names so bundles
+    # generated before the rename still validate.
+    for f in "$CONFIG_DIR"/moav-*-wg.conf "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
     if [[ -z "$config_file" ]]; then
@@ -1149,7 +1162,7 @@ test_amneziawg() {
     local detail=""
 
     # Find AmneziaWG config
-    for f in "$CONFIG_DIR"/amneziawg.conf; do
+    for f in "$CONFIG_DIR"/moav-*-awg.conf "$CONFIG_DIR"/amneziawg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
     if [[ -z "$config_file" ]]; then
@@ -2154,7 +2167,7 @@ test_wstunnel() {
     log_info "Testing WireGuard-over-wstunnel..."
 
     local conf="" detail=""
-    for f in "$CONFIG_DIR"/wireguard-wstunnel.conf; do
+    for f in "$CONFIG_DIR"/moav-*-wgws.conf "$CONFIG_DIR"/wireguard-wstunnel.conf; do
         [[ -f "$f" ]] && conf="$f" && break
     done
     if [[ -z "$conf" ]]; then

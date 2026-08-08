@@ -255,7 +255,7 @@ amneziawg_generate_client_config() {
     fi
 
     # AmneziaWG client config (includes obfuscation params)
-    cat > "$output_dir/amneziawg.conf" <<EOF
+    cat > "$output_dir/$(moav_wg_basename awg).conf" <<EOF
 [Interface]
 PrivateKey = $AWG_PRIVATE_KEY
 Address = $client_addresses
@@ -280,7 +280,7 @@ EOF
 
     # Generate IPv6 endpoint config if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        cat > "$output_dir/amneziawg-ipv6.conf" <<EOF
+        cat > "$output_dir/$(moav_wg_basename awg6).conf" <<EOF
 [Interface]
 PrivateKey = $AWG_PRIVATE_KEY
 Address = $client_addresses
@@ -304,6 +304,10 @@ PersistentKeepalive = 25
 EOF
         log_info "Generated AmneziaWG IPv6 endpoint config"
     fi
+
+    # Same as WireGuard: remove the pre-rename filenames so a regenerated bundle
+    # never ships a stale second copy of the tunnel.
+    rm -f "$output_dir/amneziawg.conf" "$output_dir/amneziawg-ipv6.conf" 2>/dev/null || true
 
     log_info "Generated AmneziaWG client config for $user_id"
 }

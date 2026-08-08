@@ -20,13 +20,38 @@ SMOKE_USER="clismoke$$"
 TIMEOUT=120
 pass=0 fail=0
 
+# GNU timeout is how a hang is caught, but it is not everywhere (macOS ships
+# BSD tools; coreutils installs it as gtimeout). Without this guard every check
+# died with "timeout: command not found" -> exit 127, which `info` mode then
+# reported as ok — 19 red lines and several false greens that said nothing about
+# moav. Prefer timeout, then gtimeout, else run the command directly and say
+# once that hang detection is off.
+TIMEOUT_BIN=""
+for _t in timeout gtimeout; do
+    command -v "$_t" >/dev/null 2>&1 && { TIMEOUT_BIN="$_t"; break; }
+done
+[[ -z "$TIMEOUT_BIN" ]] && echo "note: no timeout/gtimeout on this host — running without hang detection"
+
 run() {
     local mode="$1" desc="$2"; shift 2
     [[ "${1:-}" == "--" ]] && shift
     local out rc
-    out=$(timeout "$TIMEOUT" "$@" 2>&1); rc=$?
+    if [[ -n "$TIMEOUT_BIN" ]]; then
+        out=$("$TIMEOUT_BIN" "$TIMEOUT" "$@" 2>&1); rc=$?
+    else
+        out=$("$@" 2>&1); rc=$?
+    fi
     if [[ $rc -eq 124 ]]; then
         echo "FAIL $desc (TIMED OUT after ${TIMEOUT}s — command hangs)"
+        echo "$out" | tail -4 | sed 's/^/       | /'
+        fail=$((fail + 1)); return
+    fi
+    # 127/126 are never a legitimate state-dependent exit: the command is
+    # missing or not executable. `info` mode used to wave these through, so a
+    # vanished subcommand or a typo in this file reported "ok".
+    if [[ $rc -eq 127 || $rc -eq 126 ]]; then
+        echo "FAIL $desc (exit $rc — command not found or not executable)"
+        echo "$out" | tail -4 | sed 's/^/       | /'
         fail=$((fail + 1)); return
     fi
     if [[ "$mode" == "must" && $rc -ne 0 ]]; then
@@ -37,6 +62,23 @@ run() {
     echo "ok   $desc (exit $rc)"
     pass=$((pass + 1))
 }
+
+# Preconditions. This battery drives a LIVE stack through ./moav.sh, which
+# itself requires bash >= 4. Without those, every check fails for the same
+# uninteresting reason (on macOS's bash 3.2 that was 19 red lines carrying
+# moav's version notice, nothing about moav's behaviour). Say so once and exit 2
+# (skipped) rather than 0, so a CI job can never mistake "not run" for "passed".
+if [[ -z "${BASH_VERSINFO:-}" ]] || (( BASH_VERSINFO[0] < 4 )); then
+    echo "SKIP: moav requires bash 4.0 or newer (found ${BASH_VERSION:-unknown})."
+    echo "      Run this on the server, or: brew install bash && /opt/homebrew/bin/bash $0"
+    exit 2
+fi
+
+if [[ ! -x "$MOAV" ]]; then
+    echo "SKIP: $MOAV not found — run this from the repo root of a live install:"
+    echo "      ./moav.sh start all && bash tests/cli-smoke-test.sh"
+    exit 2
+fi
 
 echo "============================================================"
 echo "  moav CLI smoke test"

@@ -149,7 +149,9 @@ generate_singbox_config() {
             fi
             ;;
         wireguard)
-            for f in "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
+            # new-style moav-<server>-wg.conf first, then legacy names so
+            # bundles generated before the rename still test fine.
+            for f in "$CONFIG_DIR"/moav-*-wg.conf "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
                 [[ -f "$f" ]] && config_file="$f" && break
             done
             if [[ -z "$config_file" ]]; then
@@ -651,12 +653,13 @@ EOF
 connect_amneziawg() {
     local config_file=""
 
-    for f in "$CONFIG_DIR"/amneziawg.conf; do
+    # new-style moav-<server>-awg.conf first, then the legacy name.
+    for f in "$CONFIG_DIR"/moav-*-awg.conf "$CONFIG_DIR"/amneziawg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
 
     if [[ -z "$config_file" ]]; then
-        log_error "No AmneziaWG config found (looking for amneziawg.conf in $CONFIG_DIR)"
+        log_error "No AmneziaWG config found (looking for moav-*-awg.conf or amneziawg.conf in $CONFIG_DIR)"
         return 1
     fi
 
