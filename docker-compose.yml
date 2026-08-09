@@ -14,8 +14,29 @@ x-logging: &default-logging
 networks:
   moav_net:
     driver: bridge
+  # Management plane: carries ONLY admin -> docker-proxy. docker-proxy is an
+  # unauthenticated Docker API endpoint (the socket-proxy filters path and
+  # method, never the request body), so anything able to reach it can create a
+  # privileged container with arbitrary bind mounts = host root. On the shared
+  # moav_net that meant all 29 containers could reach it -- including every
+  # service terminating untrusted internet traffic. Only admin needs it.
+  #
+  # internal: true -> no gateway. docker-proxy reaches Docker through the
+  # mounted unix socket, not the network, so it needs no outbound route.
+  moav_mgmt:
+    driver: bridge
+    internal: true
 
 volumes:
+  # Interface state published by the wireguard/amneziawg containers for their
+  # exporters to read. Exists so those exporters do not need the raw Docker
+  # socket just to run `wg show` -- see the publish_state() in each entrypoint.
+  moav_metrics:
+  # Separate from moav_metrics on purpose: xray runs as a non-root user, and a
+  # named volume only inherits image ownership while it is EMPTY. The wireguard
+  # container (root) writes to moav_metrics immediately, which would leave it
+  # root-owned and unwritable by xray.
+  moav_xray_metrics:
   moav_certs:
   moav_state:
   moav_logs:
@@ -53,7 +74,7 @@ services:
     volumes:
       - ./configs/sing-box:/etc/sing-box:ro
       - moav_certs:/certs:ro
-      - moav_state:/state
+      - moav_state:/state:ro                       # keys read-only: sing-box must never chown the secret store (see entrypoint)
       - moav_logs:/var/log/sing-box
     environment:
       - TZ=${TZ:-UTC}
@@ -144,6 +165,7 @@ services:
     ports:
       - "${PORT_WIREGUARD:-51820}:51820/udp"
     volumes:
+      - moav_metrics:/var/lib/moav-metrics
       - ./configs/wireguard:/etc/wireguard
       - /lib/modules:/lib/modules:ro
     environment:
@@ -635,6 +657,7 @@ services:
     ports:
       - "${PORT_AMNEZIAWG:-51821}:51821/udp"
     volumes:
+      - moav_metrics:/var/lib/moav-metrics
       - ./configs/amneziawg:/etc/amneziawg
       - /lib/modules:/lib/modules:ro
     environment:
@@ -733,6 +756,7 @@ services:
       - "${PORT_XHTTP:-2096}:${PORT_XHTTP:-2096}/tcp"
       - "${PORT_XDNS:-5356}:5355/udp"
     volumes:
+      - moav_xray_metrics:/var/lib/moav-metrics
       - ./configs/xray:/etc/xray:ro
       - moav_state:/state:ro
     environment:
@@ -767,7 +791,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     networks:
-      - moav_net
+      - moav_mgmt
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
@@ -800,6 +824,7 @@ services:
     logging: *default-logging
     networks:
       - moav_net
+      - moav_mgmt   # docker-proxy; stays on moav_net for the service APIs
     ports:
       - "${PORT_ADMIN:-9443}:8443"
     volumes:
@@ -809,6 +834,15 @@ services:
       - ./state:/project/state                     # Credential sync (read-write for user-add.sh)
       - moav_state:/state:ro                       # Dashboard reads keys from Docker volume
       - moav_certs:/certs:ro                       # SSL certificates
+    # .env is root:root 0600 (holds ADMIN_PASSWORD), so the non-root admin
+    # process cannot read the mounted copy that provisioning scripts source.
+    # env_file injects the full .env as process environment instead — read
+    # host-side (as root) at `up` time, so the file perms don't matter and the
+    # ENABLE_*/PORT_* toggles keep working in the web-admin user-add path.
+    # Explicit `environment:` entries below still take precedence.
+    env_file:
+      - path: .env
+        required: false
     environment:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - ADMIN_IP_WHITELIST=${ADMIN_IP_WHITELIST:-}
@@ -898,7 +932,22 @@ services:
       - ./configs/monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - ./configs/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./configs/monitoring/grafana/provisioning/dashboards:/var/lib/grafana/dashboards:ro
-      - ./site/assets:/branding:ro
+      - ./branding:/branding:ro
+      # MoaV-branded (grafana-palette) favicon + login/nav logo, bind-mounted
+      # directly over grafana's assets. The entrypoint used to WRITE these, but
+      # /usr/share/grafana/public is read-only even for root in the current
+      # image; a read-only bind-mount overrides the file at the kernel level and
+      # works regardless. The tab-title patch still needs a writable image
+      # (moav build --local); on the prebuilt image the tab text stays "Grafana".
+      - ./branding/grafana/fav32.png:/usr/share/grafana/public/img/fav32.png:ro
+      # Grafana renders [[.FavIcon]] as public/BUILD/img/fav32.png, not img/ —
+      # so the img/ mount alone left the browser tab on the default icon. The
+      # entrypoint's copy into build/img/ fails (dir is read-only for uid 472),
+      # so bind-mount the branded icon straight over the served path.
+      - ./branding/grafana/fav32.png:/usr/share/grafana/public/build/img/fav32.png:ro
+      - ./branding/grafana/apple-touch-icon.png:/usr/share/grafana/public/img/apple-touch-icon.png:ro
+      - ./branding/grafana/apple-touch-icon.png:/usr/share/grafana/public/build/img/apple-touch-icon.png:ro
+      - ./branding/grafana/grafana_icon.svg:/usr/share/grafana/public/img/grafana_icon.svg:ro
       - ./scripts/grafana-entrypoint.sh:/scripts/grafana-entrypoint.sh:ro
       - moav_grafana:/var/lib/grafana
       - moav_certs:/certs:ro
@@ -912,6 +961,15 @@ services:
       - GRAFANA_APP_TITLE=${GRAFANA_APP_TITLE:-}
       - TZ=${TZ:-UTC}
     # Note: read_only not set - grafana entrypoint writes branding files to container filesystem
+    # user:"0" and the writable FS above are load-bearing (the entrypoint
+    # patches branding into /usr/share/grafana/public, which uid 472 cannot
+    # write). These two are orthogonal to that and cost nothing: grafana needs
+    # no capabilities, and it is a first-hop target -- internet-facing, mounts
+    # moav_certs, and shares moav_net with docker-proxy.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     tmpfs:
       - /tmp:rw,size=100m
     mem_limit: 512m
@@ -997,6 +1055,12 @@ services:
       - all
 
   cadvisor:
+    # ACCEPTED EXCEPTION: privileged + read-only host mounts (incl. the raw
+    # docker socket). cAdvisor cannot produce per-container cpu/memory/disk
+    # stats without cgroup, /sys and docker-state access; this is its upstream
+    # deployment mode. Scope limits: every mount is :ro, its API is read-only
+    # metrics on an internal port, and the whole service only exists under the
+    # opt-in `monitoring` profile — disable monitoring and it is gone.
     # Use IMAGE_CADVISOR env var, or build locally with: moav build --local
     image: ${IMAGE_CADVISOR:-gcr.io/cadvisor/cadvisor:latest}
     container_name: moav-cadvisor
@@ -1021,6 +1085,13 @@ services:
       - '--docker_only=true'
       - '--housekeeping_interval=30s'
       - '--store_container_labels=true'
+      # Quiet the logs: cAdvisor logs a multi-line "Filesystem partitions" map
+      # (every overlayfs/tmpfs mount) at glog level 0 on each housekeeping pass,
+      # which floods `docker logs`. -v=0 + only-warnings-and-up to stderr keeps
+      # the metrics unchanged while cutting the info-spam.
+      - '--logtostderr=true'
+      - '--stderrthreshold=1'
+      - '-v=0'
     environment:
       - TZ=${TZ:-UTC}
     mem_limit: 256m
@@ -1068,7 +1139,7 @@ services:
     networks:
       - moav_net
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Raw Docker socket removed: user attribution now comes from the Clash API.
       - moav_geoip:/geoip:ro
       - moav_state:/state:ro
     environment:
@@ -1129,7 +1200,7 @@ services:
     networks:
       - moav_net
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - moav_xray_metrics:/var/lib/moav-metrics:ro   # replaces the raw Docker socket
       - moav_geoip:/geoip:ro
     environment:
       - TZ=${TZ:-UTC}
@@ -1159,7 +1230,7 @@ services:
     networks:
       - moav_net
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - moav_metrics:/var/lib/moav-metrics:ro   # replaces the raw Docker socket
       - ./configs/wireguard:/etc/wireguard:ro
       - moav_geoip:/geoip:ro
     environment:
@@ -1188,7 +1259,7 @@ services:
     networks:
       - moav_net
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - moav_metrics:/var/lib/moav-metrics:ro   # replaces the raw Docker socket
       - ./configs/amneziawg:/etc/amneziawg:ro
       - moav_geoip:/geoip:ro
     environment:
@@ -1249,7 +1320,7 @@ services:
       - ./scripts/bootstrap.sh:/app/bootstrap.sh:ro
       - ./scripts/generate-user.sh:/app/generate-user.sh:ro
       - ./scripts/lib:/app/lib:ro
-      - ./docs:/docs:ro
+      - ./templates:/templates:ro
       - moav_state:/state
       - moav_certs:/certs
       - ./state:/host-state:ro    # Host state dir for users created via 'moav user add'
@@ -1282,7 +1353,7 @@ services:
       - PORT_AMNEZIAWG=${PORT_AMNEZIAWG:-51821}
       - ENABLE_XHTTP=${ENABLE_XHTTP:-true}
       - PORT_XHTTP=${PORT_XHTTP:-2096}
-      - XHTTP_REALITY_TARGET=${XHTTP_REALITY_TARGET:-dl.google.com:443}
+      - XHTTP_REALITY_TARGET=${XHTTP_REALITY_TARGET:-${REALITY_TARGET:-dl.google.com:443}}
       - ENABLE_XDNS=${ENABLE_XDNS:-true}
       - XDNS_SUBDOMAIN=${XDNS_SUBDOMAIN:-x}
       - XDNS_MTU=${XDNS_MTU:-35}
@@ -1319,7 +1390,6 @@ services:
         GOSUMDB: "${GOSUMDB:-off}"
         SINGBOX_VERSION: ${SINGBOX_VERSION:-1.13.12}
         WSTUNNEL_VERSION: ${WSTUNNEL_VERSION:-10.6.1}
-        SNOWFLAKE_VERSION: ${SNOWFLAKE_VERSION:-2.11.0}
         TRUSTTUNNEL_CLIENT_VERSION: ${TRUSTTUNNEL_CLIENT_VERSION:-1.0.49}
         AWGTOOLS_VERSION: ${AWGTOOLS_VERSION:-1.0.20260223}
         SLIPSTREAM_VERSION: ${SLIPSTREAM_VERSION:-2026.02.22.1}

@@ -3,15 +3,31 @@
 # Grafana entrypoint with SSL certificate detection and custom branding
 # =============================================================================
 
+
+# Strict mode, minus `-e` (see below).
+set -eu
+# `set` is a POSIX SPECIAL builtin: a failed `set -o pipefail` exits a
+# non-interactive shell outright and `|| true` does NOT save it. dash (debian's
+# /bin/sh, used by sing-box and wstunnel) has no pipefail. Probe in a subshell,
+# where the exit is contained, then enable it only if supported.
+if ( set -o pipefail 2>/dev/null ); then set -o pipefail; fi
+# NOTE: `-e` is deliberately NOT enabled here yet. This entrypoint has never run
+# under it, so every currently-tolerated non-zero exit would become fatal. That
+# needs a per-command review, tracked separately -- adding it blind to six
+# long-running services at once is how you take down a stack.
+
 echo "[grafana] Starting MoaV Grafana Dashboard"
 
 # Determine app title (for PWA name on phone home screen)
 # Priority: GRAFANA_APP_TITLE > "MoaV - DOMAIN" > "MoaV - SERVER_IP" > "MoaV"
-if [ -n "$GRAFANA_APP_TITLE" ]; then
-    APP_TITLE="$GRAFANA_APP_TITLE"
-elif [ -n "$DOMAIN" ]; then
+# `:-` on each: compose always supplies these (as ${VAR:-}), but the entrypoint
+# should not depend on that to survive `set -u`. Running it outside compose, or
+# a compose file that drops one, would otherwise abort the container here.
+if [ -n "${GRAFANA_APP_TITLE:-}" ]; then
+    APP_TITLE="${GRAFANA_APP_TITLE:-}"
+elif [ -n "${DOMAIN:-}" ]; then
     APP_TITLE="MoaV Grafana - ${DOMAIN}"
-elif [ -n "$SERVER_IP" ]; then
+elif [ -n "${SERVER_IP:-}" ]; then
     APP_TITLE="MoaV Grafana - ${SERVER_IP}"
 else
     APP_TITLE="MoaV Grafana"
@@ -19,7 +35,7 @@ fi
 echo "[grafana] App title: $APP_TITLE"
 
 # Construct Grafana root URL from subdomain + domain
-if [ -n "$GRAFANA_SUBDOMAIN" ] && [ -n "$DOMAIN" ]; then
+if [ -n "${GRAFANA_SUBDOMAIN:-}" ] && [ -n "${DOMAIN:-}" ]; then
     export GF_SERVER_ROOT_URL="https://${GRAFANA_SUBDOMAIN}.${DOMAIN}:2083/"
     echo "[grafana] Root URL: $GF_SERVER_ROOT_URL"
 fi
@@ -49,12 +65,22 @@ if [ -d "/branding" ]; then
     if [ -f "/branding/logo.png" ]; then
         # Get image dimensions (default to 100x100 if not determinable)
         LOGO_B64=$(base64 -w0 /branding/logo.png 2>/dev/null || base64 /branding/logo.png)
-        cat > "$GRAFANA_IMG/grafana_icon.svg" << SVGEOF
+        # `if cat` (not a bare `cat >`): the grafana image dir is read-only for
+        # the non-root grafana user (uid 472) in current images, so this write
+        # is Permission denied — and as the one UNGUARDED write in this block it
+        # crash-looped the whole container under `set -e` (the favicon cp's are
+        # in `&& echo` lists and the js seds are `|| true`, so only this one was
+        # fatal). Branding is cosmetic; skip it rather than take grafana down.
+        if cat > "$GRAFANA_IMG/grafana_icon.svg" 2>/dev/null << SVGEOF
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
   <image width="100" height="100" xlink:href="data:image/png;base64,$LOGO_B64"/>
 </svg>
 SVGEOF
-        echo "[grafana] Created grafana_icon.svg from logo.png"
+        then
+            echo "[grafana] Created grafana_icon.svg from logo.png"
+        else
+            echo "[grafana] logo branding skipped (image dir read-only) — dashboards unaffected"
+        fi
     fi
 
     # Replace app title in JavaScript bundles (affects browser tab and PWA name)
@@ -65,15 +91,18 @@ SVGEOF
             [ -f "$js_file" ] || continue
             if grep -q 'AppTitle' "$js_file" 2>/dev/null; then
                 # Try multiple patterns (varies by Grafana version)
-                sed -i "s/\"AppTitle\",\"Grafana\"/\"AppTitle\",\"$APP_TITLE\"/g" "$js_file" 2>/dev/null
-                sed -i "s/AppTitle:\"Grafana\"/AppTitle:\"$APP_TITLE\"/g" "$js_file" 2>/dev/null
-                sed -i "s/AppTitle=\"Grafana\"/AppTitle=\"$APP_TITLE\"/g" "$js_file" 2>/dev/null
+                # `|| true`: branding is cosmetic. Under `set -e` a failed in-place edit
+                # (read-only layer, a Grafana upgrade renaming these bundles) would take the
+                # whole container down over a page title.
+                sed -i "s/\"AppTitle\",\"Grafana\"/\"AppTitle\",\"$APP_TITLE\"/g" "$js_file" 2>/dev/null || true
+                sed -i "s/AppTitle:\"Grafana\"/AppTitle:\"$APP_TITLE\"/g" "$js_file" 2>/dev/null || true
+                sed -i "s/AppTitle=\"Grafana\"/AppTitle=\"$APP_TITLE\"/g" "$js_file" 2>/dev/null || true
                 echo "[grafana] Patched AppTitle in $(basename "$js_file")"
                 patched=1
             fi
             # Also patch generic title references
             if grep -q 'title:"Grafana"' "$js_file" 2>/dev/null; then
-                sed -i "s/title:\"Grafana\"/title:\"$APP_TITLE\"/g" "$js_file" 2>/dev/null
+                sed -i "s/title:\"Grafana\"/title:\"$APP_TITLE\"/g" "$js_file" 2>/dev/null || true
             fi
         done
         [ "$patched" -eq 0 ] && echo "[grafana] WARNING: AppTitle pattern not found in JS bundles"
@@ -116,7 +145,11 @@ find_certificates() {
 waited=0
 max_wait=30
 while [ $waited -lt $max_wait ]; do
-    certs=$(find_certificates)
+    # `|| true`: find_certificates returns 1 when no certificate exists yet, and a
+    # plain `var=$(cmd)` assignment PROPAGATES that status (unlike `local x=$(cmd)`,
+    # which masks it). Under `set -e` that killed grafana on every install before
+    # certbot had issued -- which is exactly the state this loop exists to wait out.
+    certs=$(find_certificates) || true
     if [ -n "$certs" ]; then
         break
     fi
@@ -125,7 +158,7 @@ while [ $waited -lt $max_wait ]; do
     waited=$((waited + 5))
 done
 
-certs=$(find_certificates)
+certs=$(find_certificates) || true
 if [ -n "$certs" ]; then
     key_file=$(echo "$certs" | cut -d' ' -f1)
     cert_file=$(echo "$certs" | cut -d' ' -f2)
@@ -140,6 +173,10 @@ if [ -n "$certs" ]; then
 else
     echo "[grafana] SSL: Disabled (no certificates found)"
     export GF_SERVER_PROTOCOL=http
+    # Define it empty: the readability check below reads $GF_SERVER_CERT_KEY,
+    # which is unset on this branch and aborts under `set -u`, making the whole
+    # HTTP-fallback block unreachable.
+    export GF_SERVER_CERT_KEY=""
 fi
 
 # Test certificate readability and fall back to HTTP if not readable

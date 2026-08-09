@@ -1,10 +1,46 @@
-# MoaV
+<div align="center">
 
-[![Website](https://img.shields.io/badge/website-moav.sh-cyan.svg)](https://moav.sh)  [![Docs](https://img.shields.io/badge/docs-moav.sh%2Fdocs-cyan.svg)](https://moav.sh/docs/)  [![Version](https://img.shields.io/badge/version-1.9.0-blue.svg)](CHANGELOG.md)  [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+<img src="branding/logo.png" alt="MoaV logo" width="130">
 
-English | **[فارسی](README-fa.md)** 
+# Mother of all VPNs
 
-Multi-protocol Internet censorship circumvention stack optimized for hostile network environments.
+**Multi-protocol Internet censorship circumvention stack, optimized for hostile network environments.**
+
+[![Website](https://img.shields.io/badge/website-moav.sh-06b6d4.svg)](https://moav.sh) [![Docs](https://img.shields.io/badge/docs-moav.sh%2Fdocs-2563eb.svg)](https://moav.sh/docs/) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV/releases/latest) [![Pre-release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?include_prereleases&label=pre-release&color=f59e0b&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV/releases)
+
+[![Protocols](https://img.shields.io/badge/protocols-16%2B-ef4444.svg)](#protocols) [![AI agents](https://img.shields.io/badge/AI_agents-AGENTS.md-8b5cf6.svg)](AGENTS.md) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
+
+[![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Stars](https://img.shields.io/github/stars/MotherofallVPNs/MoaV?style=social)](https://github.com/MotherofallVPNs/MoaV/stargazers) [![Forks](https://img.shields.io/github/forks/MotherofallVPNs/MoaV?style=social)](https://github.com/MotherofallVPNs/MoaV/network/members) [![Last commit](https://img.shields.io/github/last-commit/MotherofallVPNs/MoaV/dev?label=last%20commit&color=64748b)](https://github.com/MotherofallVPNs/MoaV/commits/dev)
+
+🇬🇧 [English](README.md) &nbsp;·&nbsp; 🇮🇷 [فارسی](README-fa.md)
+
+Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** community.
+
+**Local client:** **[moav-client](https://github.com/MotherofallVPNs/moav-client)** — the desktop/CLI app that ingests a MoaV subscription bundle and picks the best live endpoint.
+
+</div>
+
+---
+
+## Table of Contents
+
+**Links** &nbsp;·&nbsp; [Website](https://moav.sh) &nbsp;·&nbsp; [Docs](https://moav.sh/docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns) &nbsp;·&nbsp; [moav-client](https://github.com/MotherofallVPNs/moav-client)
+
+**Get started** &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements)
+
+**Use it** &nbsp;·&nbsp; [User Management](#user-management) &nbsp;·&nbsp; [Admin Dashboard & Monitoring](#admin-dashboard--monitoring) &nbsp;·&nbsp; [Service Management](#service-management) &nbsp;·&nbsp; [Testing](#testing) &nbsp;·&nbsp; [Client Apps](#client-apps)
+
+**Under the hood** &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Protocols](#protocols) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Documentation](#documentation)
+
+**Operate** &nbsp;·&nbsp; [Server Migration](#server-migration) &nbsp;·&nbsp; [Security](#security)
+
+**More** &nbsp;·&nbsp; [License](#license) &nbsp;·&nbsp; [Changelog](#changelog) &nbsp;·&nbsp; [Community & Support](#community--support) &nbsp;·&nbsp; [Disclaimer](#disclaimer)
+
+---
+
+![How it works](https://github.com/user-attachments/assets/60e1726f-2733-4d49-9fa2-30be8c2dbeb5)
+
+---
 
 ## Features
 
@@ -69,11 +105,11 @@ moav admin password       # Reset admin/Grafana password
 moav help                 # Show all commands
 ```
 
-See the [Setup Guide](docs/SETUP.md) for complete instructions, the [CLI Reference](docs/CLI.md) for all commands, or browse the [full documentation](https://moav.sh/docs/).
+See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the [CLI Reference](https://moav.sh/docs/CLI) for all commands, or browse the [full documentation](https://moav.sh/docs/).
 
 ### Deploy Your Own
 
-[![Deploy on Hetzner](https://img.shields.io/badge/Deploy%20on-Hetzner-d50c2d?style=for-the-badge&logo=hetzner&logoColor=white)](docs/DEPLOY.md#hetzner)  [![Deploy on Linode](https://img.shields.io/badge/Deploy%20on-Linode-00a95c?style=for-the-badge&logo=linode&logoColor=white)](docs/DEPLOY.md#linode)  [![Deploy on Vultr](https://img.shields.io/badge/Deploy%20on-Vultr-007bfc?style=for-the-badge&logo=vultr&logoColor=white)](docs/DEPLOY.md#vultr)  [![Deploy on DigitalOcean](https://img.shields.io/badge/Deploy%20on-DigitalOcean-0080ff?style=for-the-badge&logo=digitalocean&logoColor=white)](docs/DEPLOY.md#digitalocean)
+[![Deploy on Hetzner](https://img.shields.io/badge/Deploy%20on-Hetzner-d50c2d?style=for-the-badge&logo=hetzner&logoColor=white)](https://moav.sh/docs/DEPLOY#hetzner)  [![Deploy on Linode](https://img.shields.io/badge/Deploy%20on-Linode-00a95c?style=for-the-badge&logo=linode&logoColor=white)](https://moav.sh/docs/DEPLOY#linode)  [![Deploy on Vultr](https://img.shields.io/badge/Deploy%20on-Vultr-007bfc?style=for-the-badge&logo=vultr&logoColor=white)](https://moav.sh/docs/DEPLOY#vultr)  [![Deploy on DigitalOcean](https://img.shields.io/badge/Deploy%20on-DigitalOcean-0080ff?style=for-the-badge&logo=digitalocean&logoColor=white)](https://moav.sh/docs/DEPLOY#digitalocean)
 
 
 
@@ -161,7 +197,7 @@ moav user package joe     # Create zip bundle
 
 Each user gets a bundle in `outputs/bundles/<username>/` with config files, QR codes, and a README.html guide.
 
-**MahsaNG / V2Ray users (MahsaNG has 2M+ in Iran):** every bundle includes a standard base64 **V2Ray subscription** — in `subscription.txt` and as a click-to-copy block at the top of the bundle's README — so users paste it once into [MahsaNG](https://github.com/GFW-knocker/MahsaNG), v2rayNG, Hiddify, or any V2Ray app to import all proxy protocols at once. See [docs/mahsanet.md](docs/mahsanet.md).
+**MahsaNG / V2Ray users (MahsaNG has 2M+ in Iran):** every bundle includes a standard base64 **V2Ray subscription** — in `subscription.txt` and as a click-to-copy block at the top of the bundle's README — so users paste it once into [MahsaNG](https://github.com/GFW-knocker/MahsaNG), v2rayNG, Hiddify, or any V2Ray app to import all proxy protocols at once. See the [MahsaNG import guide](https://moav.sh/docs/mahsanet).
 
 **Download bundles** from the admin dashboard at `https://your-server:9443` or via SCP.
 
@@ -187,7 +223,7 @@ moav donate               # Donate configs to MahsaNet/Psiphon/Snowflake
 moav conduit link         # Psiphon Conduit claim link, QR & sharing guide
 ```
 
-**Psiphon Conduit:** once `conduit` is running it already serves Psiphon users (including in Iran) through the public pool — no link to share. To give specific people a private path, `moav conduit link` prints the Ryve claim link/QR and the Personal Pairing steps. The claim link embeds the private key — keep it secret; share with users only via Personal Pairing inside Ryve. See [Psiphon Conduit in docs/protocols.md](docs/protocols.md#psiphon-conduit).
+**Psiphon Conduit:** once `conduit` is running it already serves Psiphon users (including in Iran) through the public pool — no link to share. To give specific people a private path, `moav conduit link` prints the Ryve claim link/QR and the Personal Pairing steps. The claim link embeds the private key — keep it secret; share with users only via Personal Pairing inside Ryve. See [Psiphon Conduit in docs/protocols.md](https://moav.sh/docs/protocols#psiphon-conduit).
 
 **Profiles:** `proxy`, `wireguard`, `amneziawg`, `dnstunnel`, `trusttunnel`, `telegram`, `xhttp`, `admin`, `conduit`, `snowflake`, `monitoring`, `all`
 
@@ -205,7 +241,7 @@ moav migrate-ip 1.2.3.4            # Update all configs to new IP
 moav start                         # Start services
 ```
 
-See [docs/SETUP.md](docs/SETUP.md#server-migration) for detailed migration workflow.
+See the [Setup Guide → Server Migration](https://moav.sh/docs/SETUP#server-migration) for detailed migration workflow.
 
 ## Testing
 
@@ -225,19 +261,19 @@ moav client connect user1 # Connect as user (exposes local SOCKS5/HTTP proxy)
 | Windows | Happ, v2rayN, Hiddify, WireGuard |
 | Linux | Hiddify, sing-box, WireGuard |
 
-See [docs/CLIENTS.md](docs/CLIENTS.md) for complete list and setup instructions.
+See the [Client Setup guide](https://moav.sh/docs/CLIENTS) for complete list and setup instructions.
 
 ## Documentation
 
-- [Setup Guide](docs/SETUP.md) - Complete installation instructions
-- [CLI Reference](docs/CLI.md) - All moav commands and options
-- [DNS Configuration](docs/DNS.md) - DNS records setup
-- [Client Setup](docs/CLIENTS.md) - How to connect from devices
-- [MahsaNG Import](docs/mahsanet.md) - Import MoaV configs into the MahsaNG app (Iran)
-- [VPS Deployment](docs/DEPLOY.md) - One-click cloud deployment
-- [Monitoring](docs/MONITORING.md) - Grafana + Prometheus observability
-- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
-- [OpSec Guide](docs/OPSEC.md) - Security best practices
+- [Setup Guide](https://moav.sh/docs/SETUP) - Complete installation instructions
+- [CLI Reference](https://moav.sh/docs/CLI) - All moav commands and options
+- [DNS Configuration](https://moav.sh/docs/DNS) - DNS records setup
+- [Client Setup](https://moav.sh/docs/CLIENTS) - How to connect from devices
+- [MahsaNG Import](https://moav.sh/docs/mahsanet) - Import MoaV configs into the MahsaNG app (Iran)
+- [VPS Deployment](https://moav.sh/docs/DEPLOY) - One-click cloud deployment
+- [Monitoring](https://moav.sh/docs/MONITORING) - Grafana + Prometheus observability
+- [Troubleshooting](https://moav.sh/docs/TROUBLESHOOTING) - Common issues and solutions
+- [OpSec Guide](https://moav.sh/docs/OPSEC) - Security best practices
 
 ## Requirements
 
@@ -315,7 +351,7 @@ MoaV/
 │   └── bundles/
 ├── web/                    # Decoy website
 ├── admin/                  # Stats dashboard
-└── docs/                   # Documentation
+└── docs/                   # Dev docs (devdocs/) + README assets
 ```
 
 ## Security
@@ -326,7 +362,14 @@ MoaV/
 - Minimal logging (no URLs, no content)
 - TLS 1.3 everywhere
 
-See [docs/OPSEC.md](docs/OPSEC.md) for security guidelines.
+**Container privileges.** Docker API access is confined to a filtered socket
+proxy on a management-only network, and the monitoring exporters read published
+state files instead of the socket. The one accepted exception is **cAdvisor**
+(optional `monitoring` profile): per-container CPU/memory/disk stats require
+privileged mode with read-only host mounts, which is its upstream deployment
+mode. If that trade-off is not acceptable, run without the monitoring profile.
+
+See the [OPSEC guide](https://moav.sh/docs/OPSEC) for security guidelines.
 
 ## License
 
@@ -336,6 +379,15 @@ MIT
 See [CHANGELOG.md](CHANGELOG.md) for release notes and version history.
 
 
+
+## Community & support
+
+- **Telegram:** [t.me/motherofallvpns](https://t.me/motherofallvpns) — questions, help, and release announcements
+- **Twitter/X:** [@motherofallvpns](https://x.com/motherofallvpns)
+- **Issues:** [GitHub Issues](https://github.com/MotherofallVPNs/MoaV/issues) for bugs and feature requests
+- **Docs:** [moav.sh/docs](https://moav.sh/docs)
+
+---
 ## Disclaimer
 
 This project provides **general-purpose open-source networking software** only.

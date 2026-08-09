@@ -19,6 +19,17 @@ TEST_URL="${TEST_URL:-https://www.google.com/generate_204}"
 TEST_TIMEOUT="${TEST_TIMEOUT:-10}"
 TEMP_DIR="/tmp/moav-test-$$"
 
+# Requires bash >= 4: this script uses associative arrays (declare -A) for the
+# per-protocol results, exactly like moav.sh's own guard. On macOS's bash 3.2 it
+# used to die at the first `declare -A` with "invalid option" and then EXIT 0 --
+# a crashed run reporting success. Fail loudly and distinctly (2 = could not
+# run, not "all protocols fine").
+if [[ -z "${BASH_VERSINFO:-}" ]] || (( BASH_VERSINFO[0] < 4 )); then
+    echo "moav test requires bash 4.0 or newer (found ${BASH_VERSION:-unknown})." >&2
+    echo "macOS ships bash 3.2; run it on the server, or: brew install bash" >&2
+    exit 2
+fi
+
 # Results storage
 declare -A RESULTS
 declare -A DETAILS
@@ -985,7 +996,9 @@ test_wireguard() {
     local is_ipv6=false
 
     # Find WireGuard config - prefer IPv4 over IPv6
-    for f in "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
+    # new-style moav-<server>-wg.conf first, then the legacy names so bundles
+    # generated before the rename still validate.
+    for f in "$CONFIG_DIR"/moav-*-wg.conf "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
     if [[ -z "$config_file" ]]; then
@@ -1053,8 +1066,66 @@ test_wireguard() {
 
     log_debug "Parsed: server=$server port=$port"
 
-    # Test endpoint reachability (UDP is hard to test, try TCP or just DNS resolve)
-    # For IPv6, ping6 or ping -6 might be needed
+    # Full VPN test when wg-quick + TUN are available (`moav test` grants the
+    # container NET_ADMIN + /dev/net/tun; the image ships wireguard-tools).
+    # Mirrors the AmneziaWG full test: tunnel up -> exit-IP through it -> down.
+    if command -v wg-quick >/dev/null 2>&1 && [[ -c /dev/net/tun ]]; then
+        log_debug "Starting WireGuard tunnel with wg-quick..."
+        local error_log="$TEMP_DIR/wireguard-error.log"
+        local test_config="$TEMP_DIR/wgtest.conf"
+        # Strip DNS= : wg-quick would need resolvconf for it, and the
+        # container's own resolver is fine for the exit-IP fetch.
+        grep -vi '^[[:space:]]*DNS[[:space:]]*=' "$config_file" > "$test_config"
+
+        if ! wg-quick up "$test_config" 2>"$error_log"; then
+            # Bring-up failure is almost always an ENVIRONMENT limitation, not a
+            # protocol fault: a container with neither the wireguard kernel
+            # module nor a userspace impl (wireguard-go/boringtun) cannot create
+            # the interface at all. That is a harness fact, so WARN, not fail --
+            # a genuinely broken server would still bring the interface UP and
+            # fail later at the handshake (which we DO mark fail, below). On a
+            # host with kernel WireGuard (a real server) this path is skipped and
+            # the test is fully live.
+            detail="config valid; WireGuard tunnel not brought up (no kernel module / userspace impl in this environment)"
+            if [[ -s "$error_log" ]]; then
+                detail="$detail [wg-quick: $(tail -3 "$error_log" 2>/dev/null | tr '\n' ' ')]"
+            fi
+            log_warn "$detail"
+            RESULTS[wireguard]="warn"
+            DETAILS[wireguard]="$detail"
+            rm -f "$test_config"
+            return
+        fi
+
+        local exit_ip=""
+        exit_ip=$(curl -sf --max-time "$TEST_TIMEOUT" https://api.ipify.org 2>/dev/null || \
+                  curl -sf --max-time "$TEST_TIMEOUT" https://ifconfig.me 2>/dev/null || true)
+        # Handshake epoch is the ground truth if the IP services are unreachable.
+        local handshake
+        handshake=$(wg show wgtest latest-handshakes 2>/dev/null | awk '{print $2}' | head -1)
+        wg-quick down "$test_config" 2>/dev/null || true
+        rm -f "$test_config"
+
+        if [[ -n "$exit_ip" ]]; then
+            log_success "WireGuard VPN connection successful (exit IP: $exit_ip)"
+            RESULTS[wireguard]="pass"
+            DETAILS[wireguard]="Connected via WireGuard VPN, exit IP: $exit_ip"
+        elif [[ -n "${handshake:-}" && "$handshake" != "0" ]]; then
+            log_success "WireGuard handshake completed (exit-IP fetch failed)"
+            RESULTS[wireguard]="pass"
+            DETAILS[wireguard]="Handshake with $endpoint completed; exit-IP services unreachable through tunnel"
+        else
+            detail="Tunnel came up but no handshake with $endpoint"
+            log_error "$detail"
+            RESULTS[wireguard]="fail"
+            DETAILS[wireguard]="$detail"
+        fi
+        return
+    fi
+
+    # Degraded path (no wg-quick / no TUN): reachability only. Caps at WARN --
+    # a DNS resolve used to count as a full "pass" here while no packet had
+    # ever crossed the tunnel.
     local ping_result=false
     if echo "$server" | grep -q ':'; then
         # IPv6 address
@@ -1066,9 +1137,9 @@ test_wireguard() {
     fi
 
     if [[ "$ping_result" == "true" ]]; then
-        log_success "WireGuard config valid, endpoint reachable: $endpoint"
-        RESULTS[wireguard]="pass"
-        DETAILS[wireguard]="Config valid, endpoint $server reachable"
+        log_warn "WireGuard config valid, endpoint reachable (no wg-quick/TUN for a live test)"
+        RESULTS[wireguard]="warn"
+        DETAILS[wireguard]="Config valid, endpoint $server reachable (no live-tunnel capability on this host)"
     else
         # Can't reach server, but config is valid
         log_warn "WireGuard config valid, but endpoint not reachable: $endpoint"
@@ -1091,7 +1162,7 @@ test_amneziawg() {
     local detail=""
 
     # Find AmneziaWG config
-    for f in "$CONFIG_DIR"/amneziawg.conf; do
+    for f in "$CONFIG_DIR"/moav-*-awg.conf "$CONFIG_DIR"/amneziawg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
     if [[ -z "$config_file" ]]; then
@@ -1173,9 +1244,11 @@ test_amneziawg() {
         fi
 
         if [[ "$reachable" == "true" ]]; then
-            log_success "AmneziaWG config valid, endpoint reachable: $endpoint"
-            RESULTS[amneziawg]="pass"
-            DETAILS[amneziawg]="Config valid, endpoint ${server_ip}:${port} reachable (awg-quick not available for full VPN test)"
+            # WARN, not pass: reachability proves a port answers, not that the
+            # tunnel works. The full test below is the only pass-worthy proof.
+            log_warn "AmneziaWG config valid, endpoint reachable (no awg-quick/TUN for a live test)"
+            RESULTS[amneziawg]="warn"
+            DETAILS[amneziawg]="Config valid, endpoint ${server_ip}:${port} reachable (no live-tunnel capability on this host)"
         else
             log_warn "AmneziaWG config valid, but endpoint not reachable: $endpoint"
             RESULTS[amneziawg]="warn"
@@ -1188,19 +1261,25 @@ test_amneziawg() {
     log_debug "Starting AmneziaWG tunnel with awg-quick..."
     local error_log="$TEMP_DIR/amneziawg-error.log"
     local test_config="$TEMP_DIR/amneziawg-test.conf"
-    cp "$config_file" "$test_config"
+    # Strip DNS= : awg-quick would need resolvconf for it, and the container's
+    # own resolver is fine for the exit-IP fetch.
+    grep -vi '^[[:space:]]*DNS[[:space:]]*=' "$config_file" > "$test_config"
 
-    awg-quick up "$test_config" 2>"$error_log"
-    local awg_exit=$?
-
-    if [[ $awg_exit -ne 0 ]]; then
-        detail="awg-quick failed to bring up interface"
+    # `if !` keeps this set-e-safe: a bare `awg-quick up; awg_exit=$?` exits the
+    # whole script under `set -e` before the exit code is ever inspected, which
+    # is what crashed the run when TUN was first granted.
+    if ! awg-quick up "$test_config" 2>"$error_log"; then
+        # As with WireGuard: bring-up failure = environment can't do AmneziaWG
+        # (no awg kernel module / userspace impl) = WARN, not a protocol fault.
+        # A live server with the module gets a real pass/fail from the exit-IP
+        # check below.
+        detail="config valid; AmneziaWG tunnel not brought up (no kernel module / userspace impl in this environment)"
         if [[ -s "$error_log" ]]; then
             local error_msg=$(tail -5 "$error_log" 2>/dev/null | tr '\n' ' ' || true)
-            detail="AmneziaWG error: $error_msg"
+            detail="$detail [awg-quick: $error_msg]"
         fi
-        log_error "$detail"
-        RESULTS[amneziawg]="fail"
+        log_warn "$detail"
+        RESULTS[amneziawg]="warn"
         DETAILS[amneziawg]="$detail"
         rm -f "$test_config"
         return
@@ -1244,9 +1323,14 @@ test_dnstt() {
     local config_file=""
     local detail=""
 
-    # Find dnstt config file - handle glob expansion safely
+    # Find dnstt config. README.html is listed FIRST because it is now the only
+    # per-user carrier: the dnstt-instructions.txt this used to glob for was
+    # removed when the instruction .txt files were retired, so the loop found
+    # nothing and returned "skip" -- and skip is not a failure, so dnstt silently
+    # stopped being tested at all while the suite stayed green.
+    # The legacy names are kept for older bundles.
     # shellcheck disable=SC2044
-    for f in "$CONFIG_DIR"/dnstt*.txt "$CONFIG_DIR"/*dnstt* "$CONFIG_DIR"/dnstt-instructions.txt; do
+    for f in "$CONFIG_DIR"/README.html "$CONFIG_DIR"/dnstt*.txt "$CONFIG_DIR"/*dnstt* "$CONFIG_DIR"/dnstt-instructions.txt; do
         if [[ -f "$f" ]]; then
             config_file="$f"
             break
@@ -1265,7 +1349,13 @@ test_dnstt() {
 
     # Extract domain - look for t.domain.com pattern
     # Note: grep returns non-zero if no match, so we use || true to avoid pipefail exit
-    local domain=$(grep -oE 't\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' "$config_file" 2>/dev/null | head -1 || true)
+    # The guide renders `dnstt-client -doh <url> -pubkey <hex> <domain> 127.0.0.1:1080`,
+    # so pull the domain from that exact shape first -- a bare `t\.<something>`
+    # regex over a whole HTML page also matches things like "client.example.com".
+    local domain
+    domain=$(grep -oE 'dnstt-client [^<]*-pubkey [0-9a-fA-F]{64} [a-zA-Z0-9.-]+' "$config_file" 2>/dev/null \
+             | head -1 | awk '{print $NF}' || true)
+    [[ -z "$domain" ]] && domain=$(grep -oE 't\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' "$config_file" 2>/dev/null | head -1 || true)
 
     # Extract pubkey - look for hex string (64 chars) in the config
     local pubkey=""
@@ -1277,6 +1367,13 @@ test_dnstt() {
     if [[ -z "$pubkey" ]] && [[ -f "$CONFIG_DIR/server.pub" ]]; then
         pubkey=$(cat "$CONFIG_DIR/server.pub" | tr -d '\n\r ')
         log_debug "Found pubkey in bundle: server.pub"
+    fi
+
+    # `moav test` mounts outputs/dnstt at /dnstt (lib/menu.sh), so check the real
+    # mount point. The two paths below never existed inside this container.
+    if [[ -z "$pubkey" ]] && [[ -f "/dnstt/server.pub" ]]; then
+        pubkey=$(tr -d '\n\r ' < "/dnstt/server.pub")
+        log_debug "Found pubkey in /dnstt/server.pub (the actual mount)"
     fi
 
     # Check for server.pub in default dnstt outputs location
@@ -1398,8 +1495,9 @@ test_slipstream() {
     local config_file=""
     local detail=""
 
-    # Find slipstream instructions file
-    for f in "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
+    # Find slipstream config file (the .conf carries the tunnel domain; keep it
+    # first so it wins over slipstream-cert.pem, which has no domain).
+    for f in "$CONFIG_DIR"/slipstream-client.conf "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
         if [[ -f "$f" ]]; then
             config_file="$f"
             break
@@ -1545,6 +1643,32 @@ test_trusttunnel() {
     local endpoint="" username="" password="" server_ip="" host="" port=""
 
     if [[ "$config_file" == *.toml ]]; then
+        # Validate it really is TOML before field-scraping. The per-field greps
+        # below "succeed" even on a syntactically broken file — which is how a
+        # malformed `has_ipv6` shipped unnoticed (a shell expression concatenated
+        # "true" with the IPv6 address, e.g. `has_ipv6 = true2001:db8::1`): every
+        # field still grepped fine, yet the client could not parse the config —
+        # and only on IPv6-capable servers, which this runner is not.
+        if python3 -c 'import tomllib' 2>/dev/null; then
+            if ! python3 -c 'import tomllib,sys; tomllib.load(open(sys.argv[1],"rb"))' "$config_file" 2>/dev/null; then
+                detail="TrustTunnel config is not valid TOML: $config_file"
+                log_error "$detail"
+                RESULTS[trusttunnel]="fail"; DETAILS[trusttunnel]="$detail"
+                return
+            fi
+        fi
+        # Bare-boolean check — catches the same class even without tomllib.
+        local _ttkey
+        for _ttkey in has_ipv6 killswitch_enabled post_quantum_group_enabled skip_verification anti_dpi; do
+            if grep -qE "^${_ttkey}[[:space:]]*=" "$config_file" \
+               && ! grep -qE "^${_ttkey}[[:space:]]*=[[:space:]]*(true|false)[[:space:]]*$" "$config_file"; then
+                detail="TrustTunnel config has a malformed boolean: $(grep -E "^${_ttkey}[[:space:]]*=" "$config_file" | head -1)"
+                log_error "$detail"
+                RESULTS[trusttunnel]="fail"; DETAILS[trusttunnel]="$detail"
+                return
+            fi
+        done
+
         # Parse TOML config
         host=$(grep -E '^hostname\s*=' "$config_file" | head -1 | sed 's/.*=\s*"\([^"]*\)".*/\1/' || true)
         server_ip=$(grep -E '^addresses\s*=' "$config_file" | head -1 | sed 's/.*\["\([^"]*\)".*/\1/' | cut -d: -f1 || true)
@@ -2043,7 +2167,7 @@ test_wstunnel() {
     log_info "Testing WireGuard-over-wstunnel..."
 
     local conf="" detail=""
-    for f in "$CONFIG_DIR"/wireguard-wstunnel.conf; do
+    for f in "$CONFIG_DIR"/moav-*-wgws.conf "$CONFIG_DIR"/wireguard-wstunnel.conf; do
         [[ -f "$f" ]] && conf="$f" && break
     done
     if [[ -z "$conf" ]]; then
@@ -2053,10 +2177,22 @@ test_wstunnel() {
     fi
 
     # The .conf points WireGuard at the local wstunnel endpoint (127.0.0.1); the
-    # real server + port live in the instructions' wstunnel client command.
-    local instr="$CONFIG_DIR/wireguard-instructions.txt"
-    local cmd=""; [[ -f "$instr" ]] && cmd=$(grep -m1 'wstunnel client' "$instr" 2>/dev/null || true)
-    local url; url=$(echo "$cmd" | grep -oE '(wss?)://[^ ]+' | head -1 || true)
+    # real server + port live in the "wstunnel client ... wss://host:port" line.
+    # That command is rendered into README.html (there is no separate
+    # wireguard-instructions.txt in the bundle), so read it from there — with a
+    # fallback to a .txt if a future bundle ships one. Extraction stops at the
+    # first space, quote or `<` so the surrounding HTML tag is trimmed.
+    # Match the command line specifically ('wstunnel client -L …'), not the
+    # surrounding prose ("run the wstunnel client to create a tunnel:"), then
+    # take the ws(s):// endpoint. Extraction stops at space/quote/`<` to trim
+    # the HTML tag around it in README.html.
+    local url=""
+    for instr in "$CONFIG_DIR/wireguard-instructions.txt" "$CONFIG_DIR/README.html"; do
+        [[ -f "$instr" ]] || continue
+        url=$(grep -oE 'wstunnel client -L[^<"]*' "$instr" 2>/dev/null \
+              | grep -oE '(wss?)://[^ <"]+' | head -1 || true)
+        [[ -n "$url" ]] && break
+    done
     local scheme="${url%%://*}"
     local hostport="${url#*://}"; hostport="${hostport%%/*}"
     local server="${hostport%:*}" port="${hostport##*:}"
@@ -2219,10 +2355,22 @@ EOF
         if [[ -n "${RESULTS[$protocol]:-}" ]]; then
             [[ "$first" != "true" ]] && echo ","
             first=false
+            # JSON-escape the detail: it often carries a captured error message,
+            # and those contain double-quotes (awg-quick's `Cannot find device
+            # "x"`), backslashes and control chars. Emitting them raw produced
+            # invalid JSON that jq could not parse, so the harness reported "no
+            # protocol results" and failed a run that had actually passed.
+            # Order matters: backslash first, then quotes, then whitespace.
+            local d="${DETAILS[$protocol]:-}"
+            d="${d//\\/\\\\}"
+            d="${d//\"/\\\"}"
+            d="${d//$'\t'/ }"
+            d="${d//$'\r'/ }"
+            d="${d//$'\n'/ }"
             cat << EOF
     "$protocol": {
       "status": "${RESULTS[$protocol]}",
-      "detail": "${DETAILS[$protocol]:-}"
+      "detail": "$d"
     }
 EOF
         fi

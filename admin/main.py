@@ -5,6 +5,8 @@ Simple stats viewer for the circumvention stack
 """
 
 import os
+import sys
+import ipaddress
 import json
 import asyncio
 import zipfile
@@ -39,6 +41,26 @@ SERVER_IP = os.environ.get("SERVER_IP", "")
 DOMAIN = os.environ.get("DOMAIN", "")
 
 
+def ip_matches(ip: str, allowed: str) -> bool:
+    """True if client IP `ip` is covered by whitelist entry `allowed`.
+
+    `allowed` may be a single IP or a CIDR (IPv4 or IPv6). Module-level and pure
+    so it is unit-testable -- it was previously nested in verify_auth, where a
+    CIDR-matching bug (every CIDR entry denied everyone) shipped untested. Fails
+    CLOSED on a malformed entry or an address-family mismatch.
+    """
+    allowed = allowed.strip()
+    if not allowed:
+        return False
+    try:
+        if "/" in allowed:
+            return ipaddress.ip_address(ip) in ipaddress.ip_network(allowed, strict=False)
+        return ipaddress.ip_address(ip) == ipaddress.ip_address(allowed)
+    except ValueError:
+        # Malformed entry, or an IPv4/IPv6 family mismatch: deny.
+        return ip == allowed
+
+
 def get_system_uptime() -> int:
     """Get system uptime in seconds from /proc/uptime."""
     try:
@@ -50,14 +72,17 @@ def get_system_uptime() -> int:
 SINGBOX_API = "http://moav-sing-box:9090"
 CLASH_SECRET = ""
 
-# Try to load Clash API secret
-try:
-    with open("/state/keys/clash-api.env") as f:
-        for line in f:
-            if line.startswith("CLASH_API_SECRET="):
-                CLASH_SECRET = line.split("=", 1)[1].strip()
-except FileNotFoundError:
-    pass
+# Prefer the env var handed over by the root entrypoint (the state file is 0600
+# root-only); the file read remains as a fallback and must never be fatal.
+CLASH_SECRET = os.environ.get("CLASH_API_SECRET", "").strip()
+if not CLASH_SECRET:
+    try:
+        with open("/state/keys/clash-api.env") as f:
+            for line in f:
+                if line.startswith("CLASH_API_SECRET="):
+                    CLASH_SECRET = line.split("=", 1)[1].strip()
+    except OSError:
+        pass
 
 # Current version
 CURRENT_VERSION = "unknown"
@@ -141,11 +166,15 @@ def verify_auth(request: Request, credentials: HTTPBasicCredentials = Depends(se
 
     # Check IP whitelist if configured
     if ADMIN_IP_WHITELIST:
-        ip_allowed = any(
-            client_ip.startswith(allowed.rstrip("0123456789").rstrip("."))
-            if "/" in allowed else client_ip == allowed
-            for allowed in ADMIN_IP_WHITELIST
-        )
+        # CIDR entries used to be matched with
+        #   client_ip.startswith(allowed.rstrip("0123456789").rstrip("."))
+        # which for "10.0.0.0/8" strips the digits to "10.0.0.0/" -- the trailing
+        # rstrip(".") then does nothing because the last char is "/" -- so the
+        # startswith() could never be true and EVERY CIDR entry denied everyone.
+        # It failed closed, so it was not a bypass, but an operator setting a
+        # CIDR locked themselves out and would most likely drop the whitelist
+        # entirely. Use real network containment instead.
+        ip_allowed = any(ip_matches(client_ip, a) for a in ADMIN_IP_WHITELIST)
         if not ip_allowed:
             raise HTTPException(status_code=403, detail="IP not allowed")
 
@@ -548,7 +577,7 @@ async def health():
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon():
     """Serve favicon"""
-    for p in ["/project/site/assets/favicon.ico", "/app/site/assets/favicon.ico"]:
+    for p in ["/project/branding/favicon.ico", "/app/branding/favicon.ico"]:
         if Path(p).exists():
             return FileResponse(p, media_type="image/x-icon")
     raise HTTPException(status_code=404)
@@ -557,7 +586,7 @@ async def favicon():
 @app.get("/logo.png", include_in_schema=False)
 async def logo():
     """Serve logo"""
-    for p in ["/project/site/assets/favicon.png", "/app/site/assets/favicon.png"]:
+    for p in ["/project/branding/favicon.png", "/app/branding/favicon.png"]:
         if Path(p).exists():
             return FileResponse(p, media_type="image/png")
     raise HTTPException(status_code=404)
@@ -676,19 +705,24 @@ def list_users():
 
         # Check what files exist in the bundle
         has_reality = (user_dir / "reality.txt").exists()
-        has_wireguard = (user_dir / "wireguard.conf").exists()
+        # Either filename generation: bundles now ship moav-<server>-wg.conf,
+        # older ones wireguard.conf. Matching only one hides the protocol in the
+        # dashboard for users who plainly have it.
+        has_wireguard = bool(list(user_dir.glob("moav-*-wg.conf"))) or (user_dir / "wireguard.conf").exists()
         has_hysteria2 = (user_dir / "hysteria2.yaml").exists() or (user_dir / "hysteria2.txt").exists()
         has_trojan = (user_dir / "trojan.txt").exists()
-        has_trusttunnel = (user_dir / "trusttunnel.toml").exists() or (user_dir / "trusttunnel.txt").exists()
+        has_trusttunnel = (user_dir / "trusttunnel.toml").exists() or (user_dir / "trusttunnel.json").exists()
         has_cdn = (user_dir / "cdn-vless.txt").exists()
-        has_amneziawg = (user_dir / "amneziawg.conf").exists()
+        has_amneziawg = bool(list(user_dir.glob("moav-*-awg.conf"))) or (user_dir / "amneziawg.conf").exists()
         has_telemt = (user_dir / "telegram-proxy-link.txt").exists()
         has_xhttp = (user_dir / "xhttp-vless.txt").exists()
         has_xdns = (user_dir / "xdns-config.json").exists()
-        has_dnstt = (user_dir / "dnstt-instructions.txt").exists()
-        has_slipstream = (user_dir / "slipstream-instructions.txt").exists() or (user_dir / "slipstream-cert.pem").exists()
-        has_masterdns = (user_dir / "masterdns-instructions.txt").exists()
-        has_gooserelay = (user_dir / "gooserelay-instructions.txt").exists()
+        # dnstt is server-shared (no per-user bundle artifact) — detect it from the
+        # server pubkey next to the bundles dir.
+        has_dnstt = (bundle_path.parent / "dnstt" / "server.pub").exists()
+        has_slipstream = (user_dir / "slipstream-cert.pem").exists()
+        has_masterdns = (user_dir / "masterdns-client_config.toml").exists()
+        has_gooserelay = (user_dir / "gooserelay-client_config.json").exists()
 
         # Check if zip already exists
         zip_exists = (bundle_path / f"{username}.zip").exists()
@@ -1126,10 +1160,15 @@ def find_certificates(wait_for_letsencrypt=True, max_wait=60):
                     print(f"Found Let's Encrypt certificate from {cert_dir}")
                     return key_path, cert_path
 
-            # If we have self-signed, we might be in domainless mode
-            # Don't wait too long in that case
-            if has_selfsigned and waited >= 15:
-                print("Self-signed cert exists, assuming domainless mode")
+            # Short-circuit only when genuinely domainless. This used to test
+            # `has_selfsigned` alone as a PROXY for domainless mode, which stopped
+            # being valid once bootstrap began generating a self-signed fallback in
+            # every mode: a domain install would then abandon the Let's Encrypt
+            # wait after 15s and bind the self-signed cert, showing a browser
+            # warning on every fresh install until the container was restarted.
+            # DOMAIN is the actual signal.
+            if not DOMAIN and has_selfsigned and waited >= 15:
+                print("Domainless mode with a self-signed cert - not waiting for Let's Encrypt")
                 break
 
             time.sleep(check_interval)
@@ -1161,9 +1200,23 @@ if __name__ == "__main__":
     ssl_keyfile, ssl_certfile = find_certificates(wait_for_letsencrypt=True, max_wait=60)
 
     if not ssl_keyfile:
-        print("WARNING: No SSL certificates found, running without HTTPS")
+        # FAIL CLOSED. This used to print a warning and serve plain HTTP, which
+        # sent the operator's HTTP-Basic credential -- the same secret as the
+        # Grafana password -- in cleartext to a port published on the internet.
+        # It happened on any install where certbot had not yet succeeded.
+        #
+        # Both the bootstrap and this container's entrypoint now generate a
+        # self-signed fallback, so reaching here means certificate provisioning
+        # is genuinely broken; refusing is safer than downgrading silently.
+        print("ERROR: refusing to start without TLS.", file=sys.stderr)
+        print("  No certificate found in /tmp/certs/live/ or /tmp/certs/selfsigned/.",
+              file=sys.stderr)
+        print("  This panel accepts a password and manages users, so it will not "
+              "serve plain HTTP.", file=sys.stderr)
+        print("  Fix: run `moav bootstrap` (generates a self-signed fallback), or "
+              "check certbot with `moav logs certbot`.", file=sys.stderr)
+        sys.exit(1)
 
-    # Run with SSL if certs found
     uvicorn.run(
         app,
         host="0.0.0.0",

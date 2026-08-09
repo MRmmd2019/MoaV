@@ -149,7 +149,9 @@ generate_singbox_config() {
             fi
             ;;
         wireguard)
-            for f in "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
+            # new-style moav-<server>-wg.conf first, then legacy names so
+            # bundles generated before the rename still test fine.
+            for f in "$CONFIG_DIR"/moav-*-wg.conf "$CONFIG_DIR"/wireguard.conf "$CONFIG_DIR"/wg.conf; do
                 [[ -f "$f" ]] && config_file="$f" && break
             done
             if [[ -z "$config_file" ]]; then
@@ -541,8 +543,8 @@ connect_wireguard() {
 connect_xhttp() {
     local config_file=""
 
-    # Find XHTTP config
-    for f in "$CONFIG_DIR"/xhttp-vless.txt "$CONFIG_DIR"/xhttp.txt; do
+    # Find XHTTP config (the share link lives in xhttp-vless.txt)
+    for f in "$CONFIG_DIR"/xhttp-vless.txt; do
         if [[ -f "$f" ]] && grep -q "^vless://" "$f" 2>/dev/null; then
             config_file="$f"
             break
@@ -651,12 +653,13 @@ EOF
 connect_amneziawg() {
     local config_file=""
 
-    for f in "$CONFIG_DIR"/amneziawg.conf; do
+    # new-style moav-<server>-awg.conf first, then the legacy name.
+    for f in "$CONFIG_DIR"/moav-*-awg.conf "$CONFIG_DIR"/amneziawg.conf; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
 
     if [[ -z "$config_file" ]]; then
-        log_error "No AmneziaWG config found (looking for amneziawg.conf in $CONFIG_DIR)"
+        log_error "No AmneziaWG config found (looking for moav-*-awg.conf or amneziawg.conf in $CONFIG_DIR)"
         return 1
     fi
 
@@ -768,7 +771,7 @@ connect_dnstt() {
 connect_slipstream() {
     local instructions_file=""
 
-    for f in "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
+    for f in "$CONFIG_DIR"/slipstream-client.conf "$CONFIG_DIR"/slipstream*.txt "$CONFIG_DIR"/*slipstream*; do
         [[ -f "$f" ]] && instructions_file="$f" && break
     done
 
@@ -835,8 +838,8 @@ connect_slipstream() {
 connect_trusttunnel() {
     local config_file=""
 
-    # Look for TOML config first (full config), then fall back to JSON/txt
-    for f in "$CONFIG_DIR"/trusttunnel.toml "$CONFIG_DIR"/trusttunnel.json "$CONFIG_DIR"/trusttunnel.txt; do
+    # Look for TOML config first (full config), then fall back to JSON
+    for f in "$CONFIG_DIR"/trusttunnel.toml "$CONFIG_DIR"/trusttunnel.json; do
         [[ -f "$f" ]] && config_file="$f" && break
     done
 
@@ -982,7 +985,8 @@ connect_tor() {
     log_info "Note: Tor connects to its own network, not your MoaV server"
 
     if ! command -v snowflake-client >/dev/null 2>&1; then
-        log_error "snowflake-client not available"
+        log_error "snowflake-client is no longer bundled in the server's built-in client."
+        log_error "Use the standalone client for Tor/Snowflake: https://github.com/MotherofallVPNs/moav-client"
         return 1
     fi
 

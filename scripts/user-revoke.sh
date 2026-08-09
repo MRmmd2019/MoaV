@@ -42,11 +42,27 @@ fi
 for _f in configs/sing-box/config.json configs/xray/config.json \
           configs/wireguard/wg0.conf configs/amneziawg/awg0.conf \
           configs/trusttunnel/credentials.toml configs/telemt/config.toml; do
-    [[ -f "$_f" ]] && chmod a+rw "$_f" 2>/dev/null || true
+    # owner root + group admin write, never world-write. wg0.conf/awg0.conf
+    # (server private keys, container-root consumers) drop world-read too; the
+    # other four are read by non-root daemons and keep it.
+    # Only when WE cannot write it: chowning to root while running non-root
+    # (e2e runner, sudo-less operator) would revoke our own access mid-run —
+    # container-facing ownership is re-asserted by every `moav up` anyway.
+    if [[ -f "$_f" ]] && [[ ! -w "$_f" ]]; then
+        case "$_f" in
+            configs/wireguard/*|configs/amneziawg/*) _m=660 ;;
+            *)                                       _m=664 ;;
+        esac
+        chown "0:$ADMIN_GID" "$_f" 2>/dev/null || sudo chown "0:$ADMIN_GID" "$_f" 2>/dev/null || true
+        chmod "$_m" "$_f" 2>/dev/null || sudo chmod "$_m" "$_f" 2>/dev/null || true
+    fi
 done
 
 # Load environment
-if [[ -f .env ]]; then
+# -r too: .env is root 0600; in the admin container (uid 2000) it exists but
+# is unreadable -- source would die with "Permission denied" under set -e. The
+# container gets the full .env via the compose env_file instead.
+if [[ -f .env && -r .env ]]; then
     set -a
     source .env
     set +a

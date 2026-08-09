@@ -3,6 +3,19 @@
 # Grafana Proxy entrypoint - finds SSL certs and configures nginx
 # =============================================================================
 
+
+# Strict mode, minus `-e` (see below).
+set -eu
+# `set` is a POSIX SPECIAL builtin: a failed `set -o pipefail` exits a
+# non-interactive shell outright and `|| true` does NOT save it. dash (debian's
+# /bin/sh, used by sing-box and wstunnel) has no pipefail. Probe in a subshell,
+# where the exit is contained, then enable it only if supported.
+if ( set -o pipefail 2>/dev/null ); then set -o pipefail; fi
+# NOTE: `-e` is deliberately NOT enabled here yet. This entrypoint has never run
+# under it, so every currently-tolerated non-zero exit would become fatal. That
+# needs a per-command review, tracked separately -- adding it blind to six
+# long-running services at once is how you take down a stack.
+
 echo "[grafana-proxy] Starting Grafana CDN Proxy"
 
 # Find SSL certificates (same logic as other services)
@@ -32,7 +45,11 @@ find_certificates() {
 waited=0
 max_wait=30
 while [ $waited -lt $max_wait ]; do
-    certs=$(find_certificates)
+    # `|| true`: find_certificates returns 1 when no cert exists yet, and a plain
+    # var=$(cmd) propagates that (unlike `local x=$(cmd)`). Under -e this killed the
+    # proxy on every install before certbot issued -- the exact bug fixed in
+    # grafana-entrypoint.sh; it was missed here in D4c.
+    certs=$(find_certificates) || true
     if [ -n "$certs" ]; then
         break
     fi
@@ -41,7 +58,7 @@ while [ $waited -lt $max_wait ]; do
     waited=$((waited + 5))
 done
 
-certs=$(find_certificates)
+certs=$(find_certificates) || true
 if [ -z "$certs" ]; then
     echo "[grafana-proxy] ERROR: No certificates found, cannot start"
     exit 1

@@ -1,5 +1,11 @@
 #!/bin/sh
-set -e
+set -eu
+# `set` is a POSIX SPECIAL builtin: when `set -o pipefail` fails, a
+# non-interactive shell exits immediately -- `|| true` does NOT save it. dash
+# (debian's /bin/sh) has no pipefail, so the naive guard silently killed the
+# conduit container at line 3 with exit 2 and no output. Probe in a SUBSHELL,
+# where the exit is contained, then enable it for real only if supported.
+if ( set -o pipefail 2>/dev/null ); then set -o pipefail; fi
 
 # =============================================================================
 # Psiphon Conduit v2 entrypoint
@@ -43,8 +49,12 @@ show_ryve_link() {
     fi
 
     # Extract private key from JSON (without jq)
+    # `|| true` is REQUIRED here, not defensive: grep exits 1 when the key is
+    # absent, and the very next line (`if [ -z "$PRIVATE_KEY" ]`) exists to
+    # handle exactly that case. Under pipefail the script would die before
+    # reaching its own guard.
     PRIVATE_KEY=$(grep -o '"privateKeyBase64"[[:space:]]*:[[:space:]]*"[^"]*"' \
-        "$CONDUIT_DATA_DIR/conduit_key.json" | sed 's/.*:.*"\([^"]*\)".*/\1/')
+        "$CONDUIT_DATA_DIR/conduit_key.json" | sed 's/.*:.*"\([^"]*\)".*/\1/' || true)
 
     if [ -z "$PRIVATE_KEY" ]; then
         echo "[conduit] Warning: Could not extract key from conduit_key.json"

@@ -5,9 +5,9 @@
 > Placeholder `NEWPROTO` = protocol name (lowercase, no hyphens in env vars).
 >
 > **Also add the protocol to the single-source roster** `data/protocols.json`,
-> then run `python3 scripts/gen-protocol-docs.py --write` (regenerates the
-> `docs/protocols.md` overview table) and `--check` (CI gate — every protocol
-> must also appear in `site/index.html` + `README.md`).
+> then run `python3 scripts/gen-protocol-docs.py --check` (CI gate — every
+> protocol must appear in `README.md`). The overview table and the site surfaces
+> live in the `moav-site` repo; update them there.
 
 ---
 
@@ -152,33 +152,19 @@
 - [ ] Generate at minimum: config file + human-readable instructions text file
 - [ ] Optionally: JSON format for programmatic use
 
-### 3c. `scripts/generate-single-user.sh`
+### 3c. `scripts/user-add.sh` (host-side user creation)
 
-- [ ] Add server-side config append section (find TrustTunnel section ~line 71):
-  ```bash
-  NEWPROTO_CONFIG="/configs/newproto/config.file"
-  if [[ -f "$NEWPROTO_CONFIG" ]]; then
-      if grep -q "<user identifier>" "$NEWPROTO_CONFIG" 2>/dev/null; then
-          log_info "User $USER_ID already exists in NewProto"
-      else
-          cat >> "$NEWPROTO_CONFIG" <<EOF
-  <per-user config block>
-  EOF
-          log_info "Added $USER_ID to NewProto"
-      fi
-  fi
-  ```
-- [ ] Add to export section (~line 99):
-  ```bash
-  export ENABLE_NEWPROTO="${ENABLE_NEWPROTO:-false}"
-  export PORT_NEWPROTO="${PORT_NEWPROTO:-XXXX}"
-  ```
-
-### 3d. `scripts/user-add.sh` (host-side user creation)
-
-> **Important:** `user-add.sh` runs on the host (via `moav user add`), separately from
-> `generate-single-user.sh` (which runs inside the bootstrap container). Both paths must
-> handle the new protocol.
+> **Important — there are two provisioning entry points and both must handle the
+> new protocol:**
+> - **container:** `scripts/generate-user.sh` (§3b) — run by `bootstrap.sh` and by
+>   `moav regenerate-users`. Renders a bundle from state that already exists; it
+>   does not create credentials or reload services.
+> - **host:** `scripts/user-add.sh` (this section) — `moav user add`. Creates the
+>   credentials, mutates the server configs, and hot-reloads the affected service.
+>
+> Put the shared work in `scripts/lib/<proto>.sh` and call it from both rather than
+> writing the block twice — that duplication is exactly what Workstream A of
+> `V2-REFACTOR-PLAN.md` has been retiring.
 
 - [ ] Add peer/credential creation step (after WireGuard section ~line 177):
   - Generate keys, calculate client IP, save credentials to `state/users/$USERNAME/`
@@ -189,12 +175,13 @@
   ```bash
   CONFIG_NEWPROTO=$(cat "$OUTPUT_DIR/newproto.conf" 2>/dev/null || echo "")
   ```
-- [ ] Add `QR_NEWPROTO_B64` generation and sed replacement:
-  ```bash
-  QR_NEWPROTO_B64=$(qr_to_base64 "$OUTPUT_DIR/newproto-qr.png")
-  sed -i.bak "s|{{QR_NEWPROTO}}|$QR_NEWPROTO_B64|g" "$OUTPUT_HTML"
-  ```
-- [ ] Add `replace_placeholder` call for `{{CONFIG_NEWPROTO}}`
+- [ ] Emit the QR image into the bundle (`qrencode -o "$OUTPUT_DIR/newproto-qr.png" …`).
+      Do **not** hand-substitute it: README.html is rendered in one pass by
+      `scripts/lib/bundle_readme.py` (via `render_bundle_readme`), which reads the
+      bundle's files itself — add `{{CONFIG_NEWPROTO}}` / `{{QR_NEWPROTO}}` to the
+      template and a matching entry to that script's placeholder map. The old
+      `sed -i.bak` / `qr_to_base64` / `replace_placeholder` mechanisms were removed
+      by refactor A5 and no longer exist anywhere in the tree.
 - [ ] Add service reload in batch mode section (after WireGuard reload)
 
 ---
@@ -347,33 +334,17 @@
 
 - [ ] Mirror all README.md changes in Farsi
 
-### 6c. `docs/SETUP.md`
+### 6c. Site docs ([`moav-site`](https://github.com/MotherofallVPNs/moav-site) repo)
 
-- [ ] Add to domain requirement note (~line 40) — required or not-required list
-- [ ] Add row to ports table (~line 51)
-- [ ] Add to profiles listing (~line 248)
-- [ ] Add firewall commands (~line 265)
-- [ ] Add to user bundle files listing (~line 312)
-- [ ] If domainless capable: add to domainless mode available list (~line 369)
+The end-user docs live in the `moav-site` repo now, not here. Add the new protocol
+there in the same PR cycle:
 
-### 6d. `docs/CLIENTS.md`
+- [ ] **SETUP** — domain-requirement list, ports table, profiles listing, firewall commands, user-bundle files listing, domainless-mode list (if capable)
+- [ ] **CLIENTS** — TOC entry, protocol table row, per-platform client-app entries (iOS/Android/Windows), full setup section
+- [ ] **TROUBLESHOOTING** — TOC entry + a troubleshooting section (container/log/port/cert checks, client config verification)
+- [ ] **protocols** — the overview table row (generated from `data/protocols.json` on the site side)
 
-- [ ] Add TOC entry (~line 19)
-- [ ] Add row to protocol table (~line 39)
-- [ ] Add client app entries per platform (iOS ~line 62, Android ~line 78, Windows ~line 92)
-- [ ] Add full setup section with config file descriptions and install instructions
-
-### 6e. `docs/TROUBLESHOOTING.md`
-
-- [ ] Add TOC entry (~line 19)
-- [ ] Add troubleshooting section:
-  - Container running check: `docker compose --profile newproto ps`
-  - Log check: `docker compose logs newproto`
-  - Port open check
-  - Certificate check (if TLS)
-  - Client config verification
-
-### 6f. `docs/client-guide-template.html` (User Bundle README)
+### 6f. `templates/client-guide-template.html` (User Bundle README)
 
 The HTML guide template generates per-user `README.html` files in each user's bundle.
 It has **two language sections** (English and Farsi) that must both be updated.
@@ -391,13 +362,13 @@ It has **two language sections** (English and Farsi) that must both be updated.
 - [ ] **Farsi protocol section**: Mirror English section with Farsi text, RTL-compatible
 - [ ] **Farsi apps table**: Mirror English apps table updates
 - [ ] **Renumber**: If inserting mid-list, update all subsequent section numbers in both languages
-- [ ] **`scripts/generate-user.sh`**: Add template variable replacements:
-  ```bash
-  CONFIG_NEWPROTO=$(cat "$OUTPUT_DIR/newproto.conf" 2>/dev/null || echo "")
-  QR_NEWPROTO_B64=$(qr_to_base64 "$OUTPUT_DIR/newproto-qr.png")
-  sed -i "s|{{QR_NEWPROTO}}|$QR_NEWPROTO_B64|g" "$OUTPUT_HTML"
-  replace_placeholder "{{CONFIG_NEWPROTO}}" "$CONFIG_NEWPROTO"
-  ```
+- [ ] **`scripts/lib/bundle_readme.py`**: map the new placeholders. README.html is
+      rendered in a single Python pass from the bundle's own files, so add entries
+      to the `repl` map — e.g. `"CONFIG_NEWPROTO": val_or(conf("newproto.conf"),
+      "NewProto not enabled")`, `"QR_NEWPROTO": qr("newproto-qr.png")`, and a
+      `"NEWPROTO_DISPLAY"` toggle if the section should hide when the protocol is
+      off. Both entry points then get it for free — there is no per-script
+      substitution any more (the pre-A5 `sed`/`replace_placeholder` path is gone).
 
 **Badge types available:** `badge-primary` (green), `badge-secondary` (blue), `badge-fallback` (orange), `badge-standalone` (purple)
 
@@ -534,5 +505,5 @@ configs/newproto/server.pub
 | Type | Count | Files |
 |------|-------|-------|
 | New files | 3-4 | Dockerfile, entrypoint, configs/.gitkeep, (templates) |
-| Modified files | 13-15 | docker-compose.yml, .env.example, .gitignore, moav.sh, bootstrap.sh, generate-user.sh, generate-single-user.sh, user-add.sh, Dockerfile.client, client-connect.sh, client-test.sh, README.md, README-fa.md, SETUP.md, CLIENTS.md, TROUBLESHOOTING.md |
+| Modified files | 12-14 | docker-compose.yml, .env.example, .gitignore, moav.sh, bootstrap.sh, generate-user.sh, user-add.sh, lib/bundle_readme.py, Dockerfile.client, client-connect.sh, client-test.sh, README.md, README-fa.md, SETUP.md, CLIENTS.md, TROUBLESHOOTING.md |
 | **Total** | **15-18** | |

@@ -8,6 +8,7 @@ set -euo pipefail
 
 source /app/lib/common.sh
 source /app/lib/sing-box.sh
+source /app/lib/xray.sh
 source /app/lib/wireguard.sh
 source /app/lib/amneziawg.sh
 source /app/lib/dnstt.sh
@@ -16,6 +17,71 @@ source /app/lib/masterdns.sh
 source /app/lib/gooserelay.sh
 source /app/lib/telemt.sh
 source /app/lib/sync.sh
+source /app/lib/provision.sh   # shared "materialize every user" path (see A8)
+
+# ---------------------------------------------------------------------------
+# state <-> .env desync guards (E4-4)
+#
+# Generated secrets live in state/keys, but docker-compose injects them into
+# this container as env vars from .env (usually EMPTY, since the values are not
+# in .env). Any render that reads the empty env var instead of state silently
+# blanks the secret. PR #152 was exactly this for the Reality short_id: an
+# empty rendered short_id rejected EVERY Reality client, with no error anywhere.
+# ---------------------------------------------------------------------------
+
+# Re-load the whole generated-secret class from state, right before a render, so
+# state (the source of truth) wins over a shadowing empty .env value. Uniform
+# across reality/clash/cdn/ss — not just reality, which was the only one #152
+# covered. Safe to call repeatedly.
+load_state_secrets() {
+    [[ -f "$STATE_DIR/keys/reality.env"   ]] && source "$STATE_DIR/keys/reality.env"
+    [[ -f "$STATE_DIR/keys/clash-api.env" ]] && source "$STATE_DIR/keys/clash-api.env"
+    [[ -f "$STATE_DIR/keys/cdn.env"       ]] && source "$STATE_DIR/keys/cdn.env"
+    [[ -f "$STATE_DIR/keys/shadowsocks-server.psk" ]] && \
+        SS_SERVER_PSK=$(cat "$STATE_DIR/keys/shadowsocks-server.psk" 2>/dev/null)
+    export REALITY_SHORT_ID REALITY_PRIVATE_KEY REALITY_PUBLIC_KEY \
+           CLASH_API_SECRET HYSTERIA2_OBFS_PASSWORD CDN_WS_PATH SS_SERVER_PSK 2>/dev/null || true
+}
+
+# Fail LOUDLY if a render dropped the Reality identity that state holds. Compares
+# the state short_id / private key against the rendered file: if state has a
+# value (so this install uses Reality) but the render does not contain it, the
+# secret desynced and every client would be rejected. Aborting a bootstrap is
+# strictly better than serving a config that silently rejects everyone.
+# No false positive on a deliberate empty-short_id setup: state would be empty
+# too, and we skip.
+assert_reality_in_render() {
+    local cfg="$1"
+    [[ "${ENABLE_REALITY:-true}" == "true" ]] || return 0
+    [[ -f "$cfg" && -f "$STATE_DIR/keys/reality.env" ]] || return 0
+    local sid pk
+    sid=$(source "$STATE_DIR/keys/reality.env"; printf '%s' "${REALITY_SHORT_ID:-}")
+    pk=$(source "$STATE_DIR/keys/reality.env"; printf '%s' "${REALITY_PRIVATE_KEY:-}")
+    # Check the short_id is a MEMBER of a reality short_id/shortIds array, not a
+    # bare substring (an 8-hex id inside a UUID/key gives a false PASS). Use jq,
+    # not grep: the rendered config is pretty-printed, so the array spans lines
+    # ("short_id": [\n  "id"\n]) and a line-based regex can't match it. jq is
+    # available in the bootstrap container; the grep is a no-jq fallback that
+    # accepts the tiny false-pass risk over a false abort.
+    local sid_present=""
+    if [[ -n "$sid" ]]; then
+        if command -v jq >/dev/null 2>&1; then
+            jq -e --arg s "$sid" '[.inbounds[]? | (.tls.reality.short_id // .streamSettings.realitySettings.shortIds // empty)[]?] | any(. == $s)' "$cfg" >/dev/null 2>&1 && sid_present=yes
+        else
+            grep -qF -- "$sid" "$cfg" && sid_present=yes
+        fi
+    fi
+    if [[ -n "$sid" && -z "$sid_present" ]]; then
+        log_error "FATAL: Reality short_id from state is absent in $cfg."
+        log_error "  The render read an empty value instead of state — every Reality client"
+        log_error "  would be rejected (PR #152 class). Not writing a silently-broken config."
+        exit 1
+    fi
+    if [[ -n "$pk" ]] && ! grep -qF -- "$pk" "$cfg"; then
+        log_error "FATAL: Reality private key from state is absent in $cfg — Reality would not authenticate."
+        exit 1
+    fi
+}
 
 log_info "Starting MoaV bootstrap..."
 
@@ -83,23 +149,33 @@ if [[ -z "${DOMAIN:-}" ]]; then
     [[ "${ENABLE_GOOSERELAY:-false}" == "true" ]] && _domainless_protos="$_domainless_protos, GooseRelay"
     log_info "Running in domainless mode ($_domainless_protos)"
 
-    # Generate self-signed certificate for admin UI (if not exists)
-    if [[ "${ENABLE_ADMIN_UI:-true}" == "true" ]]; then
-        SELFSIGNED_DIR="/certs/selfsigned"
-        if [[ ! -f "$SELFSIGNED_DIR/fullchain.pem" ]]; then
-            log_info "Generating self-signed certificate for admin dashboard..."
-            mkdir -p "$SELFSIGNED_DIR"
-            openssl req -x509 -newkey rsa:4096 \
-                -keyout "$SELFSIGNED_DIR/privkey.pem" \
-                -out "$SELFSIGNED_DIR/fullchain.pem" \
-                -days 365 -nodes \
-                -subj "/CN=MoaV Admin" \
-                2>/dev/null
-            log_info "Self-signed certificate created (valid for 365 days)"
-            log_info "Note: Browser will show security warning - this is expected"
-        else
-            log_info "Self-signed certificate already exists"
-        fi
+fi
+
+# Self-signed certificate for the admin dashboard — generated in EVERY mode, not
+# just domainless. It is a FALLBACK, never a preference: admin/main.py checks
+# certs/live/ (Let's Encrypt) first and only uses this if none is present.
+#
+# Previously this lived inside the domainless branch above, so a DOMAIN install
+# whose certbot had not yet succeeded — every fresh install for its first
+# minutes, and any install with a DNS or rate-limit problem — had no cert at all
+# and the admin panel fell back to plaintext HTTP, sending the operator's
+# HTTP-Basic credential (also the Grafana password) over the wire.
+# Generate self-signed certificate for admin UI (if not exists)
+if [[ "${ENABLE_ADMIN_UI:-true}" == "true" ]]; then
+    SELFSIGNED_DIR="/certs/selfsigned"
+    if [[ ! -f "$SELFSIGNED_DIR/fullchain.pem" ]]; then
+        log_info "Generating self-signed certificate for admin dashboard..."
+        mkdir -p "$SELFSIGNED_DIR"
+        openssl req -x509 -newkey rsa:4096 \
+            -keyout "$SELFSIGNED_DIR/privkey.pem" \
+            -out "$SELFSIGNED_DIR/fullchain.pem" \
+            -days 365 -nodes \
+            -subj "/CN=MoaV Admin" \
+            2>/dev/null
+        log_info "Self-signed certificate created (valid for 365 days)"
+        log_info "Note: Browser will show security warning - this is expected"
+    else
+        log_info "Self-signed certificate already exists"
     fi
 fi
 
@@ -144,6 +220,9 @@ mkdir -p "$STATE_DIR"/{users,keys}
 
 # Check if already bootstrapped
 if [[ -f "$STATE_DIR/.bootstrapped" ]]; then
+    # Repair key perms even when skipping the re-bootstrap: the call at the end
+    # of this script is unreachable for existing installs.
+    secure_state_keys "$STATE_DIR/keys"
     log_info "Already bootstrapped. To re-bootstrap, run:"
     log_info "  docker run --rm -v moav_moav_state:/state alpine rm /state/.bootstrapped"
     log_info "  docker compose --profile setup run --rm bootstrap"
@@ -226,11 +305,12 @@ if [[ "${ENABLE_REALITY:-true}" == "true" ]] || [[ "${ENABLE_TROJAN:-true}" == "
         log_info "Hysteria2 obfuscation password already exists, skipping generation"
     fi
 
-    # Save to state
-    cat > "$STATE_DIR/keys/clash-api.env" <<EOF
+    # Save to state (0600: the root admin entrypoint reads it, not the app user)
+    (umask 077 && cat > "$STATE_DIR/keys/clash-api.env" <<EOF
 CLASH_API_SECRET=$CLASH_API_SECRET
 HYSTERIA2_OBFS_PASSWORD=$HYSTERIA2_OBFS_PASSWORD
 EOF
+    )
 
     # Parse Reality target
     REALITY_TARGET_HOST=$(echo "${REALITY_TARGET:-dl.google.com:443}" | cut -d: -f1)
@@ -269,7 +349,7 @@ export ENABLE_GOOSERELAY="${ENABLE_GOOSERELAY:-false}"
 export ENABLE_TRUSTTUNNEL="${ENABLE_TRUSTTUNNEL:-true}"
 export ENABLE_XHTTP="${ENABLE_XHTTP:-true}"
 export PORT_XHTTP="${PORT_XHTTP:-2096}"
-export XHTTP_REALITY_TARGET="${XHTTP_REALITY_TARGET:-dl.google.com:443}"
+export XHTTP_REALITY_TARGET="${XHTTP_REALITY_TARGET:-${REALITY_TARGET:-dl.google.com:443}}"
 export ENABLE_XDNS="${ENABLE_XDNS:-true}"
 export XDNS_SUBDOMAIN="${XDNS_SUBDOMAIN:-x}"
 export XDNS_MTU="${XDNS_MTU:-35}"
@@ -321,9 +401,15 @@ if [[ -z "${CDN_WS_PATH:-}" || "${CDN_WS_PATH}" == "/ws" ]]; then
     _rand_mid=${_cdn_mids[$((RANDOM % ${#_cdn_mids[@]}))]}
     _rand_file=${_cdn_files[$((RANDOM % ${#_cdn_files[@]}))]}
     _rand_ext=${_cdn_exts[$((RANDOM % ${#_cdn_exts[@]}))]}
-    _rand_num=$((RANDOM % 90 + 10))
+    # Crypto-random unique segment (48 bits) via openssl, NOT bash $RANDOM — the
+    # path is an active-probing barrier for a censorship tool, and $RANDOM is a
+    # predictable 15-bit LCG. The wordlist prefixes stay for realistic
+    # camouflage; the unguessable part is the hex token.
+    _rand_num=$(openssl rand -hex 6 2>/dev/null || printf '%04x%04x%04x' $((RANDOM)) $((RANDOM)) $((RANDOM)))
     CDN_WS_PATH="/${_rand_prefix}/${_rand_mid}/${_rand_file}-${_rand_num}.${_rand_ext}"
-    log_info "Generated CDN WS path: $CDN_WS_PATH"
+    # Do not log the value — it ships in bundles but bootstrap output lands in
+    # docker logs / install transcripts that get pasted around.
+    log_info "Generated CDN WS path"
 
     # Persist for subsequent bootstraps
     mkdir -p "$STATE_DIR/keys"
@@ -780,14 +866,14 @@ if [[ "${ENABLE_XHTTP:-true}" == "true" ]]; then
     XHTTP_REALITY_TARGET_HOST="${XHTTP_REALITY_TARGET%%:*}"
     export XHTTP_REALITY_TARGET_HOST
 
-    # Reuse Reality keys from sing-box. Re-load from state first so an empty
-    # REALITY_SHORT_ID injected from .env can't blank the rendered shortIds
-    # (same trap as the sing-box render below).
-    [[ -f "$STATE_DIR/keys/reality.env" ]] && source "$STATE_DIR/keys/reality.env"
+    # Re-load the whole secret class from state so an empty .env-injected value
+    # can't blank the render (see load_state_secrets / PR #152).
+    load_state_secrets
     export REALITY_PRIVATE_KEY
     export REALITY_SHORT_ID
 
     envsubst < /configs/xray/config.json.template > /configs/xray/config.json
+    assert_reality_in_render /configs/xray/config.json
 
     # Add XDNS inbound if enabled
     if [[ "${ENABLE_XDNS:-false}" == "true" ]] && [[ -n "${DOMAIN:-}" ]]; then
@@ -858,12 +944,13 @@ singbox_needed=false
 if [[ "$singbox_needed" == "true" ]]; then
     log_info "Generating sing-box configuration (using existing keys)..."
 
-    # Re-load the authoritative Reality identity from state right before the
-    # render. docker-compose injects REALITY_SHORT_ID=${REALITY_SHORT_ID:-} from
-    # .env into this container; since the short id lives in state (not .env),
-    # that value is usually empty and would shadow the real one — rendering an
-    # empty short_id that silently rejects EVERY Reality client. State wins.
-    [[ -f "$STATE_DIR/keys/reality.env" ]] && source "$STATE_DIR/keys/reality.env"
+    # Re-load the authoritative generated secrets from state right before the
+    # render. docker-compose injects these (REALITY_SHORT_ID, CLASH_API_SECRET,
+    # CDN_WS_PATH, ...) from .env into this container; since they live in state,
+    # the injected values are usually empty and would shadow the real ones —
+    # rendering e.g. an empty short_id that silently rejects EVERY Reality
+    # client. State wins. (Uniform re-source; PR #152 covered only reality.)
+    load_state_secrets
 
     export REALITY_USERS_JSON
     export TROJAN_USERS_JSON
@@ -915,6 +1002,23 @@ if [[ "$singbox_needed" == "true" ]]; then
         log_info "  Removed Shadowsocks inbound (disabled)"
     fi
 
+    # No server IPv6: re-resolve sniffed domains preferring IPv4 so proxied
+    # traffic doesn't try to dial AAAA targets the host can't route (the
+    # "network is unreachable" log spam + wasted dial per connection). Only when
+    # SERVER_IPV6 is empty — dual-stack servers keep their native behaviour.
+    # `prefer_ipv4` still falls back to IPv6, so it can't strand a destination.
+    # Inserted right after the DNS-hijack rule (needs the sniffed domain first).
+    if [[ -z "${SERVER_IPV6:-}" ]]; then
+        jq '
+          (.route.rules | map(.action == "hijack-dns") | index(true)) as $i
+          | .route.rules |= (if $i == null
+              then . + [{"action":"resolve","strategy":"prefer_ipv4"}]
+              else .[0:$i+1] + [{"action":"resolve","strategy":"prefer_ipv4"}] + .[$i+1:] end)
+        ' "$config_file" > "${config_file}.tmp" && mv -f "${config_file}.tmp" "$config_file"
+        log_info "  No server IPv6 — added prefer_ipv4 resolve rule (silences IPv6 dial failures)"
+    fi
+
+    assert_reality_in_render /configs/sing-box/config.json
     log_info "sing-box configuration written to /configs/sing-box/config.json"
 else
     log_info "sing-box not needed (no TLS protocols enabled)"
@@ -934,19 +1038,42 @@ fi
 # creds, re-orphaning them on every bootstrap. Host state is authoritative.
 # (mirrors what `moav regenerate-users` does)
 # -----------------------------------------------------------------------------
-if [[ -d /host-state/users ]]; then
-    mkdir -p "$STATE_DIR/users"
-    cp -a /host-state/users/. "$STATE_DIR/users/" 2>/dev/null || true
-fi
-sync_server_users "/configs/sing-box/config.json" "/configs/xray/config.json" "$STATE_DIR/users"
+# Delegated to lib/provision.sh — the SAME implementation `moav regenerate-users`
+# calls, so the two can no longer drift. It mirrors host state, materializes a
+# bundle for every user that has credentials (healing any user in state that
+# never got one), then reconciles. Every step is individually guarded, so it
+# behaves identically under bootstrap's `set -euo pipefail` and in the regenerate
+# path's non-`set -e` shell — the divergence behind the silent mid-reconcile
+# abort. Not `force`: existing bundle artifacts are left alone here.
+provision_all_users "" "/configs/sing-box/config.json" "/configs/xray/config.json" "$STATE_DIR/users"
 
 # -----------------------------------------------------------------------------
-# Fix permissions on generated configs (admin container runs as non-root uid 1000)
+# Fix permissions on generated configs. The admin app runs as uid 2000 (the old
+# `0:1000` chown targeted a gid the admin user never had — world-read was doing
+# all the work). Strip world bits from the sensitive trees; configs/monitoring
+# keeps world-read because grafana (uid 472) and prometheus (65534) read it.
 # -----------------------------------------------------------------------------
-chown -R 0:1000 /configs/ 2>/dev/null || true
-chmod -R g+r /configs/ 2>/dev/null || true
-chown -R 0:1000 /outputs/ 2>/dev/null || true
-chmod -R g+r /outputs/ 2>/dev/null || true
+chown -R "$ADMIN_UID:$ADMIN_GID" /outputs/ 2>/dev/null || true
+# configs owner stays root: cap_drop-ALL containers without DAC_OVERRIDE
+# (wireguard, amneziawg, telemt, xray) read their config as owner root.
+chown -R "0:$ADMIN_GID" /configs/ 2>/dev/null || true
+chmod -R ug+rwX /configs/ /outputs/ 2>/dev/null || true
+chmod -R o-rwx /outputs/ 2>/dev/null || true
+# wireguard/amneziawg: container-root consumers, fully locked. The other four
+# run non-root daemons that must keep world-read; only world-write is stripped.
+# `|| true`: a missing dir fails the && list, fatal under set -e
+for _d in wireguard amneziawg; do
+    [[ -d "/configs/$_d" ]] && chmod -R o-rwx "/configs/$_d" 2>/dev/null || true
+done
+for _d in sing-box xray trusttunnel telemt; do
+    [[ -d "/configs/$_d" ]] && chmod -R o+rX,o-w "/configs/$_d" 2>/dev/null || true
+done
+
+# state/keys is deliberately NOT part of the g+r pass above: the admin container
+# must read /configs and /outputs, but nothing needs group or world read on the
+# server's private key material. Tighten it here — this covers files just
+# generated AND repairs installs created before this landed.
+secure_state_keys "$STATE_DIR/keys"
 
 # -----------------------------------------------------------------------------
 # Mark as bootstrapped
@@ -957,6 +1084,6 @@ log_info "Bootstrap complete!"
 log_info "User bundles are in /outputs/bundles/"
 log_info ""
 log_info "Next steps:"
-log_info "  1. Configure DNS records (see docs/DNS.md)"
+log_info "  1. Configure DNS records (see https://moav.sh/docs/DNS)"
 log_info "  2. Start the stack: docker compose up -d"
 log_info "  3. Distribute user bundles to your contacts"

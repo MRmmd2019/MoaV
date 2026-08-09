@@ -125,8 +125,10 @@ EOF
 
 # Add an AmneziaWG peer
 amneziawg_add_peer() {
-    local user_id="$1"
-    local peer_num="$2"
+    local user_id="$1"; shift
+    # Remaining args: octets already in use on a live interface (host path scrapes
+    # `awg show awg0 allowed-ips`). Merged with the config scan for collision safety.
+    local extra_used="$*"
 
     local client_private_key
     local client_public_key
@@ -134,24 +136,61 @@ amneziawg_add_peer() {
     local client_ip_v6=""
 
     # Load existing client keys if available, only generate if missing
+    local have_state=false
     if [[ -f "$STATE_DIR/users/$user_id/amneziawg.env" ]]; then
+        # Clear first: source does not unset, so without this a truncated file
+        # would silently validate against whatever a previous call left behind.
+        unset AWG_PRIVATE_KEY AWG_PUBLIC_KEY AWG_CLIENT_IP AWG_CLIENT_IP_V6
         source "$STATE_DIR/users/$user_id/amneziawg.env"
+        # Validate before trusting it. A truncated state file -- a previous run
+        # that died between the mkdir and the heredoc write -- used to crash on
+        # the bare $AWG_PRIVATE_KEY below and never self-heal, because the broken
+        # file kept winning this branch on every retry.
+        if [[ -n "${AWG_PRIVATE_KEY:-}" && -n "${AWG_PUBLIC_KEY:-}" && -n "${AWG_CLIENT_IP:-}" ]]; then
+            have_state=true
+        else
+            log_warn "AmneziaWG: ignoring incomplete state file for $user_id"
+        fi
+    fi
+    if [[ "$have_state" == true ]]; then
         client_private_key="$AWG_PRIVATE_KEY"
         client_public_key="$AWG_PUBLIC_KEY"
         client_ip="$AWG_CLIENT_IP"
         client_ip_v6="${AWG_CLIENT_IP_V6:-}"
         log_info "Loaded existing AmneziaWG keys for $user_id"
+    elif grep -q "# $user_id$" "${AWG_CONFIG_DIR}/awg0.conf" 2>/dev/null; then
+        # Third state: the server already has a peer for this user, but their key
+        # material is NOT in state. The private key only ever existed in their
+        # bundle, so it cannot be recovered — minting a fresh keypair here would
+        # write a bundle whose key the server does not know (the append below is
+        # skipped for an existing peer), silently breaking a user who works today.
+        # Leave both the peer and any existing bundle alone and tell the caller.
+        log_warn "AmneziaWG: $user_id has a server peer but no key material in state"
+        log_warn "  leaving the existing peer and bundle untouched (private key is unrecoverable)"
+        log_warn "  to re-issue this user: moav user revoke $user_id && moav user add $user_id"
+        return 2
     else
-        # Generate client keys (standard WG key format, compatible with AWG)
-        client_private_key=$(wg genkey)
-        client_public_key=$(echo "$client_private_key" | wg pubkey)
+        # Generate client keys (lib/keys.sh — CRLF-safe; standard WG format, AWG-compatible)
+        # Guarded: if wg_keypair fails it emits nothing, the first read returns 1,
+        # && short-circuits, and client_public_key stays declared-but-unset -- which
+        # under set -u kills the run later with a misleading "unbound variable".
+        if ! { read -r client_private_key && read -r client_public_key; } < <(wg_keypair); then
+            log_error "AmneziaWG: no wg/awg key generator available (install wireguard-tools or start the container)"
+            return 1
+        fi
 
-        # Calculate client IP (IPv4)
-        client_ip="10.67.67.$((peer_num + 1))"
+        # Allocate the next free host octet (collision-safe across revoked-user
+        # gaps; supersedes the old peer-count+1 scheme that reused freed IPs).
+        local octet
+        octet=$(net_next_free_octet "$AWG_CONFIG_DIR/awg0.conf" "10.67.67" $extra_used) || {
+            log_error "No available IPs in AmneziaWG network"
+            return 1
+        }
+        client_ip="10.67.67.$octet"
 
         # Calculate client IPv6 if server has IPv6
         if [[ -n "${SERVER_IPV6:-}" ]]; then
-            client_ip_v6="fd00:cafe:dead::$((peer_num + 1))"
+            client_ip_v6="fd00:cafe:dead::$octet"
         fi
 
         # Save client credentials
@@ -189,7 +228,22 @@ amneziawg_generate_client_config() {
     local output_dir="$2"
 
     source "$STATE_DIR/users/$user_id/amneziawg.env"
-    source "$STATE_DIR/keys/amneziawg.env"
+
+    # Obfuscation params: read from the awg0.conf [Interface] header — the
+    # always-present source on both host and container (state/keys/amneziawg.env
+    # exists only in the container). One consistent config-read path; the values
+    # are identical to the state file (both are written from the same params).
+    local awg_conf="$AWG_CONFIG_DIR/awg0.conf"
+    local AWG_JC AWG_JMIN AWG_JMAX AWG_S1 AWG_S2 AWG_H1 AWG_H2 AWG_H3 AWG_H4
+    AWG_JC=$(awk '/^Jc[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_JMIN=$(awk '/^Jmin[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_JMAX=$(awk '/^Jmax[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_S1=$(awk '/^S1[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_S2=$(awk '/^S2[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H1=$(awk '/^H1[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H2=$(awk '/^H2[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H3=$(awk '/^H3[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_H4=$(awk '/^H4[[:space:]]*=/{print $3; exit}'   "$awg_conf")
 
     local server_public_key
     server_public_key=$(cat "$AWG_CONFIG_DIR/server.pub")
@@ -201,7 +255,7 @@ amneziawg_generate_client_config() {
     fi
 
     # AmneziaWG client config (includes obfuscation params)
-    cat > "$output_dir/amneziawg.conf" <<EOF
+    cat > "$output_dir/$(moav_wg_basename awg).conf" <<EOF
 [Interface]
 PrivateKey = $AWG_PRIVATE_KEY
 Address = $client_addresses
@@ -226,7 +280,7 @@ EOF
 
     # Generate IPv6 endpoint config if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        cat > "$output_dir/amneziawg-ipv6.conf" <<EOF
+        cat > "$output_dir/$(moav_wg_basename awg6).conf" <<EOF
 [Interface]
 PrivateKey = $AWG_PRIVATE_KEY
 Address = $client_addresses
@@ -250,6 +304,10 @@ PersistentKeepalive = 25
 EOF
         log_info "Generated AmneziaWG IPv6 endpoint config"
     fi
+
+    # Same as WireGuard: remove the pre-rename filenames so a regenerated bundle
+    # never ships a stale second copy of the tunnel.
+    rm -f "$output_dir/amneziawg.conf" "$output_dir/amneziawg-ipv6.conf" 2>/dev/null || true
 
     log_info "Generated AmneziaWG client config for $user_id"
 }

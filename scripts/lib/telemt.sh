@@ -219,8 +219,6 @@ telemt_generate_client_instructions() {
 
     local tg_link
     tg_link=$(telemt_build_tg_link "$telemt_secret")
-    local https_link
-    https_link=$(echo "$tg_link" | sed 's|^tg://proxy|https://t.me/proxy|')
 
     # Save the proxy link
     echo "$tg_link" > "$output_dir/telegram-proxy-link.txt"
@@ -228,62 +226,20 @@ telemt_generate_client_instructions() {
     # Generate QR code of the tg:// link
     qrencode -o "$output_dir/telegram-proxy-qr.png" -s 6 "$tg_link" 2>/dev/null || true
 
-    # Generate instructions
-    cat > "$output_dir/telegram-proxy-instructions.txt" <<EOF
-# Telegram MTProxy Instructions for $user_id
-# ============================================
-# Connect to Telegram through your MoaV server's MTProxy.
-# Uses Fake-TLS V2 for DPI evasion — traffic looks like normal HTTPS.
-
-# -------------------------
-# Quick Setup (tap/click the link):
-# -------------------------
-
-# Option 1: tg:// link (opens in Telegram app directly):
-$tg_link
-
-# Option 2: https link (opens in browser, then redirects to Telegram):
-$https_link
-
-# -------------------------
-# Manual Setup:
-# -------------------------
-
-# Server: ${SERVER_IP}
-# Port: ${PORT_TELEMT:-993}
-# Secret: ee${telemt_secret}$(printf '%s' "${TELEMT_TLS_DOMAIN:-dl.google.com}" | od -An -tx1 | tr -d ' \n')
-
-# iOS:
-#   Settings → Data and Storage → Proxy → Add Proxy → MTProto
-#   Enter server, port, and secret above
-
-# Android:
-#   Settings → Data and Storage → Proxy Settings → Add Proxy
-#   Select MTProto, enter server, port, and secret
-
-# Desktop:
-#   Settings → Advanced → Connection type → Use custom proxy
-#   Select MTPROTO, enter server, port, and secret
-
-# -------------------------
-# Notes:
-# -------------------------
-# - This proxy ONLY works for Telegram (not general internet)
-# - The 'ee' prefix in the secret enables Fake-TLS mode
-# - Traffic appears as HTTPS to ${TELEMT_TLS_DOMAIN:-dl.google.com}
-# - No additional software needed — just the official Telegram app
-# - Works on all platforms: iOS, Android, Desktop, Web
-EOF
-
-    log_info "Generated telemt instructions for $user_id"
+    # The tg:// link (with server/port/secret) is in telegram-proxy-link.txt; the
+    # setup guide lives in README.html, so no separate instructions file.
+    log_info "Generated telemt proxy link for $user_id"
 }
 
 # Add a user to an existing telemt config.toml
-# Usage: telemt_add_user_to_config <user_id> <secret>
+# Usage: telemt_add_user_to_config <user_id> <secret> [config_file]
 telemt_add_user_to_config() {
     local user_id="$1"
     local secret="$2"
-    local config_file="$TELEMT_CONFIG_DIR/config.toml"
+    # Config path is an argument (like singbox_add_user) so the host caller can
+    # pass a relative path and the container caller the absolute one. Defaults to
+    # the container path for back-compat.
+    local config_file="${3:-$TELEMT_CONFIG_DIR/config.toml}"
 
     if [[ ! -f "$config_file" ]]; then
         log_error "telemt config not found: $config_file"

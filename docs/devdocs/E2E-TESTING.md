@@ -192,18 +192,20 @@ not a name; the run then adds a named `e2e-test` user to also exercise
 
 | Input | Effect |
 |---|---|
+| `tier` | **`default`** — domain mode only (fast). **`full`** — domain **+** a second domainless phase. **`mega`** — full **+** `build --local` (monitoring images from source) **+** `uninstall --wipe --remove-images` on teardown. `full`/`mega` re-issue a cert (see below). |
 | `verbose` | Per-protocol debug output from `client-test.sh` (`-v`). |
-| `domainless` | **No DOMAIN / no cert** — certbot self-skips, so this **never touches the Let's Encrypt rate limit**. Runs the IP-only protocols (Reality, XHTTP, Shadowsocks, WireGuard…) and still builds the client image, so it's the fast way to validate everything *except* the TLS-domain protocols. Needs no `E2E_DOMAIN`/`E2E_ACME_EMAIL`. |
-| `full` | Also runs `build --local` (monitoring images from source), a second **domainless** phase after the domain phase, and `uninstall --wipe --remove-images` on teardown. Much slower, and it **does** re-issue a cert (see below). |
+| `domainless_only` | **No DOMAIN / no cert** — certbot self-skips, so this **never touches the Let's Encrypt rate limit**. Runs the IP-only protocols (Reality, XHTTP, Shadowsocks, WireGuard…) and still builds the client image — the fast way to validate everything *except* the TLS-domain protocols. Overrides the tier's domain portion; needs no `E2E_DOMAIN`/`E2E_ACME_EMAIL`. |
+
+> A future tier (or an extension of `full`) will also drive a real **moav-client** connection test end-to-end.
 
 **Cert reuse & the LE rate limit.** Let's Encrypt allows only **5 certs/week per
-exact domain**. A standard (domain) run therefore **keeps the `moav_certs`
+exact domain**. A `default` (domain) run therefore **keeps the `moav_certs`
 volume** on teardown (`uninstall --yes`, `down` without `-v`), so the next run
 reuses the existing cert instead of re-issuing — you can run it many times a day.
-Only `full` runs wipe the volume (fresh issuance); don't run `full` more than a
+`full`/`mega` runs wipe the volume (fresh issuance); don't run them more than a
 few times a week against the same domain or you'll hit the limit
 ("*too many certificates … retry after …*"). If you do get blocked, use
-`domainless` to keep testing in the meantime.
+`domainless_only` to keep testing in the meantime.
 
 The **e2e-results** artifact (JSON + raw log) is attached to every run. The job
 fails if any protocol reports `fail`; `warn`/`skip` (e.g. an unconfigured
@@ -252,3 +254,65 @@ If a DNS-tunnel protocol (dnstt/Slipstream/MasterDNS/XDNS) warns or fails,
 first check the NS delegation for its subdomain (`moav doctor dns`) and that the
 resolver in the bundle is reachable from the runner — DNS tunnels are the most
 environment-sensitive transports.
+
+---
+
+## Coverage map (audited 2026-07-28)
+
+What each protocol's green result actually proves. "Live" = a real client
+connects and fetches an exit IP through the tunnel.
+
+| Strength | Protocols |
+|---|---|
+| **Live exit-IP** | reality, trojan, hysteria2, ss, xhttp |
+| Live, warn-gated | cdn (operator Cloudflare), xdns (resolver-sensitive) |
+| Live if binary present, else warn | dnstt, slipstream, trusttunnel |
+
+> **`skip` is not a pass, and it is not a failure either.** dnstt sat at `skip`
+> for months after its per-user instruction file was retired — the test globbed
+> for a name that no longer existed, found nothing, and returned early. The
+> suite stayed green while a DNS tunnel went entirely unexercised. When a
+> protocol's status changes to `skip`, treat it as lost coverage and find out
+> why; the same pattern is still open for AnyTLS.
+| Live **only where a WG kernel module exists** | wireguard, amneziawg (see below) |
+| Handshake probe only | telemt (Fake-TLS handshake, no MTProto session) |
+| Never runs in CI yet | anytls (test exists; blocked on a provisioning bug — enabling it breaks bootstrap; tracked on the board) |
+| Untestable from harness, always skip | masterdns (no standalone client), gooserelay (needs deployed Apps Script) |
+
+**WireGuard / AmneziaWG — read this before trusting a green.** The live test
+runs inside the `moav-client` container (`moav test` grants it `NET_ADMIN` +
+`/dev/net/tun`). But bringing up a WG interface needs *either* the `wireguard`
+kernel module *or* a userspace impl (wireguard-go / boringtun) — the CI runner's
+container has **neither**, so `wg-quick up` cannot create the interface and the
+test reports **warn** (an honest "no WG capability here"), not pass. It only
+reaches a real exit-IP pass on a host with the kernel module — i.e. a real
+server, which is the upgrade-in-place milestone, not the fresh-install CI.
+
+So in CI today, WG/AWG are **warn**, and the fresh-install guarantee rests on
+the five live-exit-IP protocols above. This is a deliberate honesty fix: WG used
+to report *pass* on a mere DNS resolve of the endpoint. To make WG/AWG genuinely
+live in CI, add a userspace impl to `Dockerfile.client` and set
+`WG_QUICK_USERSPACE_IMPLEMENTATION` — filed as a follow-up.
+
+Lifecycle covered: bootstrap → start → `user add` (bundle non-empty) → forced
+**re-bootstrap** (orphan guard + per-inbound reconcile assert) →
+**`regenerate-users`** (command itself; asserts reconcile + zero unrendered
+placeholders) → per-protocol connectivity → CLI smoke (~25 subcommands incl.
+`--package` zip render assert, `user base64`, standalone packager,
+`doctor peers`) → uninstall.
+
+## Known gaps (deliberate, tracked)
+
+- **`moav update` end-to-end** (self-update, migrations, template-change
+  detection): deferred with the upgrade-in-place test to near v2.0.0 —
+  fresh-install proof is the current bar.
+- **`migrate-ip`, `setup-dns` / `switch-dns`, `domainless` (the command)**: not
+  exercised; domainless is simulated by editing `.env`.
+- **Config matrix**: only "all-on" (domain) and the IP-only subset (domainless)
+  run. No `ENABLE_REALITY=false` pass (its worst regression is unit-tested in
+  `tests/strict-mode-test.sh`), no single-protocol-in-isolation pass.
+- **wstunnel**: TLS handshake on the wss port only — no tunnel traffic.
+- **telemt**: handshake-level by design (no headless MTProto client).
+
+When any of these bites during development: per project policy, add the test in
+the same PR that fixes the bug — failing on the unfixed tree first.

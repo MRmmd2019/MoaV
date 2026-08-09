@@ -1,0 +1,185 @@
+#!/bin/bash
+# Golden-diff gate for Workstream C (unified config loader).
+#
+# The repo resolves .env values two ways: ~42 ad-hoc `grep|cut|tr` scrapers in
+# scripts/, and the single `get_env_val` accessor used 203x in lib/. C1 migrates
+# the scrapers onto the accessor -- which CHANGES RESOLVED VALUES in several
+# cases. This test pins exactly which, so the migration is a reviewed set of
+# deliberate fixes rather than a silent semantic drift.
+#
+# Every difference below is the accessor being MORE correct. The point is that
+# they are enumerated and expected, not discovered later in a bundle.
+set -uo pipefail
+
+pass=0; fail=0
+ok()  { printf '  ok    %s\n' "$1"; pass=$((pass+1)); }
+bad() { printf '  FAIL  %s\n' "$1"; fail=$((fail+1)); }
+
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+ENV="$TMP/.env"
+
+# The accessor under consideration (verbatim from moav.sh:234).
+get_env_val() {
+    local key="$1" file="$2" default="${3:-}"
+    local val
+    val=$(grep "^${key}=" "$file" 2>/dev/null | tail -1 | cut -d'=' -f2- | sed 's/#.*//' | tr -d '"' | tr -d "'" | xargs) || true
+    echo "${val:-$default}"
+}
+
+# The dominant legacy shape (15 of the 42 sites).
+legacy() {
+    local key="$1" file="$2"
+    grep -E "^${key}=" "$file" 2>/dev/null | cut -d= -f2 | tr -d '"'
+}
+
+echo "env resolution: legacy scraper vs get_env_val"
+
+# case: key, .env line(s), expectation
+check() {
+    local desc="$1" key="$2" expect_same="$3"; shift 3
+    : > "$ENV"; for l in "$@"; do printf '%s\n' "$l" >> "$ENV"; done
+    local old new
+    old=$(legacy "$key" "$ENV"); new=$(get_env_val "$key" "$ENV")
+    if [[ "$expect_same" == "same" ]]; then
+        [[ "$old" == "$new" ]] && ok "$desc — identical [$new]" \
+                               || bad "$desc — DIVERGED old=[$old] new=[$new] (unexpected)"
+    else
+        if [[ "$old" != "$new" ]]; then
+            ok "$desc — differs as expected: old=[$old] -> new=[$new]"
+        else
+            bad "$desc — expected a difference (the accessor should fix this) but both gave [$old]"
+        fi
+    fi
+}
+
+# --- cases where behaviour MUST be preserved -------------------------------
+check "plain value"                 FOO same "FOO=bar"
+check "double-quoted value"         FOO same 'FOO="bar"'
+check "empty value"                 FOO same "FOO="
+check "missing key"                 FOO same "OTHER=x"
+check "value with a dash"           FOO same "FOO=a-b-c"
+
+# --- cases where the accessor is deliberately DIFFERENT (i.e. correct) -----
+# Base64/PSKs contain '='. `cut -d= -f2` truncates at the first one, silently
+# corrupting keys; `-f2-` keeps the whole value.
+check "value containing '=' (base64 padding)"  FOO differ "FOO=YWJjZGVm=="
+check "inline comment"                          FOO differ "FOO=bar   # a note"
+check "single-quoted value"                     FOO differ "FOO='bar'"
+check "duplicate keys (last should win)"        FOO differ "FOO=first" "FOO=second"
+check "leading/trailing whitespace"             FOO differ "FOO=  bar  "
+
+# --- the truncation bug, stated explicitly ---------------------------------
+: > "$ENV"; echo 'SS_PSK=c29tZXNlY3JldA==' >> "$ENV"
+old=$(legacy SS_PSK "$ENV"); new=$(get_env_val SS_PSK "$ENV")
+[[ "$new" == "c29tZXNlY3JldA==" ]] && ok "accessor preserves a base64 PSK intact" \
+                                   || bad "accessor mangled the PSK: [$new]"
+[[ "$old" != "c29tZXNlY3JldA==" ]] && ok "legacy scraper DOES truncate it: [$old]" \
+                                   || bad "legacy scraper unexpectedly preserved it"
+
+# --- the accessor must be available to BOTH trees before C1 can land -------
+# lib/ (host CLI) and scripts/ (container) are separate source trees; the
+# accessor currently lives in moav.sh, which scripts/ never sources.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# The credential-bearing sites must NOT use the truncating scraper. A
+# MAHSANET_API_KEY containing '=' (base64 keys routinely do) was silently cut
+# short, producing auth failures that look like "wrong key".
+for f in lib/donate.sh moav.sh; do
+    if grep -qE "grep -E \"\\^(MAHSANET_API_KEY|ADMIN_PASSWORD)=\".*cut -d= -f2" "$ROOT/$f"; then
+        bad "$f still reads a credential with the truncating 'cut -d= -f2' scraper"
+    else
+        ok "$f reads credentials via the accessor (no '=' truncation)"
+    fi
+done
+
+# C1a: the lib/ tree must no longer carry ad-hoc .env scrapers. The one
+# permitted survivor reads state/keys/cdn.env out of the docker volume, which is
+# not a .env read at all.
+# Match BOTH `cut -d= -f2` and the quoted `cut -d'=' -f2` form. The original
+# pattern only matched the unquoted one, so five quoted scrapers passed this gate
+# vacuously (found by the epic audit). Excludes: the get_env_val definitions
+# themselves (they contain `cut -d'=' -f2-`), docker-volume reads (moav_moav_state),
+# and shell-variable parses (`echo "$x" | cut`, i.e. cut immediately after a pipe
+# from echo, not from a file grep).
+stragglers=$(grep -rnE "cut -d'?=('?) -f2 " --include='*.sh' "$ROOT/lib/" "$ROOT/moav.sh" 2>/dev/null \
+             | grep -v 'moav_moav_state' \
+             | grep -vE 'cut -d.=. -f2-' \
+             | grep -vE 'echo "\$[A-Za-z_]' || true)
+if [[ -z "$stragglers" ]]; then
+    ok "lib/ tree has no ad-hoc .env scrapers left (all on get_env_val)"
+else
+    bad "lib/ tree still has ad-hoc .env scrapers:"
+    printf '%s\n' "$stragglers" | cut -c1-100 | sed 's/^/          /'
+fi
+
+# get_env_val is defined TWICE on purpose: moav.sh serves the host CLI, and
+# scripts/lib/common.sh serves the provisioning tree (mounted into containers as
+# /app/lib, where moav.sh does not exist). The duplication is only safe while the
+# two bodies are identical — this check is what makes it safe rather than a
+# second implementation waiting to drift.
+extract_fn() { awk '/^get_env_val\(\) \{/,/^\}/' "$1"; }
+if ! grep -q '^get_env_val()' "$ROOT/scripts/lib/common.sh" 2>/dev/null; then
+    bad "scripts/lib/common.sh has no get_env_val — the container tree cannot resolve .env consistently"
+elif diff <(extract_fn "$ROOT/moav.sh") <(extract_fn "$ROOT/scripts/lib/common.sh") >/dev/null 2>&1; then
+    ok "both get_env_val definitions are byte-identical (host CLI + container tree)"
+else
+    bad "the two get_env_val definitions have DRIFTED:"
+    diff <(extract_fn "$ROOT/moav.sh") <(extract_fn "$ROOT/scripts/lib/common.sh") | head -10 | sed 's/^/          /'
+fi
+
+# scripts/ must have no ad-hoc .env scrapers left. Permitted survivors read a
+# shell VARIABLE (`echo "$REALITY_ENV_CONTENT" | grep …`) or the docker volume —
+# neither is a .env read.
+leftover=$(grep -rnE "cut -d'?=('?) -f2 " --include='*.sh' "$ROOT/scripts/" 2>/dev/null \
+           | grep -v 'moav_moav_state' | grep -v 'echo "\$' \
+           | grep -vE 'cut -d.=. -f2-' \
+           | grep -viE 'CONFIG_FILE|wg0.conf|awg0.conf|REALITY_ENV_CONTENT' || true)
+if [[ -z "$leftover" ]]; then
+    ok "scripts/ tree has no ad-hoc .env scrapers left"
+else
+    bad "scripts/ tree still has ad-hoc .env scrapers:"
+    printf '%s\n' "$leftover" | cut -c1-100 | sed 's/^/          /'
+fi
+
+# --- state-vs-.env precedence: pin the defences (Workstream C2) --------------
+# Some values are authoritative in state/keys/*.env, but docker-compose ALSO
+# injects them into the bootstrap container from .env. If the injected value
+# wins, the render silently uses a wrong value. For REALITY_SHORT_ID that means
+# an empty short_id that rejects EVERY Reality client.
+#
+# Three variables are exposed this way and each is defended differently. C2
+# proposed replacing these with a generic "state wins when non-empty" loader --
+# which would NOT have covered CDN_WS_PATH, whose injected default `/ws` is
+# non-empty. The existing defences are correct; these assertions stop them being
+# removed as "redundant" by someone who has not traced the trap.
+BOOT="$ROOT/scripts/bootstrap.sh"
+COMPOSE="$ROOT/docker-compose.yml"
+
+# 1+2. Reality: re-source state immediately before each envsubst render.
+resources=$(grep -c 'source "\$STATE_DIR/keys/reality.env"' "$BOOT" || true)
+if [[ "${resources:-0}" -ge 2 ]]; then
+    ok "bootstrap re-sources reality.env before both renders ($resources sites)"
+else
+    bad "only $resources reality.env re-source(s) in bootstrap.sh — an injected empty REALITY_SHORT_ID can shadow state and render a short_id that rejects every Reality client"
+fi
+
+# 3. CDN_WS_PATH: injected default is NON-empty (/ws), so "empty means unset"
+# cannot defend it. bootstrap treats the literal /ws as unset and regenerates.
+if grep -q 'CDN_WS_PATH.*==.*"/ws"' "$BOOT"; then
+    ok "bootstrap treats the injected /ws default as unset (regenerates a real path)"
+else
+    bad "bootstrap no longer sentinel-checks CDN_WS_PATH == /ws — the compose default would shadow the real path and break CDN clients"
+fi
+
+# The defences above assume specific compose injection forms. If those change,
+# the assumptions silently stop holding -- so pin them too.
+grep -qE '^\s*- REALITY_SHORT_ID=\$\{REALITY_SHORT_ID:-\}' "$COMPOSE" \
+    && ok "compose still injects REALITY_SHORT_ID with an empty default (defence assumption holds)" \
+    || bad "compose REALITY_SHORT_ID injection changed — re-verify the re-source defence still applies"
+grep -qE '^\s*- CDN_WS_PATH=\$\{CDN_WS_PATH:-/ws\}' "$COMPOSE" \
+    && ok "compose still injects CDN_WS_PATH default /ws (sentinel matches)" \
+    || bad "compose CDN_WS_PATH default changed — the /ws sentinel in bootstrap.sh no longer matches it"
+
+echo
+echo "  $pass passed, $fail failed"
+[[ $fail -eq 0 ]]

@@ -5,6 +5,14 @@
 # Uses raw ip/wg commands to avoid wg-quick shell compatibility issues
 # =============================================================================
 
+set -eu
+# `set` is a POSIX SPECIAL builtin: when `set -o pipefail` fails, a
+# non-interactive shell exits immediately -- `|| true` does NOT save it. dash
+# (debian's /bin/sh) has no pipefail, so the naive guard silently killed the
+# conduit container at line 3 with exit 2 and no output. Probe in a SUBSHELL,
+# where the exit is contained, then enable it for real only if supported.
+if ( set -o pipefail 2>/dev/null ); then set -o pipefail; fi
+
 CONFIG_FILE="/etc/wireguard/wg0.conf"
 INTERFACE="wg0"
 
@@ -19,16 +27,30 @@ fi
 
 # Show config info (without private keys)
 echo "[wireguard] Config file: $CONFIG_FILE"
-PEER_COUNT=$(grep -c '^\[Peer\]' "$CONFIG_FILE" || echo 0)
+# grep -c already prints 0 on no match (and exits 1); `|| echo 0` appended a
+# SECOND zero, so this used to report "Peer count: 0 0".
+PEER_COUNT=$(grep -c '^\[Peer\]' "$CONFIG_FILE" 2>/dev/null || true)
+[ -n "$PEER_COUNT" ] || PEER_COUNT=0
 echo "[wireguard] Peer count: $PEER_COUNT"
 
 # IP forwarding is set via docker-compose sysctls
 echo "[wireguard] IP forwarding: $(cat /proc/sys/net/ipv4/ip_forward)"
 
 # Parse config file - use cut -f2- to preserve = in base64 keys
-PRIVATE_KEY=$(grep -i 'PrivateKey' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n')
-ADDRESS=$(grep -i 'Address' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n')
-LISTEN_PORT=$(grep -i 'ListenPort' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n')
+# `|| true` on each: `grep | head -1` gets SIGPIPE (exit 141) once head closes
+# the pipe -- which pipefail propagates even on a SUCCESSFUL match -- and grep
+# exits 1 when the key is legitimately absent. Either would kill the container
+# at startup under `set -e`.
+PRIVATE_KEY=$(grep -i 'PrivateKey' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
+ADDRESS=$(grep -i 'Address' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
+LISTEN_PORT=$(grep -i 'ListenPort' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
+
+# Fail loudly on missing essentials. Previously an empty PRIVATE_KEY sailed past
+# `wg set`, the script reached its monitor loop, and the container reported
+# healthy while the tunnel was dead.
+[ -n "$PRIVATE_KEY" ] || { echo "[wireguard] ERROR: no PrivateKey in $CONFIG_FILE"; exit 1; }
+[ -n "$ADDRESS" ]     || { echo "[wireguard] ERROR: no Address in $CONFIG_FILE"; exit 1; }
+[ -n "$LISTEN_PORT" ] || LISTEN_PORT=51820   # optional; wg default
 
 echo "[wireguard] Address: $ADDRESS"
 echo "[wireguard] Listen port: $LISTEN_PORT"
@@ -122,9 +144,37 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT
 
-# Keep running
+# Publish interface state for the metrics exporter.
+#
+# The exporter used to obtain this by mounting the raw Docker socket and running
+# `docker exec wireguard wg show` -- unrestricted Docker API access, i.e. a path
+# to host root, for a read-only metrics scrape. `wg show` genuinely needs this
+# container's network namespace, so there is no API to query instead: the state
+# is published here and the exporter reads a file.
+#
+# Written tmp-then-rename so a scrape can never observe a half-written file.
+METRICS_STATE_DIR="${METRICS_STATE_DIR:-/var/lib/moav-metrics}"
+METRICS_STATE_FILE="$METRICS_STATE_DIR/wg-show.txt"
+publish_state() {
+    [ -d "$METRICS_STATE_DIR" ] || return 0
+    if wg show > "$METRICS_STATE_FILE.tmp" 2>/dev/null; then
+        mv -f "$METRICS_STATE_FILE.tmp" "$METRICS_STATE_FILE" 2>/dev/null || true
+    else
+        rm -f "$METRICS_STATE_FILE.tmp" 2>/dev/null || true
+    fi
+}
+publish_state
+
+# Keep running.
+# Publishes every 15s (Prometheus scrapes ~15s); the interface health check stays
+# on its original 60s cadence, so this adds sampling without changing recovery
+# behaviour.
+_tick=0
 while true; do
-    sleep 60
+    sleep 15
+    publish_state
+    _tick=$((_tick + 1))
+    [ "$((_tick % 4))" -eq 0 ] || continue
     # Check if interface is still up
     if ! wg show "$INTERFACE" > /dev/null 2>&1; then
         echo "[wireguard] Interface down, attempting restart..."

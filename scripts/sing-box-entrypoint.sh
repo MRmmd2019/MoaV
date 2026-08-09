@@ -4,6 +4,19 @@
 # sing-box entrypoint with logging
 # =============================================================================
 
+
+# Strict mode, minus `-e` (see below).
+set -eu
+# `set` is a POSIX SPECIAL builtin: a failed `set -o pipefail` exits a
+# non-interactive shell outright and `|| true` does NOT save it. dash (debian's
+# /bin/sh, used by sing-box and wstunnel) has no pipefail. Probe in a subshell,
+# where the exit is contained, then enable it only if supported.
+if ( set -o pipefail 2>/dev/null ); then set -o pipefail; fi
+# NOTE: `-e` is deliberately NOT enabled here yet. This entrypoint has never run
+# under it, so every currently-tolerated non-zero exit would become fatal. That
+# needs a per-command review, tracked separately -- adding it blind to six
+# long-running services at once is how you take down a stack.
+
 CONFIG_FILE="${CONFIG_FILE:-/etc/sing-box/config.json}"
 
 echo "[sing-box] Starting sing-box multi-protocol proxy"
@@ -29,11 +42,16 @@ fi
 echo "[sing-box] Configuration valid"
 
 # Show enabled inbounds
-INBOUNDS=$(grep -o '"tag"[[:space:]]*:[[:space:]]*"[^"]*"' "$RUNTIME_CONFIG" | head -10 | sed 's/"tag"[[:space:]]*:[[:space:]]*//g' | tr -d '"' | tr '\n' ', ' | sed 's/,$//')
+# `|| true`: grep exits 1 when no tag matches, and `| head -10` SIGPIPEs once
+# head closes the pipe -- both fatal under pipefail, on an informational line.
+INBOUNDS=$(grep -o '"tag"[[:space:]]*:[[:space:]]*"[^"]*"' "$RUNTIME_CONFIG" | head -10 | sed 's/"tag"[[:space:]]*:[[:space:]]*//g' | tr -d '"' | tr '\n' ', ' | sed 's/,$//' || true)
 echo "[sing-box] Inbounds: $INBOUNDS"
 
-# Fix volume ownership (volumes may be root-owned from previous runs)
-chown -R moav:moav /state /var/log/sing-box 2>/dev/null || true
+# Make the log/cache volume moav-writable. /state is mounted read-only and is
+# NOT chowned: a recursive chown here swept in /state/keys/* and downgraded every
+# state secret from root:root to the moav uid on each start, defeating the
+# ownership hardening. sing-box's only /state need (its cache db) now lives here.
+chown -R moav:moav /var/log/sing-box 2>/dev/null || true
 
 # Copy certs to a moav-readable location (originals are root:root 600, volume is read-only)
 if [ -d /certs/live ]; then
@@ -51,6 +69,11 @@ chown -R moav:moav /tmp/certs 2>/dev/null || true
 
 # Rewrite cert paths in config to use the moav-readable copy
 sed -i 's|/certs/|/tmp/certs/|g' "$RUNTIME_CONFIG"
+
+# Relocate the cache db off the now-read-only /state onto the moav-writable log
+# volume. Rewriting the runtime copy self-heals existing installs whose rendered
+# config still points the cache at /state (no re-bootstrap needed).
+sed -i 's|/state/sing-box-cache.db|/var/log/sing-box/sing-box-cache.db|g' "$RUNTIME_CONFIG"
 
 # Run sing-box as non-root
 echo "[sing-box] Starting proxy server..."

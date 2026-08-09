@@ -11,6 +11,9 @@ cd "$SCRIPT_DIR/.."
 
 source scripts/lib/common.sh
 source scripts/lib/sing-box.sh
+source scripts/lib/trusttunnel.sh
+source scripts/lib/xray.sh
+source scripts/lib/telemt.sh
 
 # Parse arguments
 USERNAME=""
@@ -46,7 +49,10 @@ if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
 fi
 
 # Load environment
-if [[ -f .env ]]; then
+# -r too: .env is root 0600; in the admin container (uid 2000) it exists but
+# is unreadable -- source would die with "Permission denied" under set -e. The
+# container gets the full .env via the compose env_file instead.
+if [[ -f .env && -r .env ]]; then
     set -a
     source .env
     set +a
@@ -65,9 +71,10 @@ fi
 # Create directories (may need sudo if Docker created parent as root)
 mkdir -p "$OUTPUT_DIR" 2>/dev/null || sudo mkdir -p "$OUTPUT_DIR" 2>/dev/null || true
 mkdir -p "$STATE_DIR/users/$USERNAME" 2>/dev/null || sudo mkdir -p "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
-# Ensure writable
+# Ensure writable: owner=caller, group=admin, no world bits (was chmod 777)
 if [[ ! -w "$STATE_DIR/users/$USERNAME" ]]; then
-    sudo chmod 777 "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
+    sudo chown "$(id -u):$ADMIN_GID" "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
+    sudo chmod 2770 "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
 fi
 
 # Check if user already exists in config (jq, whitespace-insensitive — the
@@ -82,8 +89,19 @@ fi
 
 log_info "Adding user '$USERNAME' to sing-box..."
 
-# Generate credentials
-USER_UUID=$(docker compose exec -T sing-box sing-box generate uuid 2>/dev/null || uuidgen | tr '[:upper:]' '[:lower:]')
+# Generate credentials.
+# LOCALLY — never via `docker compose exec sing-box generate uuid`. Any RFC-4122
+# v4 UUID is valid for VLESS/VMess; the exec bought nothing and was the root of
+# two real failures: (a) emitting a UUID and THEN getting killed by the timeout
+# wrapper, whose old `|| uuidgen` fallback then appended a SECOND UUID (two-line
+# USER_UUID -> corrupt credentials.env, failed bootstrap/regenerate, xray crash
+# loop); (b) under set -e/pipefail, a restarting sing-box (hot-reload fallback
+# from the PREVIOUS add) made the exec fail and killed this script silently.
+USER_UUID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)
+if [[ ! "$USER_UUID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+    log_error "Could not generate a UUID (no /proc/sys/kernel/random/uuid or uuidgen)"
+    exit 1
+fi
 USER_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)
 
 # Save credentials
@@ -130,59 +148,18 @@ fi
 
 log_info "Generated credentials for $USERNAME"
 
-# Add user to sing-box config using jq
-# Create temp file with updated config
-TEMP_CONFIG=$(mktemp)
-
-# Add to Reality users (vless)
-jq --arg name "$USERNAME" --arg uuid "$USER_UUID" \
-    '.inbounds |= map(if .tag == "vless-reality-in" then .users += [{"name": $name, "uuid": $uuid, "flow": "xtls-rprx-vision"}] else . end)' \
-    "$CONFIG_FILE" > "$TEMP_CONFIG"
-
-# Add to Trojan users
-jq --arg name "$USERNAME" --arg pass "$USER_PASSWORD" \
-    '.inbounds |= map(if .tag == "trojan-tls-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to AnyTLS users (no-op if the anytls-in inbound isn't present)
-jq --arg name "$USERNAME" --arg pass "$USER_PASSWORD" \
-    '.inbounds |= map(if .tag == "anytls-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to Hysteria2 users
-jq --arg name "$USERNAME" --arg pass "$USER_PASSWORD" \
-    '.inbounds |= map(if .tag == "hysteria2-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to VLESS WS users (CDN)
-jq --arg name "$USERNAME" --arg uuid "$USER_UUID" \
-    '.inbounds |= map(if .tag == "vless-ws-in" then .users += [{"name": $name, "uuid": $uuid}] else . end)' \
-    "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
-
-# Add to Shadowsocks-2022 users (only if the inbound exists in the current config)
+# Add user to sing-box config (canonical mutation: lib/sing-box.sh). Shadowsocks
+# is included only when it's enabled, its per-user PSK is set, and a
+# shadowsocks-in inbound is actually present in the current config.
+SS_ARG=""
 if [[ "${ENABLE_SS:-true}" == "true" ]] && [[ -n "${SS_USER_PSK:-}" ]] \
-        && jq -e '.inbounds[] | select(.tag == "shadowsocks-in")' "$TEMP_CONFIG" >/dev/null 2>&1; then
-    jq --arg name "$USERNAME" --arg pass "$SS_USER_PSK" \
-        '.inbounds |= map(if .tag == "shadowsocks-in" then .users += [{"name": $name, "password": $pass}] else . end)' \
-        "$TEMP_CONFIG" > "${TEMP_CONFIG}.2"
-    mv -f "${TEMP_CONFIG}.2" "$TEMP_CONFIG"
+        && jq -e '.inbounds[] | select(.tag == "shadowsocks-in")' "$CONFIG_FILE" >/dev/null 2>&1; then
+    SS_ARG="$SS_USER_PSK"
 fi
-
-# Validate the new config
-if ! jq empty "$TEMP_CONFIG" 2>/dev/null; then
-    log_error "Generated invalid JSON config"
-    rm -f "$TEMP_CONFIG"
+if ! singbox_add_user "$CONFIG_FILE" "$USERNAME" "$USER_UUID" "$USER_PASSWORD" "$SS_ARG"; then
+    log_error "Failed to add $USERNAME to sing-box config (invalid JSON or no matching inbound)"
     exit 1
 fi
-
-# Apply the config — cat-overwrite (not mv-replace) so the original file's
-# inode/mode/owner survive across sudo'd CLI vs admin-container user mismatches.
-cat "$TEMP_CONFIG" > "$CONFIG_FILE"
-rm -f "$TEMP_CONFIG"
 
 log_info "Added $USERNAME to sing-box config"
 
@@ -192,9 +169,12 @@ if [[ -f "$STATE_DIR/keys/reality.env" ]]; then
 else
     # Try docker volume (load all keys including private for derivation fallback)
     REALITY_ENV_CONTENT=$(docker run --rm -v moav_moav_state:/state alpine cat /state/keys/reality.env 2>/dev/null || echo "")
-    REALITY_PRIVATE_KEY=$(echo "$REALITY_ENV_CONTENT" | grep REALITY_PRIVATE_KEY | cut -d= -f2)
-    REALITY_PUBLIC_KEY=$(echo "$REALITY_ENV_CONTENT" | grep REALITY_PUBLIC_KEY | cut -d= -f2)
-    REALITY_SHORT_ID=$(echo "$REALITY_ENV_CONTENT" | grep REALITY_SHORT_ID | cut -d= -f2)
+    # `|| true` on each: when the volume read comes back empty, grep exits 1 and
+    # pipefail propagates it to the assignment, which set -e turns into a silent
+    # exit -- the operator saw "Failed to add sing-box user" and nothing more.
+    REALITY_PRIVATE_KEY=$(echo "$REALITY_ENV_CONTENT" | grep REALITY_PRIVATE_KEY | cut -d= -f2 || true)
+    REALITY_PUBLIC_KEY=$(echo "$REALITY_ENV_CONTENT" | grep REALITY_PUBLIC_KEY | cut -d= -f2 || true)
+    REALITY_SHORT_ID=$(echo "$REALITY_ENV_CONTENT" | grep REALITY_SHORT_ID | cut -d= -f2 || true)
 fi
 
 # If public key is missing but private key exists, derive it
@@ -202,12 +182,12 @@ if [[ -z "${REALITY_PUBLIC_KEY:-}" ]] && [[ -n "${REALITY_PRIVATE_KEY:-}" ]]; th
     log_info "Reality public key missing, deriving from private key..."
     # x25519 uses the same curve as WireGuard — convert base64url→base64, use wg pubkey, convert back
     REALITY_KEY_B64=$(echo "${REALITY_PRIVATE_KEY}==" | tr '_-' '/+' | head -c 44)
-    if docker compose ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
-        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEY_B64" | docker compose exec -T wireguard wg pubkey 2>/dev/null | tr -d '\r\n' | tr '/+' '_-' | sed 's/=*$//' || echo "")
+    if svc_running wireguard; then
+        REALITY_PUBLIC_KEY=$(echo "$REALITY_KEY_B64" | svc_exec wireguard wg pubkey 2>/dev/null | tr -d '\r\n' | tr '/+' '_-' | sed 's/=*$//' || echo "")
     elif command -v wg &>/dev/null; then
         REALITY_PUBLIC_KEY=$(echo "$REALITY_KEY_B64" | wg pubkey 2>/dev/null | tr -d '\r\n' | tr '/+' '_-' | sed 's/=*$//' || echo "")
     fi
-    if [[ -n "$REALITY_PUBLIC_KEY" ]]; then
+    if [[ -n "${REALITY_PUBLIC_KEY:-}" ]]; then
         log_info "Derived Reality public key: ${REALITY_PUBLIC_KEY:0:10}..."
         # Save it back so future runs don't need to derive again
         if [[ -f "$STATE_DIR/keys/reality.env" ]]; then
@@ -307,26 +287,26 @@ fi
 
 # Generate CDN VLESS+WS link (if CDN configured)
 # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
-CDN_DOMAIN="${CDN_DOMAIN:-$(grep -E '^CDN_DOMAIN=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")}"
+CDN_DOMAIN="${CDN_DOMAIN:-$(get_env_val "CDN_DOMAIN" ".env" "")}"
 if [[ -z "$CDN_DOMAIN" ]]; then
-    CDN_SUBDOMAIN="${CDN_SUBDOMAIN:-$(grep -E '^CDN_SUBDOMAIN=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")}"
-    DOMAIN_FROM_ENV="${DOMAIN:-$(grep -E '^DOMAIN=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")}"
+    CDN_SUBDOMAIN="${CDN_SUBDOMAIN:-$(get_env_val "CDN_SUBDOMAIN" ".env" "")}"
+    DOMAIN_FROM_ENV="${DOMAIN:-$(get_env_val "DOMAIN" ".env" "")}"
     if [[ -n "$CDN_SUBDOMAIN" && -n "$DOMAIN_FROM_ENV" ]]; then
         CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN_FROM_ENV}"
     fi
 fi
 # Load CDN WS path: .env → state file (bootstrap-generated) → fallback
-CDN_WS_PATH="${CDN_WS_PATH:-$(grep -E '^CDN_WS_PATH=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || true)}"
+CDN_WS_PATH="${CDN_WS_PATH:-$(get_env_val "CDN_WS_PATH" ".env")}"
 if [[ -z "${CDN_WS_PATH:-}" ]]; then
     # Check bootstrap-generated state (persisted random path)
     CDN_WS_PATH=$(docker run --rm -v moav_moav_state:/state alpine cat /state/keys/cdn.env 2>/dev/null | grep '^CDN_WS_PATH=' | cut -d= -f2 || true)
 fi
 CDN_WS_PATH="${CDN_WS_PATH:-/ws}"
-CDN_TRANSPORT="${CDN_TRANSPORT:-$(grep -E '^CDN_TRANSPORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || true)}"
+CDN_TRANSPORT="${CDN_TRANSPORT:-$(get_env_val "CDN_TRANSPORT" ".env")}"
 CDN_TRANSPORT="${CDN_TRANSPORT:-ws}"
-CDN_SNI="${CDN_SNI:-$(grep -E '^CDN_SNI=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || true)}"
+CDN_SNI="${CDN_SNI:-$(get_env_val "CDN_SNI" ".env")}"
 CDN_SNI="${CDN_SNI:-${DOMAIN_FROM_ENV:-}}"
-CDN_ADDRESS="${CDN_ADDRESS:-$(grep -E '^CDN_ADDRESS=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || true)}"
+CDN_ADDRESS="${CDN_ADDRESS:-$(get_env_val "CDN_ADDRESS" ".env")}"
 CDN_ADDRESS="${CDN_ADDRESS:-${CDN_DOMAIN}}"
 
 if [[ -n "$CDN_DOMAIN" ]]; then
@@ -354,8 +334,8 @@ if [[ "${ENABLE_SS:-true}" == "true" ]] && [[ -n "${SS_USER_PSK:-}" ]]; then
     if [[ -z "$SS_SERVER_PSK" ]]; then
         log_warn "Shadowsocks server PSK not found — skipping SS bundle for $USERNAME"
     else
-        SS_PORT_LOCAL="${PORT_SS:-$(grep -E '^PORT_SS=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo 8388)}"
-        SS_METHOD_LOCAL="${SS_METHOD:-$(grep -E '^SS_METHOD=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || echo 2022-blake3-aes-128-gcm)}"
+        SS_PORT_LOCAL="${PORT_SS:-$(get_env_val "PORT_SS" ".env" "8388")}"
+        SS_METHOD_LOCAL="${SS_METHOD:-$(get_env_val "SS_METHOD" ".env" "2022-blake3-aes-128-gcm")}"
 
         # SIP002 ss:// URI with SS-2022 multi-user encoding: BASE64URL_NOPAD(method:server_psk:user_psk)@host:port#tag
         SS_USERINFO=$(singbox_ss_userinfo "$SS_METHOD_LOCAL" "$SS_SERVER_PSK" "$SS_USER_PSK")
@@ -421,74 +401,10 @@ EOF
         SERVER_IP=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo "")
     fi
 
-    # Generate full TOML config for CLI client
-    cat > "$OUTPUT_DIR/trusttunnel.toml" <<EOF
-# TrustTunnel Client Configuration for $USERNAME
-# Generated by MoaV
-
-loglevel = "info"
-vpn_mode = "general"
-killswitch_enabled = false
-killswitch_allow_ports = []
-post_quantum_group_enabled = true
-exclusions = []
-
-[endpoint]
-hostname = "${DOMAIN}"
-dns_upstreams = ["tls://1.1.1.1"]
-addresses = ["${SERVER_IP}:4443"]
-has_ipv6 = false
-username = "${USERNAME}"
-password = "${USER_PASSWORD}"
-client_random = ""
-skip_verification = false
-certificate = ""
-upstream_protocol = "http2"
-upstream_fallback_protocol = "http3"
-anti_dpi = false
-
-[listener.tun]
-bound_if = ""
-included_routes = ["0.0.0.0/0", "2000::/3"]
-excluded_routes = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
-mtu_size = 1280
-EOF
-
-    # Generate human-readable text file
-    cat > "$OUTPUT_DIR/trusttunnel.txt" <<EOF
-TrustTunnel Configuration for $USERNAME
-======================================
-
-IP Address: ${SERVER_IP}:4443
-Domain: ${DOMAIN}
-Username: ${USERNAME}
-Password: ${USER_PASSWORD}
-DNS Servers: tls://1.1.1.1
-
-CLI Client:
------------
-1. Download from: https://github.com/TrustTunnel/TrustTunnelClient/releases
-2. Run: trusttunnel_client trusttunnel.toml
-
-Mobile/Desktop App:
--------------------
-1. Download TrustTunnel from app store or https://trusttunnel.org/
-2. Add new VPN with the settings above
-3. Connect
-
-Note: TrustTunnel supports HTTP/2 and HTTP/3 (QUIC) transports,
-which look like regular HTTPS traffic to network observers.
-EOF
-
-    cat > "$OUTPUT_DIR/trusttunnel.json" <<EOF
-{
-  "ip_address": "${SERVER_IP}:4443",
-  "domain": "${DOMAIN}",
-  "username": "${USERNAME}",
-  "password": "${USER_PASSWORD}",
-  "dns_servers": ["tls://1.1.1.1"]
-}
-EOF
+    # Canonical client bundle (lib/trusttunnel.sh): trusttunnel.toml + .json.
+    # Uses the same renderer as the container path, so has_ipv6 is now derived
+    # from SERVER_IPV6 here too (this path hardcoded it to false).
+    trusttunnel_write_client_bundle "$OUTPUT_DIR" "$USERNAME" "$USER_PASSWORD"
 
     log_info "Generated TrustTunnel client config (toml + txt + json)"
 fi
@@ -498,312 +414,72 @@ XRAY_CONFIG="configs/xray/config.json"
 if [[ "${ENABLE_XHTTP:-true}" == "true" ]] && [[ -f "$XRAY_CONFIG" ]]; then
     log_info "Adding $USERNAME to Xray (XHTTP)..."
 
-    # Check if user already exists. Xray's v26.5.9 schema kept `clients` as an
-    # alias of the new `users` field — bootstrap writes via template put users
-    # under `settings.users`, legacy add wrote `settings.clients`. Match either.
-    if jq -e --arg uuid "$USER_UUID" '
-            .inbounds[]? |
-            (.settings.clients[]?, .settings.users[]?) |
-            select(.id == $uuid)
-        ' "$XRAY_CONFIG" >/dev/null 2>&1; then
-        log_info "User '$USERNAME' already exists in Xray config, skipping..."
-    else
-        # Add to the canonical `settings.users` field (the new Xray schema name
-        # since v26.5.9; older clients/`clients` alias still works). Adding to
-        # `users` keeps the template's path and the add-path consistent.
-        jq --arg id "$USER_UUID" --arg email "${USERNAME}@moav" \
-            '(.inbounds[] | select(.protocol == "vless" and .tag != null and (.tag | startswith("vless-")))).settings.users += [{"id": $id, "email": $email, "flow": ""}]' \
-            "$XRAY_CONFIG" > /tmp/xray.tmp
-        # Preserve original config's perms/owner (cat-overwrite, not mv-replace) so
-        # admin container keeps write access on subsequent operations.
-        cat /tmp/xray.tmp > "$XRAY_CONFIG"
-        rm -f /tmp/xray.tmp
+    # Canonical mutation (lib/xray.sh): idempotent insert into every vless-*
+    # inbound, into whichever field (settings.users/clients) the config uses.
+    if xray_add_user "$XRAY_CONFIG" "$USER_UUID" "$USERNAME"; then
         log_info "Added $USERNAME to Xray config (all VLESS inbounds)"
+    else
+        log_info "User '$USERNAME' already in Xray config (or unchanged), skipping..."
     fi
 
-    # Generate XHTTP client configs
-    _xhttp_target="${XHTTP_REALITY_TARGET:-dl.google.com:443}"
-    _xhttp_target_host="${_xhttp_target%%:*}"
-    _xhttp_port="${PORT_XHTTP:-2096}"
-
-    XHTTP_LINK="vless://${USER_UUID}@${SERVER_IP}:${_xhttp_port}?type=xhttp&security=reality&sni=${_xhttp_target_host}&fp=chrome&headers=chrome&pbk=${REALITY_PUBLIC_KEY}&sid=${REALITY_SHORT_ID}&encryption=none#MoaV-XHTTP-${USERNAME}"
-
-    echo "$XHTTP_LINK" > "$OUTPUT_DIR/xhttp-vless.txt"
-
-    if command -v qrencode &>/dev/null; then
-        qrencode -o "$OUTPUT_DIR/xhttp-qr.png" -s 6 -m 2 "$XHTTP_LINK" 2>/dev/null || true
-    fi
-
-    cat > "$OUTPUT_DIR/xhttp.txt" <<EOF
-XHTTP (VLESS+XHTTP+Reality) Configuration for $USERNAME
-=======================================================
-
-Protocol: VLESS + XHTTP + Reality (via Xray-core)
-Server: ${SERVER_IP}
-Port: ${_xhttp_port}
-UUID: ${USER_UUID}
-SNI: ${_xhttp_target_host}
-Reality Public Key: ${REALITY_PUBLIC_KEY}
-Short ID: ${REALITY_SHORT_ID}
-Fingerprint: chrome
-Transport: xhttp
-
-Share Link:
-${XHTTP_LINK}
-
-Client Apps:
-- Android: V2rayNG, Hiddify
-- iOS: Streisand, V2Box
-- Windows: Hiddify, V2rayN
-- macOS: V2rayU, Hiddify
-
-Instructions:
-1. Install a compatible client app
-2. Import using the share link above or scan the QR code
-3. Connect
-EOF
+    # Generate XHTTP client bundle (canonical: lib/xray.sh)
+    xray_write_xhttp_bundle "$OUTPUT_DIR" "$USERNAME"
 
     log_info "Generated XHTTP client config"
 fi
 
 # Generate XDNS client config if enabled
 if [[ "${ENABLE_XDNS:-false}" == "true" ]] && [[ -n "${DOMAIN:-}" ]]; then
-    _xdns_domain="${XDNS_SUBDOMAIN:-x}.${DOMAIN}"
-    _xdns_mtu="${XDNS_MTU:-35}"
-    # Multi-resolver round-robin for DNS-tunnel mode (Xray v26.4.13+, PR #5872).
-    # Direct mode connects to SERVER_IP:53 and never goes through public DNS,
-    # so resolvers must be omitted there.
-    _xdns_resolvers_csv="${XDNS_RESOLVERS:-1.1.1.1,8.8.8.8}"
-    _xdns_finalmask_settings=$(XDNS_DOMAIN="$_xdns_domain" XDNS_RESOLVERS_CSV="$_xdns_resolvers_csv" python3 -c '
-import os, json
-domain = os.environ["XDNS_DOMAIN"]
-csv = os.environ.get("XDNS_RESOLVERS_CSV", "").strip()
-ips = [x.strip() for x in csv.split(",") if x.strip()] if csv else []
-if not ips:
-    ips = ["1.1.1.1"]
-# Xray v26.x finalmask: the client side uses "resolvers", each formatted as
-# "domain[:method]+udp://server:port" (method defaults to txt). The old singular
-# "domain" field was removed; "domains" is server-side only.
-resolvers = [domain + "+udp://" + (ip if ":" in ip else ip + ":53") for ip in ips]
-print(json.dumps({"resolvers": resolvers}))
-')
-    _xdns_finalmask_settings_direct=$(XDNS_DOMAIN="$_xdns_domain" XDNS_DIRECT_TARGET="${SERVER_IP}:${PORT_XDNS:-5356}" python3 -c '
-import os, json
-domain = os.environ["XDNS_DOMAIN"]
-target = os.environ["XDNS_DIRECT_TARGET"]
-# Direct mode: send xdns-encoded queries straight to the server XDNS port
-# (host PORT_XDNS -> xray:5355), with no public recursive resolver in between.
-print(json.dumps({"resolvers": [domain + "+udp://" + target]}))
-')
     log_info "Generating XDNS client config for $USERNAME..."
 
-    # Full Xray config (for apps that support custom JSON import)
-    # Config via DNS resolver (stealthier but may drop after a few minutes)
-    cat > "$OUTPUT_DIR/xdns-config.json" <<XDNSEOF
-{
-  "remarks": "MoaV-XDNS-${USERNAME} (via DNS)",
-  "log": {"loglevel": "warning"},
-  "inbounds": [
-    {
-      "listen": "127.0.0.1",
-      "port": 7891,
-      "protocol": "socks",
-      "settings": {"auth": "noauth", "udp": true}
-    }
-  ],
-  "outbounds": [
-    {
-      "tag": "proxy",
-      "protocol": "vless",
-      "settings": {
-        "vnext": [
-          {
-            "address": "8.8.8.8",
-            "port": 53,
-            "users": [{"id": "${USER_UUID}", "encryption": "none"}]
-          }
-        ]
-      },
-      "streamSettings": {
-        "network": "kcp",
-        "kcpSettings": {
-          "mtu": ${_xdns_mtu},
-          "tti": 100,
-          "uplinkCapacity": 0,
-          "downlinkCapacity": 0,
-          "congestion": true
-        },
-        "finalmask": {
-          "udp": [{"type": "xdns", "settings": ${_xdns_finalmask_settings}}]
-        }
-      }
-    },
-    {
-      "tag": "direct",
-      "protocol": "freedom"
-    }
-  ],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["::/0"],
-        "outboundTag": "direct"
-      }
-    ]
-  }
-}
-XDNSEOF
-
-    # Config via direct connection (more stable but less stealthy)
-    cat > "$OUTPUT_DIR/xdns-direct-config.json" <<XDNSEOF2
-{
-  "remarks": "MoaV-XDNS-${USERNAME} (direct)",
-  "log": {"loglevel": "warning"},
-  "inbounds": [
-    {
-      "listen": "127.0.0.1",
-      "port": 7891,
-      "protocol": "socks",
-      "settings": {"auth": "noauth", "udp": true}
-    }
-  ],
-  "outbounds": [
-    {
-      "tag": "proxy",
-      "protocol": "vless",
-      "settings": {
-        "vnext": [
-          {
-            "address": "${SERVER_IP}",
-            "port": ${PORT_XDNS:-5356},
-            "users": [{"id": "${USER_UUID}", "encryption": "none"}]
-          }
-        ]
-      },
-      "streamSettings": {
-        "network": "kcp",
-        "kcpSettings": {
-          "mtu": ${_xdns_mtu},
-          "tti": 100,
-          "uplinkCapacity": 0,
-          "downlinkCapacity": 0,
-          "congestion": true
-        },
-        "finalmask": {
-          "udp": [{"type": "xdns", "settings": ${_xdns_finalmask_settings_direct}}]
-        }
-      }
-    },
-    {
-      "tag": "direct",
-      "protocol": "freedom"
-    }
-  ],
-  "routing": {
-    "rules": [
-      {
-        "type": "field",
-        "ip": ["::/0"],
-        "outboundTag": "direct"
-      }
-    ]
-  }
-}
-XDNSEOF2
-
-    cat > "$OUTPUT_DIR/xdns.txt" <<EOF
-XDNS (DNS Tunnel via Xray mKCP) Configuration for $USERNAME
-============================================================
-
-Protocol: VLESS + mKCP + XDNS FinalMask (via Xray-core)
-Domain: ${_xdns_domain}
-UUID: ${USER_UUID}
-MTU: ${_xdns_mtu}
-
-This protocol tunnels VPN traffic through DNS queries.
-It works when almost everything except DNS is blocked.
-Speed is slow but connectivity is reliable.
-
-IMPORTANT: XDNS requires Xray-core v26+ with FinalMask support.
-
-Recommended clients:
-- Happ (iOS/Android/Desktop) — supports FinalMask
-- Xray CLI v26.3+ (any platform) — run: xray run -c xdns-config.json
-
-Two configs included:
-
-  xdns-config.json        Via DNS resolver (8.8.8.8) — stealthier, may reconnect periodically
-  xdns-direct-config.json Via direct server connection — more stable, less stealthy
-
-Setup:
-1. Import one of the configs into an Xray-compatible app with FinalMask support
-2. Use as SOCKS5 proxy: 127.0.0.1:7891
-3. For Telegram: tap https://t.me/socks?server=127.0.0.1&port=7891
-
-Tips:
-- Try the DNS resolver config first (stealthier)
-- Switch to direct if connections keep dropping
-- The DNS-resolver config round-robins across: ${_xdns_resolvers_csv:-(single resolver mode)}
-- If those keep dropping, edit the "resolvers" array in xdns-config.json
-  with DNS servers that actually answer on your network.
-- Scanners that find reachable resolvers:
-    findns   https://github.com/SamNet-dev/findns
-    dns-mns  https://gitlab.com/E-Gurl/dns-mns
-
-Telegram quick setup (after XDNS client is connected):
-  Tap this link to add proxy to Telegram:
-  https://t.me/socks?server=127.0.0.1&port=7891
-
-MTU tuning (client side only — server uses MTU 900 for return path):
-- MTU ${_xdns_mtu} = safest (works with all resolvers)
-- MTU 67 = works with most resolvers (faster)
-- MTU 130 = unrestricted resolvers only (fastest)
-- MTU depends on domain name length: shorter domain = higher MTU possible
-EOF
+    # Generate XDNS client bundle (canonical: lib/xray.sh)
+    xray_write_xdns_bundle "$OUTPUT_DIR" "$USERNAME" "$USER_UUID"
 
     log_info "Generated XDNS client config"
 fi
 
-# Add user to telemt (Telegram MTProxy) if config exists
-TELEMT_CONFIG="configs/telemt/config.toml"
+# Add user to telemt (Telegram MTProxy) via the shared lib functions. This was an
+# inline copy of telemt_add_user_to_config; using the lib removes the duplication
+# and gains idempotency -- telemt_generate_secret reuses an existing secret rather
+# than minting a new one, so re-running no longer invalidates the user's bundle.
+TELEMT_CONFIG="configs/telemt/config.toml"  # referenced again by the reload + share-link blocks below
 if [[ "${ENABLE_TELEMT:-true}" == "true" ]] && [[ -f "$TELEMT_CONFIG" ]]; then
     log_info "Adding $USERNAME to telemt..."
-
-    # Check if user already exists
-    if grep -q "^${USERNAME} = " "$TELEMT_CONFIG" 2>/dev/null; then
-        log_info "User '$USERNAME' already exists in telemt, skipping..."
-    else
-        # Generate 32-hex MTProxy secret
-        TELEMT_SECRET=$(openssl rand -hex 16)
-
-        # Save secret to state
-        cat > "$STATE_DIR/users/$USERNAME/telemt.env" <<EOF
-TELEMT_SECRET=$TELEMT_SECRET
-EOF
-
-        # Add user to [access.users] section (before [access.user_max_tcp_conns])
-        sed -i "/^\[access\.user_max_tcp_conns\]/i ${USERNAME} = \"${TELEMT_SECRET}\"" "$TELEMT_CONFIG"
-
-        # Add connection limit (before [access.user_max_unique_ips])
-        sed -i "/^\[access\.user_max_unique_ips\]/i ${USERNAME} = ${TELEMT_MAX_TCP_CONNS:-100}" "$TELEMT_CONFIG"
-
-        # Add IP limit (append at end)
-        echo "${USERNAME} = ${TELEMT_MAX_UNIQUE_IPS:-10}" >> "$TELEMT_CONFIG"
-
-        log_info "Added $USERNAME to telemt config"
-    fi
+    telemt_generate_secret "$USERNAME"
+    telemt_add_user_to_config "$USERNAME" "$TELEMT_SECRET" "$TELEMT_CONFIG"
 fi
 
-# Try to reload sing-box (hot reload) unless --no-reload was passed
+# Apply the new user to the running sing-box, unless --no-reload was passed
+# (batch mode reloads once at the end).
+#
+# A restart is the ONLY way: sing-box has no `reload` subcommand (check
+# `sing-box --help`: check / run / tools), and its entrypoint runs from a COPY
+# of the config taken at container start. So a user written to the config file
+# without a restart is simply not there for the running process — every
+# protocol answers "unknown UUID" and the operator gets a working-looking
+# bundle that passes no traffic. That is exactly how it shipped: the dashboard
+# said "sing-box not running, config will apply on next start" (it WAS running;
+# the compose-based check just cannot answer from inside the admin container),
+# skipped the restart, and every user created that way was dead on arrival.
+#
+# So: restart, then VERIFY the user is actually live, and say so loudly if not.
 if [[ "$NO_RELOAD" != "true" ]]; then
-    if docker compose ps sing-box --status running 2>/dev/null | tail -n +2 | grep -q .; then
-        log_info "Reloading sing-box..."
-        if docker compose exec -T sing-box sing-box reload 2>/dev/null; then
-            log_info "sing-box reloaded successfully"
+    if svc_running sing-box; then
+        log_info "Restarting sing-box to apply the new user..."
+        svc_restart sing-box
+        _live=false
+        for _i in $(seq 1 15); do
+            if svc_exec sing-box grep -q "$USER_UUID" /tmp/sing-box-config.json 2>/dev/null; then
+                _live=true; break
+            fi
+            sleep 1
+        done
+        if [[ "$_live" == true ]]; then
+            log_info "✓ sing-box is serving $USERNAME"
         else
-            log_info "Hot reload failed, restarting sing-box..."
-            docker compose restart sing-box
+            log_warn "sing-box restarted but $USERNAME is NOT in its running config."
+            log_warn "  The user's Reality/Trojan/Hysteria2/Shadowsocks configs will not connect."
+            log_warn "  Fix with: moav restart sing-box"
         fi
     else
         log_info "sing-box not running, config will apply on next start"
@@ -811,25 +487,25 @@ if [[ "$NO_RELOAD" != "true" ]]; then
 
     # Try to reload TrustTunnel (if running)
     if [[ -f "$TRUSTTUNNEL_CREDS" ]]; then
-        if docker compose ps trusttunnel --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running trusttunnel; then
             log_info "Restarting TrustTunnel to apply new credentials..."
-            docker compose restart trusttunnel
+            svc_restart trusttunnel
         fi
     fi
 
     # Try to reload Xray (if running)
     if [[ -f "$XRAY_CONFIG" ]] && [[ "${ENABLE_XHTTP:-true}" == "true" ]]; then
-        if docker compose --profile xhttp ps xray --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running xray; then
             log_info "Restarting Xray to apply new user..."
-            docker compose --profile xhttp restart xray
+            svc_restart xray
         fi
     fi
 
     # Try to reload telemt (if running)
     if [[ -f "$TELEMT_CONFIG" ]]; then
-        if docker compose --profile telegram ps telemt --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running telemt; then
             log_info "Restarting telemt to apply new user..."
-            docker compose --profile telegram restart telemt
+            svc_restart telemt
         fi
     fi
 fi

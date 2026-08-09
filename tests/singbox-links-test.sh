@@ -8,6 +8,9 @@ set -uo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # The library under test stays in scripts/lib/ (this test lives in tests/).
 # shellcheck source=/dev/null
+# common.sh first: the link builders call moav_name_prefix from it, exactly as
+# every production caller does (singbox-user-add.sh / generate-user.sh).
+source "$DIR/../scripts/lib/common.sh"
 source "$DIR/../scripts/lib/sing-box.sh"
 
 # Fixed inputs
@@ -42,23 +45,23 @@ check() {
 
 U=alice
 check reality-v4  "$(singbox_reality_link "$U" "$SERVER_IP")" \
-  "vless://${USER_UUID}@203.0.113.9:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.cloudflare.com&fp=random&pbk=PUBKEYbase64xyz&sid=a1b2c3d4&type=tcp#MoaV-Reality-alice"
+  "vless://${USER_UUID}@203.0.113.9:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.cloudflare.com&fp=random&pbk=PUBKEYbase64xyz&sid=a1b2c3d4&type=tcp#MoaV-vpn-Reality-alice"
 check reality-v6  "$(singbox_reality_link "${U}-IPv6" "[${SERVER_IPV6}]")" \
-  "vless://${USER_UUID}@[2001:db8::1]:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.cloudflare.com&fp=random&pbk=PUBKEYbase64xyz&sid=a1b2c3d4&type=tcp#MoaV-Reality-alice-IPv6"
+  "vless://${USER_UUID}@[2001:db8::1]:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.cloudflare.com&fp=random&pbk=PUBKEYbase64xyz&sid=a1b2c3d4&type=tcp#MoaV-vpn-Reality-alice-IPv6"
 check trojan-v4   "$(singbox_trojan_link "$U" "$SERVER_IP")" \
-  "trojan://s3cr3t-pass@203.0.113.9:8443?security=tls&sni=vpn.example.com&type=tcp#MoaV-Trojan-alice"
+  "trojan://s3cr3t-pass@203.0.113.9:8443?security=tls&sni=vpn.example.com&type=tcp#MoaV-vpn-Trojan-alice"
 check trojan-v6   "$(singbox_trojan_link "${U}-IPv6" "[${SERVER_IPV6}]")" \
-  "trojan://s3cr3t-pass@[2001:db8::1]:8443?security=tls&sni=vpn.example.com&type=tcp#MoaV-Trojan-alice-IPv6"
+  "trojan://s3cr3t-pass@[2001:db8::1]:8443?security=tls&sni=vpn.example.com&type=tcp#MoaV-vpn-Trojan-alice-IPv6"
 check anytls-v4   "$(singbox_anytls_link "$U" "$SERVER_IP")" \
-  "anytls://s3cr3t-pass@203.0.113.9:8445?sni=vpn.example.com&insecure=0#MoaV-AnyTLS-alice"
+  "anytls://s3cr3t-pass@203.0.113.9:8445?sni=vpn.example.com&insecure=0#MoaV-vpn-AnyTLS-alice"
 check anytls-v6   "$(singbox_anytls_link "${U}-IPv6" "[${SERVER_IPV6}]")" \
-  "anytls://s3cr3t-pass@[2001:db8::1]:8445?sni=vpn.example.com&insecure=0#MoaV-AnyTLS-alice-IPv6"
+  "anytls://s3cr3t-pass@[2001:db8::1]:8445?sni=vpn.example.com&insecure=0#MoaV-vpn-AnyTLS-alice-IPv6"
 check hy2-v4      "$(singbox_hysteria2_link "$U" "$SERVER_IP")" \
-  "hysteria2://s3cr3t-pass@203.0.113.9:443?sni=vpn.example.com&obfs=salamander&obfs-password=obfs-pw#MoaV-Hysteria2-alice"
+  "hysteria2://s3cr3t-pass@203.0.113.9:443?sni=vpn.example.com&obfs=salamander&obfs-password=obfs-pw#MoaV-vpn-Hysteria2-alice"
 check hy2-v6      "$(singbox_hysteria2_link "${U}-IPv6" "[${SERVER_IPV6}]")" \
-  "hysteria2://s3cr3t-pass@[2001:db8::1]:443?sni=vpn.example.com&obfs=salamander&obfs-password=obfs-pw#MoaV-Hysteria2-alice-IPv6"
+  "hysteria2://s3cr3t-pass@[2001:db8::1]:443?sni=vpn.example.com&obfs=salamander&obfs-password=obfs-pw#MoaV-vpn-Hysteria2-alice-IPv6"
 check cdn         "$(singbox_cdn_link "$U")" \
-  "vless://${USER_UUID}@cdn.example.net:443?security=tls&type=ws&path=/moav&sni=cdn.example.net&host=cdn.example.net&fp=random&alpn=http/1.1#MoaV-CDN-alice"
+  "vless://${USER_UUID}@cdn.example.net:443?security=tls&type=ws&path=/moav&sni=cdn.example.net&host=cdn.example.net&fp=random&alpn=http/1.1#MoaV-vpn-CDN-alice"
 
 # Shadowsocks: userinfo round-trip against the exact inline encoding, then link.
 SS_METHOD="2022-blake3-aes-128-gcm"; SS_SPSK="c2VydmVyUFNL"; SS_UPSK="dXNlclBTSw=="; SS_PORT="8388"
@@ -66,8 +69,8 @@ SS_USERINFO_EXPECT=$(printf '%s' "${SS_METHOD}:${SS_SPSK}:${SS_UPSK}" | base64 |
 SS_UI=$(singbox_ss_userinfo "$SS_METHOD" "$SS_SPSK" "$SS_UPSK")
 check ss-userinfo "$SS_UI" "$SS_USERINFO_EXPECT"
 check ss-v4       "$(singbox_ss_link "$U" "$SERVER_IP" "$SS_UI" "$SS_PORT")" \
-  "ss://${SS_USERINFO_EXPECT}@203.0.113.9:8388#MoaV-Shadowsocks-alice"
+  "ss://${SS_USERINFO_EXPECT}@203.0.113.9:8388#MoaV-vpn-Shadowsocks-alice"
 check ss-v6       "$(singbox_ss_link "${U}-IPv6" "[${SERVER_IPV6}]" "$SS_UI" "$SS_PORT")" \
-  "ss://${SS_USERINFO_EXPECT}@[2001:db8::1]:8388#MoaV-Shadowsocks-alice-IPv6"
+  "ss://${SS_USERINFO_EXPECT}@[2001:db8::1]:8388#MoaV-vpn-Shadowsocks-alice-IPv6"
 
 if [[ $fail -eq 0 ]]; then echo "ALL PASS"; else echo "SOME FAILED"; exit 1; fi

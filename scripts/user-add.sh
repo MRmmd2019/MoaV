@@ -25,19 +25,17 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
 source scripts/lib/common.sh
+source scripts/lib/keys.sh
+source scripts/lib/amneziawg.sh   # AWG_CONFIG_DIR is re-set to the host path below
+source scripts/lib/bundle-readme.sh
+source scripts/lib/dnstt.sh
+source scripts/lib/slipstream.sh
+source scripts/lib/masterdns.sh
+source scripts/lib/gooserelay.sh
+source scripts/lib/telemt.sh
 
-compose_timeout() {
-    if command -v timeout >/dev/null 2>&1; then
-        # -k: if `docker compose` ignores the SIGTERM at the deadline (e.g. it's
-        # stuck in `exec` against a wedged container — the AmneziaWG hot-reload
-        # hang), SIGKILL it 5s later so `user add` can never block indefinitely.
-        # (No global stdin redirect here — callers like `echo KEY | ... awg pubkey`
-        # rely on the piped stdin.)
-        timeout -k 5 "${COMPOSE_TIMEOUT:-20}" docker compose "$@"
-    else
-        docker compose "$@"
-    fi
-}
+# compose_timeout moved to scripts/lib/common.sh (shared with wg-user-add.sh,
+# which had the same wedge-prone bare `docker compose exec` calls).
 
 # Parse arguments
 USERNAMES=()
@@ -131,16 +129,34 @@ done
 for _f in configs/sing-box/config.json configs/xray/config.json \
           configs/wireguard/wg0.conf configs/amneziawg/awg0.conf \
           configs/trusttunnel/credentials.toml configs/telemt/config.toml; do
-    [[ -f "$_f" ]] && chmod a+rw "$_f" 2>/dev/null || true
+    # owner root + group admin write, never world-write. wg0.conf/awg0.conf
+    # (server private keys, container-root consumers) drop world-read too; the
+    # other four are read by non-root daemons and keep it.
+    # Only when WE cannot write it: chowning to root while running non-root
+    # (e2e runner, sudo-less operator) would revoke our own access mid-run —
+    # container-facing ownership is re-asserted by every `moav up` anyway.
+    if [[ -f "$_f" ]] && [[ ! -w "$_f" ]]; then
+        case "$_f" in
+            configs/wireguard/*|configs/amneziawg/*) _m=660 ;;
+            *)                                       _m=664 ;;
+        esac
+        chown "0:$ADMIN_GID" "$_f" 2>/dev/null || sudo chown "0:$ADMIN_GID" "$_f" 2>/dev/null || true
+        chmod "$_m" "$_f" 2>/dev/null || sudo chmod "$_m" "$_f" 2>/dev/null || true
+    fi
 done
 
-# Load environment
-if [[ -f .env ]]; then
+# Load environment.
+# -r, not just -f: .env is root-owned 0600 (it holds ADMIN_PASSWORD), so inside
+# the admin container (uid 2000, /project mounted ro) it exists but is NOT
+# readable — the unguarded sed printed "sed: .env: Permission denied" and, under
+# set -e, could kill the add. In the container the full .env is injected as
+# process environment via the compose env_file instead, so skipping the file
+# read there loses nothing.
+if [[ -f .env && -r .env ]]; then
     # Auto-heal: GOPROXY's value is pipe-separated (proxy|proxy|direct). If the
     # line is unquoted (older .env files), `source` below parses the `|` as a
     # shell pipe and tries to run the URLs as commands. Heal in a tempfile —
-    # works even when .env is on a RO mount (admin container), and we only
-    # persist the heal back to .env when it's writable (CLI on the host).
+    # we only persist the heal back to .env when it's writable (CLI on the host).
     _ENV_TMP=$(mktemp)
     sed -E '/^GOPROXY=[^"]*\|/ s/^GOPROXY=(.*)$/GOPROXY="\1"/' .env > "$_ENV_TMP"
     if [[ -w .env ]] && ! cmp -s "$_ENV_TMP" .env; then
@@ -195,14 +211,23 @@ FAILED_USERS=()
 
 # Ensure directories exist and are writable (Docker creates them as root)
 # Try: direct mkdir → sudo mkdir → su-exec root mkdir (admin container has su-exec)
+# Unwritable dirs go to owner=caller, group=admin, setgid 2770 (was chmod 777 —
+# world-writable bundles hold client private keys): the invoking user and the
+# uid-2000 admin app can both write, nobody else can even read.
 _fix_perms() {
-    local dir="$1"
+    local dir="$1" _owner
+    # configs are read by cap_drop-ALL containers whose root lacks DAC_OVERRIDE:
+    # owner must stay root (they read as owner); the admin app writes via group.
+    # Everything else goes to the caller so direct host runs keep working.
+    case "$dir" in configs/*) _owner=0 ;; *) _owner=$(id -u) ;; esac
     mkdir -p "$dir" 2>/dev/null || \
         sudo mkdir -p "$dir" 2>/dev/null || \
         su-exec root mkdir -p "$dir" 2>/dev/null || true
     if [[ -d "$dir" ]] && [[ ! -w "$dir" ]]; then
-        sudo chmod 777 "$dir" 2>/dev/null || \
-            su-exec root chmod 777 "$dir" 2>/dev/null || true
+        sudo chown "$_owner:$ADMIN_GID" "$dir" 2>/dev/null || \
+            su-exec root chown "$_owner:$ADMIN_GID" "$dir" 2>/dev/null || true
+        sudo chmod 2770 "$dir" 2>/dev/null || \
+            su-exec root chmod 2770 "$dir" 2>/dev/null || true
     fi
 }
 
@@ -212,22 +237,32 @@ done
 # Also fix state/ parent and config files that may be root-owned
 for _dir in "state" "configs/amneziawg" "configs/wireguard"; do
     _fix_perms "$_dir"
-    # Fix root-owned config files so we can append peers
+    # Fix root-owned config files so we can append peers (owner change, not a
+    # world-writable 666 — wg0.conf/awg0.conf hold the server private key)
     for _f in "$_dir"/*.conf; do
         if [[ -f "$_f" ]] && [[ ! -w "$_f" ]]; then
-            sudo chmod 666 "$_f" 2>/dev/null || \
-                su-exec root chmod 666 "$_f" 2>/dev/null || true
+            sudo chown "0:$ADMIN_GID" "$_f" 2>/dev/null || \
+                su-exec root chown "0:$ADMIN_GID" "$_f" 2>/dev/null || true
+            sudo chmod 660 "$_f" 2>/dev/null || \
+                su-exec root chmod 660 "$_f" 2>/dev/null || true
         fi
     done
 done
 if [[ ! -w "outputs/bundles" ]]; then
-    log_error "Cannot write to outputs/bundles/ — try: sudo chmod 777 outputs/bundles"
+    log_error "Cannot write to outputs/bundles/ — try: sudo chown -R $(id -u):$ADMIN_GID outputs/bundles && sudo chmod -R ug+rwX,o-rwx outputs/bundles"
     exit 1
 fi
 
 # -----------------------------------------------------------------------------
 # Create each user
 # -----------------------------------------------------------------------------
+# Host paths for the shared libs (they default to the container's /configs,
+# /state). Set before the per-user loop so both the AmneziaWG client-config
+# generator and the DNS-family instruction generators below see them.
+STATE_DIR="${STATE_DIR:-state}"
+AWG_CONFIG_DIR="configs/amneziawg"
+GOOSERELAY_CONFIG_DIR="configs/gooserelay"
+
 for USERNAME in "${USERNAMES[@]}"; do
     OUTPUT_DIR="outputs/bundles/$USERNAME"
     mkdir -p "$OUTPUT_DIR"
@@ -266,17 +301,20 @@ for USERNAME in "${USERNAMES[@]}"; do
     # Add to WireGuard
     # -------------------------------------------------------------------------
     if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]] && [[ -f "configs/wireguard/wg0.conf" ]]; then
-        # Check if WireGuard service is actually running or wg tools are available
-        if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q . || command -v wg &>/dev/null; then
-            log_info "[2/3] Adding to WireGuard..."
-            if "$SCRIPT_DIR/wg-user-add.sh" "$USERNAME" $RELOAD_FLAG; then
-                log_info "✓ WireGuard peer added"
-            else
-                ERRORS+=("wireguard")
-                log_error "✗ Failed to add WireGuard peer"
-            fi
+        # No "is the container running?" gate. It used `docker compose ps`, which
+        # needs to interpolate .env — unreadable to the non-root admin container
+        # (root 0600) — so the dashboard silently SKIPPED WireGuard and handed
+        # the user a bundle with no wireguard.conf at all. AmneziaWG never had
+        # this gate, which is why it kept working in the same runs.
+        # It is also no longer needed: keys are generated locally (no container)
+        # and wg-user-add.sh already degrades to "config will apply on next
+        # start" when the container is down, exactly like AmneziaWG.
+        log_info "[2/3] Adding to WireGuard..."
+        if "$SCRIPT_DIR/wg-user-add.sh" "$USERNAME" $RELOAD_FLAG; then
+            log_info "✓ WireGuard peer added"
         else
-            log_info "[2/3] Skipping WireGuard (service not running)"
+            ERRORS+=("wireguard")
+            log_error "✗ Failed to add WireGuard peer"
         fi
     else
         log_info "[2/3] Skipping WireGuard (not enabled or not configured)"
@@ -290,80 +328,40 @@ for USERNAME in "${USERNAMES[@]}"; do
     if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]] && [[ -f "configs/amneziawg/awg0.conf" ]]; then
         log_info "[3/3] Adding to AmneziaWG..."
         (
-            # Generate client keys (standard WG key format, compatible with AWG).
-            # Use a running container (host may not have wg/awg). tr -d '\r\n':
-            # `docker compose exec` into some images emits CRLF, and $() strips
-            # only the trailing \n — a leftover \r makes the 44-char key 45 chars,
-            # so `awg/wg pubkey` rejects it ("Key is not the correct length"),
-            # silently writing a broken peer.
-            if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
-                AWG_CLIENT_PRIVATE=$(compose_timeout exec -T amneziawg awg genkey | tr -d '\r\n')
-                AWG_CLIENT_PUBLIC=$(printf '%s' "$AWG_CLIENT_PRIVATE" | compose_timeout exec -T amneziawg awg pubkey | tr -d '\r\n')
-            elif compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
-                AWG_CLIENT_PRIVATE=$(compose_timeout exec -T wireguard wg genkey | tr -d '\r\n')
-                AWG_CLIENT_PUBLIC=$(printf '%s' "$AWG_CLIENT_PRIVATE" | compose_timeout exec -T wireguard wg pubkey | tr -d '\r\n')
-            elif command -v wg &>/dev/null; then
-                AWG_CLIENT_PRIVATE=$(wg genkey | tr -d '\r\n')
-                AWG_CLIENT_PUBLIC=$(printf '%s' "$AWG_CLIENT_PRIVATE" | wg pubkey | tr -d '\r\n')
-            else
-                log_error "No wg/awg command available (install wireguard-tools or ensure amneziawg container is running)"
+            # Generate the keypair, allocate the next free IP and append the
+            # [Peer] block via the shared lib — the same code the container path
+            # runs. Pass the running interface's in-use octets as extra "used"
+            # values (the lib's trailing args), so a config/runtime drift can't
+            # hand out a colliding address; that parameter exists for this caller.
+            RUNNING_AWG_IPS=""
+            if svc_running amneziawg; then
+                RUNNING_AWG_IPS=$(svc_exec amneziawg awg show awg0 allowed-ips 2>/dev/null | grep '10\.67\.67\.' | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
+            fi
+
+            mkdir -p "$STATE_DIR/users/$USERNAME" 2>/dev/null || true
+            # shellcheck disable=SC2086  # word-splitting is intended: one arg per octet
+            if ! amneziawg_add_peer "$USERNAME" $RUNNING_AWG_IPS; then
+                log_error "Failed to add AmneziaWG peer for $USERNAME"
                 exit 1
             fi
 
-            # Find next available IP (extract actual used IPs from config AND running interface)
-            USED_AWG_IPS=$(grep 'AllowedIPs = 10\.67\.67\.' "configs/amneziawg/awg0.conf" 2>/dev/null | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
-            if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
-                RUNNING_AWG_IPS=$(compose_timeout exec -T amneziawg awg show awg0 allowed-ips 2>/dev/null | grep '10\.67\.67\.' | sed 's/.*10\.67\.67\.\([0-9]*\).*/\1/' || echo "")
-                USED_AWG_IPS="$USED_AWG_IPS $RUNNING_AWG_IPS"
-            fi
-            AWG_NEXT_IP=2  # Start from .2 (server is .1)
-            for _ip in $USED_AWG_IPS; do
-                if [[ $_ip -ge $AWG_NEXT_IP ]]; then
-                    AWG_NEXT_IP=$((_ip + 1))
-                fi
-            done
-            if [[ $AWG_NEXT_IP -gt 254 ]]; then
-                log_error "No available IPs in AmneziaWG network"
-                exit 1
-            fi
-            AWG_CLIENT_IP="10.67.67.$AWG_NEXT_IP"
+            # Read back what the lib allocated: needed for the bundle copy and for
+            # the hot-add below (the lib only writes config + state).
+            # shellcheck source=/dev/null
+            source "$STATE_DIR/users/$USERNAME/amneziawg.env"
+            cp "$STATE_DIR/users/$USERNAME/amneziawg.env" "$OUTPUT_DIR/amneziawg.env" 2>/dev/null || true
 
-            # Calculate client IPv6 if server has IPv6
-            AWG_CLIENT_IP_V6=""
-            if [[ -n "${SERVER_IPV6:-}" ]]; then
-                AWG_CLIENT_IP_V6="fd00:cafe:dead::$AWG_NEXT_IP"
-            fi
-
-            # Save client credentials to bundle dir and host state dir
-            cat > "$OUTPUT_DIR/amneziawg.env" <<CREDEOF
-AWG_PRIVATE_KEY=$AWG_CLIENT_PRIVATE
-AWG_PUBLIC_KEY=$AWG_CLIENT_PUBLIC
-AWG_CLIENT_IP=$AWG_CLIENT_IP
-AWG_CLIENT_IP_V6=$AWG_CLIENT_IP_V6
-CREDEOF
-            # Also save to host state dir for bootstrap sync
-            mkdir -p "./state/users/$USERNAME" 2>/dev/null || true
-            cp "$OUTPUT_DIR/amneziawg.env" "./state/users/$USERNAME/amneziawg.env" 2>/dev/null || true
-
-            # Add peer to server config
+            AWG_CLIENT_PUBLIC="$AWG_PUBLIC_KEY"
             AWG_ALLOWED="$AWG_CLIENT_IP/32"
-            if [[ -n "$AWG_CLIENT_IP_V6" ]]; then
+            if [[ -n "${AWG_CLIENT_IP_V6:-}" ]]; then
                 AWG_ALLOWED="$AWG_CLIENT_IP/32, $AWG_CLIENT_IP_V6/128"
             fi
 
-            cat >> "configs/amneziawg/awg0.conf" <<PEEREOF
-
-[Peer]
-# $USERNAME
-PublicKey = $AWG_CLIENT_PUBLIC
-AllowedIPs = $AWG_ALLOWED
-PEEREOF
-
             # Hot-add peer to running AmneziaWG (unless batch mode — batch reloads later)
             if [[ "$BATCH_MODE" != "true" ]]; then
-                if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
+                if svc_running amneziawg; then
                     log_info "Adding peer to running AmneziaWG..."
-                    if compose_timeout exec -T amneziawg awg set awg0 peer "$AWG_CLIENT_PUBLIC" allowed-ips "$AWG_ALLOWED" 2>/dev/null; then
+                    if svc_exec amneziawg awg set awg0 peer "$AWG_CLIENT_PUBLIC" allowed-ips "$AWG_ALLOWED" 2>/dev/null; then
                         log_info "Peer added to running AmneziaWG (hot reload)"
                     else
                         log_info "Hot reload failed, you may need to restart AmneziaWG"
@@ -374,74 +372,16 @@ PEEREOF
                 fi
             fi
 
-            # Read obfuscation params and server key from the server config (bind mount)
-            AWG_SERVER_PUB=$(cat "configs/amneziawg/server.pub")
-            AWG_JC=$(grep '^Jc' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_JMIN=$(grep '^Jmin' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_JMAX=$(grep '^Jmax' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_S1=$(grep '^S1' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_S2=$(grep '^S2' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H1=$(grep '^H1' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H2=$(grep '^H2' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H3=$(grep '^H3' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
-            AWG_H4=$(grep '^H4' "configs/amneziawg/awg0.conf" | head -1 | awk '{print $3}')
+            # Render the client configs (direct + optional IPv6) via the shared
+            # lib, so host and container AmneziaWG bundles are byte-identical. It
+            # reads the keys/IPs from the amneziawg.env written above, and the
+            # server key + obfuscation params from $AWG_CONFIG_DIR (host path set
+            # before the loop); honors SERVER_IPV6 + PORT_AMNEZIAWG.
+            amneziawg_generate_client_config "$USERNAME" "$OUTPUT_DIR"
 
-            AWG_ADDRESSES="$AWG_CLIENT_IP/32"
-            if [[ -n "$AWG_CLIENT_IP_V6" ]]; then
-                AWG_ADDRESSES="$AWG_CLIENT_IP/32, $AWG_CLIENT_IP_V6/128"
-            fi
-
-            cat > "$OUTPUT_DIR/amneziawg.conf" <<CONFEOF
-[Interface]
-PrivateKey = $AWG_CLIENT_PRIVATE
-Address = $AWG_ADDRESSES
-DNS = 1.1.1.1, 8.8.8.8
-MTU = 1280
-Jc = $AWG_JC
-Jmin = $AWG_JMIN
-Jmax = $AWG_JMAX
-S1 = $AWG_S1
-S2 = $AWG_S2
-H1 = $AWG_H1
-H2 = $AWG_H2
-H3 = $AWG_H3
-H4 = $AWG_H4
-
-[Peer]
-PublicKey = $AWG_SERVER_PUB
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = ${SERVER_IP}:${PORT_AMNEZIAWG:-51821}
-PersistentKeepalive = 25
-CONFEOF
-
-            # Generate QR code
-            qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg.conf" 2>/dev/null || true
-
-            # IPv6 endpoint config
-            if [[ -n "${SERVER_IPV6:-}" ]]; then
-                cat > "$OUTPUT_DIR/amneziawg-ipv6.conf" <<CONFEOF
-[Interface]
-PrivateKey = $AWG_CLIENT_PRIVATE
-Address = $AWG_ADDRESSES
-DNS = 1.1.1.1, 2606:4700:4700::1111
-MTU = 1280
-Jc = $AWG_JC
-Jmin = $AWG_JMIN
-Jmax = $AWG_JMAX
-S1 = $AWG_S1
-S2 = $AWG_S2
-H1 = $AWG_H1
-H2 = $AWG_H2
-H3 = $AWG_H3
-H4 = $AWG_H4
-
-[Peer]
-PublicKey = $AWG_SERVER_PUB
-AllowedIPs = 0.0.0.0/0, ::/0
-Endpoint = [${SERVER_IPV6}]:${PORT_AMNEZIAWG:-51821}
-PersistentKeepalive = 25
-CONFEOF
-                qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/amneziawg-ipv6.conf" 2>/dev/null || true
+            qrencode -o "$OUTPUT_DIR/amneziawg-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg).conf" 2>/dev/null || true
+            if [[ -f "$OUTPUT_DIR/$(moav_wg_basename awg6).conf" ]]; then
+                qrencode -o "$OUTPUT_DIR/amneziawg-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename awg6).conf" 2>/dev/null || true
             fi
         ) && log_info "✓ AmneziaWG peer added" || {
             ERRORS+=("amneziawg")
@@ -454,559 +394,59 @@ CONFEOF
 echo ""
 
 # -----------------------------------------------------------------------------
-# Generate dnstt instructions (shared for all users)
+# DNS-family + Telegram MTProxy client instructions
 # -----------------------------------------------------------------------------
-if [[ "${ENABLE_DNSTT:-true}" == "true" ]] && [[ -f "outputs/dnstt/server.pub" ]]; then
-    DNSTT_PUBKEY=$(cat "outputs/dnstt/server.pub" 2>/dev/null || echo "KEY_NOT_FOUND")
-    DNSTT_DOMAIN="${DNSTT_SUBDOMAIN:-t}.${DOMAIN}"
+# Rendered by the shared lib/<proto>.sh generators (the same code the container
+# generate-user.sh uses) so host and container bundles never drift. Keys come
+# from the canonical $STATE_DIR/keys/*; a file is only emitted when the protocol
+# is enabled and its key/config is present. ($STATE_DIR + the host lib config
+# dirs are set above, before the per-user loop.)
 
-    cat > "$OUTPUT_DIR/dnstt-instructions.txt" <<EOF
-# dnstt DNS Tunnel Instructions
-# =============================
-# Use this as a LAST RESORT when other methods are blocked.
-# DNS tunneling is SLOW but often works when everything else fails.
-
-# Server Public Key (hex):
-$DNSTT_PUBKEY
-
-# Tunnel Domain:
-$DNSTT_DOMAIN
-
-# -------------------------
-# Option 1: Using DoH (DNS over HTTPS) - RECOMMENDED
-# -------------------------
-
-# Download dnstt-client from: https://www.bamsoftware.com/software/dnstt/
-
-# Run (creates a local SOCKS5 proxy on port 1080):
-dnstt-client -doh https://1.1.1.1/dns-query -pubkey $DNSTT_PUBKEY $DNSTT_DOMAIN 127.0.0.1:1080
-
-# Then configure your apps to use SOCKS5 proxy: 127.0.0.1:1080
-
-# -------------------------
-# Option 2: Using Plain UDP DNS
-# -------------------------
-
-# If DoH is blocked, try plain UDP (use a public resolver):
-dnstt-client -udp 8.8.8.8:53 -pubkey $DNSTT_PUBKEY $DNSTT_DOMAIN 127.0.0.1:1080
-EOF
-    log_info "✓ dnstt instructions generated"
-fi
-
-# -----------------------------------------------------------------------------
-# Generate Slipstream instructions (shared for all users)
-# -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
-# Generate telemt instructions (if enabled)
-# -----------------------------------------------------------------------------
-if [[ "${ENABLE_TELEMT:-true}" == "true" ]] && [[ -f "configs/telemt/config.toml" ]]; then
-    # Load telemt secret from state (generated by singbox-user-add → generate-single-user)
-    TELEMT_SECRET=""
-    if [[ -f "state/users/$USERNAME/telemt.env" ]]; then
-        source "state/users/$USERNAME/telemt.env"
-    fi
-    if [[ -n "$TELEMT_SECRET" ]]; then
-        PORT_TELEMT="${PORT_TELEMT:-993}"
-        TELEMT_TLS_DOMAIN="${TELEMT_TLS_DOMAIN:-dl.google.com}"
-        HEX_DOMAIN=$(printf '%s' "$TELEMT_TLS_DOMAIN" | od -An -tx1 | tr -d ' \n')
-
-        TG_LINK="tg://proxy?server=${SERVER_IP}&port=${PORT_TELEMT}&secret=ee${TELEMT_SECRET}${HEX_DOMAIN}"
-        HTTPS_LINK="https://t.me/proxy?server=${SERVER_IP}&port=${PORT_TELEMT}&secret=ee${TELEMT_SECRET}${HEX_DOMAIN}"
-
-        echo "$TG_LINK" > "$OUTPUT_DIR/telegram-proxy-link.txt"
-        qrencode -o "$OUTPUT_DIR/telegram-proxy-qr.png" -s 6 "$TG_LINK" 2>/dev/null || true
-
-        cat > "$OUTPUT_DIR/telegram-proxy-instructions.txt" <<EOF
-# Telegram MTProxy Instructions for $USERNAME
-# ============================================
-# Quick Setup (tap/click the link):
-$TG_LINK
-$HTTPS_LINK
-
-# Manual: Server=${SERVER_IP} Port=${PORT_TELEMT}
-# Secret: ee${TELEMT_SECRET}${HEX_DOMAIN}
-EOF
-        log_info "✓ telemt instructions generated"
+if [[ "${ENABLE_SLIPSTREAM:-true}" == "true" ]] && [[ -f "$STATE_DIR/keys/slipstream-cert.pem" ]]; then
+    if slipstream_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
+        log_info "✓ Slipstream instructions generated"
     fi
 fi
 
-if [[ "${ENABLE_SLIPSTREAM:-true}" == "true" ]] && [[ -f "outputs/slipstream/cert.pem" ]]; then
-    SLIPSTREAM_DOMAIN="${SLIPSTREAM_SUBDOMAIN:-s}.${DOMAIN}"
-
-    # Copy cert to user bundle
-    cp "outputs/slipstream/cert.pem" "$OUTPUT_DIR/slipstream-cert.pem"
-
-    cat > "$OUTPUT_DIR/slipstream-instructions.txt" <<EOF
-# Slipstream DNS Tunnel Instructions
-# ====================================
-# QUIC-over-DNS tunnel - faster than dnstt (1.5-5x speedup).
-
-# Tunnel Domain:
-$SLIPSTREAM_DOMAIN
-
-# Certificate: slipstream-cert.pem (included in this bundle)
-
-# -------------------------
-# Option 1: Resolver Mode (RECOMMENDED - stealthier)
-# -------------------------
-
-# Download slipstream-client from:
-# https://github.com/net2share/slipstream-rust-build/releases
-
-# Run (creates a local SOCKS5 proxy on port 1080):
-slipstream-client --domain $SLIPSTREAM_DOMAIN --cert slipstream-cert.pem --dns-server 1.1.1.1:53 --socks-listen 127.0.0.1:1080
-
-# -------------------------
-# Option 2: Authoritative/Direct Mode (FASTER but less stealthy)
-# -------------------------
-
-# slipstream-client --domain $SLIPSTREAM_DOMAIN --cert slipstream-cert.pem --authoritative SERVER_IP:${PORT_DNS:-53} --socks-listen 127.0.0.1:1080
-EOF
-    log_info "✓ Slipstream instructions generated"
-fi
-
-# -----------------------------------------------------------------------------
-# Generate MasterDNS instructions (shared per-server tunnel key)
-# -----------------------------------------------------------------------------
-# Mirrors lib/masterdns.sh::masterdns_generate_client_instructions so a fast
-# host-side `moav user add` yields a complete bundle (no follow-up
-# `moav regenerate-users` needed). The host can't read the /state volume, so
-# the shared key is taken from outputs/masterdns/encrypt_key.txt (published by
-# bootstrap). Keep the text in sync with lib/masterdns.sh.
-if [[ "${ENABLE_MASTERDNS:-true}" == "true" ]] && [[ -f "outputs/masterdns/encrypt_key.txt" ]]; then
-    MASTERDNS_DOMAIN="${MASTERDNS_PUBLIC_SUBDOMAIN:-${MASTERDNS_SUBDOMAIN:-m}}.${DOMAIN}"
-    MD_ENC_METHOD="${MASTERDNS_ENC_METHOD:-5}"
-    MD_KEY=$(tr -d '\n\r ' < "outputs/masterdns/encrypt_key.txt")
-    [[ -z "$MD_KEY" ]] && MD_KEY="KEY_NOT_GENERATED"
-
-    cat > "$OUTPUT_DIR/masterdns-instructions.txt" <<EOF
-# MasterDNS Tunnel Instructions
-# =============================
-# Advanced DNS tunnel (low-overhead ARQ + resolver load-balancing).
-# Faster and more loss-tolerant than dnstt; bundled in MahsaNG v16.
-# Use when other methods are blocked — DNS tunnels work when little else does.
-#
-# Project: https://github.com/masterking32/MasterDnsVPN
-# Bundled in: MahsaNG (https://github.com/GFW-knocker/MahsaNG)
-
-# Tunnel Domain:
-$MASTERDNS_DOMAIN
-
-# Data encryption method (must match server):
-$MD_ENC_METHOD   # 5 = AES-256-GCM
-
-# Encryption key (keep secret — anyone with this key can use the tunnel):
-$MD_KEY
-
-# -------------------------
-# Option A: MahsaNG (Android) — easiest
-# -------------------------
-# 1. Install MahsaNG v16+ from https://github.com/GFW-knocker/MahsaNG/releases
-# 2. Add a MasterDNS config with the domain, encryption method and key above.
-
-# -------------------------
-# Option B: MasterDnsVPN standalone client
-# -------------------------
-# Download the client for your OS from:
-#   https://github.com/masterking32/MasterDnsVPN/releases
-#
-# Minimal client_config.toml:
-#   DOMAINS = ["$MASTERDNS_DOMAIN"]
-#   DATA_ENCRYPTION_METHOD = $MD_ENC_METHOD
-#   ENCRYPTION_KEY = "$MD_KEY"
-#   PROTOCOL_TYPE = "SOCKS5"
-#   LISTEN_IP = "127.0.0.1"
-#   LISTEN_PORT = 18000
-#
-# Run the client, then point your apps at SOCKS5 127.0.0.1:18000.
-# The client also needs a resolver list (client_resolvers) — use the sample
-# bundled with the client and/or public resolvers (1.1.1.1:53, 8.8.8.8:53).
-
-# -------------------------
-# Notes:
-# -------------------------
-# - DNS tunneling is slow by design but extremely hard to block.
-# - Faster and more stable under packet loss than dnstt/Slipstream.
-# - Traffic exits through the MoaV server (your IP appears as the server IP).
-# - The NS record for $MASTERDNS_DOMAIN must delegate to this server (see docs/DNS.md).
-EOF
-    log_info "✓ MasterDNS instructions generated"
-fi
-
-# -----------------------------------------------------------------------------
-# Generate GooseRelay bundle (shared per-server tunnel key + ready Apps Script)
-# -----------------------------------------------------------------------------
-# Mirrors lib/gooserelay.sh::gooserelay_generate_client_instructions. Off by
-# default; only emitted when ENABLE_GOOSERELAY=true and bootstrap has published
-# the tunnel key. Keep the text/JSON in sync with lib/gooserelay.sh.
-if [[ "${ENABLE_GOOSERELAY:-false}" == "true" ]] && [[ -f "outputs/gooserelay/tunnel_key.txt" ]]; then
-    GR_KEY=$(tr -d '\n\r ' < "outputs/gooserelay/tunnel_key.txt")
-    [[ -z "$GR_KEY" ]] && GR_KEY="KEY_NOT_GENERATED"
-    GR_ENDPOINT="http://${SERVER_IP:-YOUR_SERVER_IP}:${PORT_GOOSE:-8444}/tunnel"
-
-    if [[ -f "configs/gooserelay/Code.gs.template" ]]; then
-        sed "s|__GOOSE_RELAY_ENDPOINT__|$GR_ENDPOINT|g" \
-            "configs/gooserelay/Code.gs.template" > "$OUTPUT_DIR/gooserelay-AppsScript.gs"
+if [[ "${ENABLE_MASTERDNS:-true}" == "true" ]] && [[ -s "$STATE_DIR/keys/masterdns-encrypt.key" ]]; then
+    if masterdns_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
+        log_info "✓ MasterDNS instructions generated"
     fi
+fi
 
-    cat > "$OUTPUT_DIR/gooserelay-client_config.json" <<EOF
-{
-  "debug_timing": false,
-  "socks_host": "127.0.0.1",
-  "socks_port": 1080,
-  "google_host": "216.239.38.120",
-  "sni": ["www.google.com", "mail.google.com", "accounts.google.com"],
-  "script_keys": [
-    {"id": "REPLACE_WITH_YOUR_APPS_SCRIPT_DEPLOYMENT_ID", "account": "acct-a"}
-  ],
-  "tunnel_key": "$GR_KEY",
-  "coalesce_step_ms": 0,
-  "idle_slots_per_bucket": 2
-}
-EOF
+if [[ "${ENABLE_TELEMT:-true}" == "true" ]] && [[ -f "$STATE_DIR/users/$USERNAME/telemt.env" ]]; then
+    if telemt_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
+        log_info "✓ telemt (Telegram MTProxy) config generated"
+    fi
+fi
 
-    cat > "$OUTPUT_DIR/gooserelay-instructions.txt" <<EOF
-# GooseRelay Instructions
-# =======================
-# SOCKS5 over a Google Apps Script web app -> this VPS exit server.
-# To the network you only ever appear to talk TLS to google.com.
-# End-to-end AES-256-GCM; Google never sees plaintext or the key.
-# Interoperable with the GooseRelay client in MahsaNG v16 (GooseRelay v1.7.1).
-#
-# Project: https://github.com/kianmhz/GooseRelayVPN
-# Bundled in: MahsaNG (https://github.com/GFW-knocker/MahsaNG)
-
-# This bundle ships TWO ready-made files so you don't hand-edit anything:
-#   gooserelay-AppsScript.gs       -> paste into script.google.com; the
-#                                     RELAY_URLS array already points here
-#   gooserelay-client_config.json  -> ready for the GooseRelay / MahsaNG v16
-#                                     client; only the Deployment ID is blank
-
-# Shared tunnel key (already in the config; keep SECRET — anyone with it can
-# use your VPS as you):
-$GR_KEY
-
-# This server's exit endpoint (already wired into gooserelay-AppsScript.gs):
-$GR_ENDPOINT
-
-# -------------------------
-# Setup (one-time, in YOUR Google account)
-# -------------------------
-# 1. Open https://script.google.com  ->  New project
-# 2. Paste the WHOLE contents of  gooserelay-AppsScript.gs  (no edits needed)
-# 3. Deploy -> New deployment -> type "Web app"
-#       Execute as: Me
-#       Who has access: Anyone
-#    Copy the Deployment ID it shows.
-#    (Re-deploy as a NEW deployment whenever you change the script.)
-# 4. In gooserelay-client_config.json, replace
-#    REPLACE_WITH_YOUR_APPS_SCRIPT_DEPLOYMENT_ID with that Deployment ID.
-# 5. Load gooserelay-client_config.json into the GooseRelay client (or the
-#    MahsaNG v16 GooseRelay tab), then point apps at SOCKS5 127.0.0.1:1080.
-#    A pre-flight check confirms the relay is healthy and the key matches.
-
-# -------------------------
-# Notes:
-# -------------------------
-# - Apps Script quota is ~20,000 calls/day PER Google account. Deploy under
-#   several accounts and add each Deployment ID to "script_keys" for capacity.
-# - Real-time apps (Telegram/X) drain the quota fast due to constant polling.
-# - Traffic exits through the MoaV server (your IP appears as the server IP).
-# - All deployments forwarding here must use this exact tunnel_key.
-EOF
-    log_info "✓ GooseRelay bundle generated"
+if [[ "${ENABLE_GOOSERELAY:-false}" == "true" ]] && [[ -s "$STATE_DIR/keys/gooserelay-tunnel.key" ]]; then
+    if gooserelay_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
+        log_info "✓ GooseRelay bundle generated"
+    fi
 fi
 
 # -----------------------------------------------------------------------------
-# Generate README.html from template
+# Generate README.html from template (shared renderer — lib/bundle-readme.sh)
 # -----------------------------------------------------------------------------
-TEMPLATE_FILE="docs/client-guide-template.html"
+TEMPLATE_FILE="templates/client-guide-template.html"
 OUTPUT_HTML="$OUTPUT_DIR/README.html"
 
 if [[ -f "$TEMPLATE_FILE" ]]; then
     log_info "Generating HTML guide..."
-
-    # Get server info
     SERVER_IP="${SERVER_IP:-$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo "YOUR_SERVER_IP")}"
-    GENERATED_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
-    # Read config values
-    CONFIG_REALITY=$(cat "$OUTPUT_DIR/reality.txt" 2>/dev/null | tr -d '\n' || echo "")
-    CONFIG_HYSTERIA2=$(cat "$OUTPUT_DIR/hysteria2.txt" 2>/dev/null | tr -d '\n' || echo "")
-    CONFIG_TROJAN=$(cat "$OUTPUT_DIR/trojan.txt" 2>/dev/null | tr -d '\n' || echo "")
-    CONFIG_ANYTLS=$(cat "$OUTPUT_DIR/anytls.txt" 2>/dev/null | tr -d '\n' || echo "")
-    CONFIG_SHADOWSOCKS=$(cat "$OUTPUT_DIR/shadowsocks.txt" 2>/dev/null | tr -d '\n' || echo "")
-    CONFIG_CDN=$(cat "$OUTPUT_DIR/cdn-vless.txt" 2>/dev/null | tr -d '\n' || echo "")
-    CONFIG_WIREGUARD=$(cat "$OUTPUT_DIR/wireguard.conf" 2>/dev/null || echo "")
-    CONFIG_WIREGUARD_WSTUNNEL=$(cat "$OUTPUT_DIR/wireguard-wstunnel.conf" 2>/dev/null || echo "")
-    CONFIG_AMNEZIAWG=$(cat "$OUTPUT_DIR/amneziawg.conf" 2>/dev/null || echo "")
-    CONFIG_XHTTP=$(cat "$OUTPUT_DIR/xhttp-vless.txt" 2>/dev/null | tr -d '\n' || echo "")
-
-    # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
-    CDN_DOMAIN="${CDN_DOMAIN:-}"
-    if [[ -z "$CDN_DOMAIN" ]]; then
-        _cdn_sub="${CDN_SUBDOMAIN:-}"
-        _cdn_dom="${DOMAIN:-}"
-        if [[ -n "$_cdn_sub" && -n "$_cdn_dom" ]]; then
-            CDN_DOMAIN="${_cdn_sub}.${_cdn_dom}"
-        fi
+    # Context-specific inputs the shared renderer reads from the environment.
+    DNSTT_PUBKEY=$(cat "outputs/dnstt/server.pub" 2>/dev/null || echo "")
+    if [[ -z "${CDN_DOMAIN:-}" && -n "${CDN_SUBDOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
+        CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN}"
     fi
-    # CDN split SNI/Address for anti-DPI stealth
-    CDN_SNI="${CDN_SNI:-${DOMAIN:-}}"
-    CDN_ADDRESS="${CDN_ADDRESS:-${CDN_DOMAIN}}"
-    export CDN_SNI CDN_ADDRESS
-
-    # Read user password from trusttunnel.json or credentials
     if [[ -f "$OUTPUT_DIR/trusttunnel.json" ]]; then
         USER_PASSWORD=$(jq -r '.password // empty' "$OUTPUT_DIR/trusttunnel.json" 2>/dev/null || echo "")
     elif [[ -f "state/users/$USERNAME/credentials.env" ]]; then
-        USER_PASSWORD=$(grep "^USER_PASSWORD=" "state/users/$USERNAME/credentials.env" 2>/dev/null | cut -d= -f2 || echo "")
-    else
-        USER_PASSWORD=""
+        USER_PASSWORD=$(get_env_val "USER_PASSWORD" "state/users/$USERNAME/credentials.env")
     fi
-
-    # Get dnstt info
-    DNSTT_DOMAIN="${DNSTT_SUBDOMAIN:-t}.${DOMAIN}"
-    DNSTT_PUBKEY=$(cat "outputs/dnstt/server.pub" 2>/dev/null || echo "")
-
-    # Get Slipstream info
-    SLIPSTREAM_DOMAIN="${SLIPSTREAM_SUBDOMAIN:-s}.${DOMAIN}"
-    CONFIG_SLIPSTREAM=$(cat "$OUTPUT_DIR/slipstream-instructions.txt" 2>/dev/null || echo "")
-
-    # Get telemt info
-    CONFIG_TELEMT=$(cat "$OUTPUT_DIR/telegram-proxy-link.txt" 2>/dev/null | tr -d '\n' || echo "")
-
-    # Convert QR images to base64
-    qr_to_base64() {
-        local file="$1"
-        if [[ -f "$file" ]]; then
-            base64 < "$file" 2>/dev/null | tr -d '\n' || echo ""
-        else
-            echo ""
-        fi
-    }
-
-    QR_REALITY_B64=$(qr_to_base64 "$OUTPUT_DIR/reality-qr.png")
-    QR_HYSTERIA2_B64=$(qr_to_base64 "$OUTPUT_DIR/hysteria2-qr.png")
-    QR_TROJAN_B64=$(qr_to_base64 "$OUTPUT_DIR/trojan-qr.png")
-    QR_ANYTLS_B64=$(qr_to_base64 "$OUTPUT_DIR/anytls-qr.png")
-    QR_WIREGUARD_B64=$(qr_to_base64 "$OUTPUT_DIR/wireguard-qr.png")
-    QR_WIREGUARD_WSTUNNEL_B64=$(qr_to_base64 "$OUTPUT_DIR/wireguard-wstunnel-qr.png")
-    QR_AMNEZIAWG_B64=$(qr_to_base64 "$OUTPUT_DIR/amneziawg-qr.png")
-    QR_TELEMT_B64=$(qr_to_base64 "$OUTPUT_DIR/telegram-proxy-qr.png")
-    QR_XHTTP_B64=$(qr_to_base64 "$OUTPUT_DIR/xhttp-qr.png")
-    QR_SHADOWSOCKS_B64=$(qr_to_base64 "$OUTPUT_DIR/shadowsocks-qr.png")
-
-    # Copy template
-    cp "$TEMPLATE_FILE" "$OUTPUT_HTML"
-
-    # Simple replacements (use .bak for portability, then clean up)
-    sed -i.bak "s|{{USERNAME}}|$USERNAME|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{SERVER_IP}}|$SERVER_IP|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{DOMAIN}}|${DOMAIN:-YOUR_DOMAIN}|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{WSTUNNEL_CMD}}|$(wstunnel_client_cmd)|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{PORT_SS}}|${PORT_SS:-8388}|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{GENERATED_DATE}}|$GENERATED_DATE|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{DNSTT_DOMAIN}}|$DNSTT_DOMAIN|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{DNSTT_PUBKEY}}|$DNSTT_PUBKEY|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{SLIPSTREAM_DOMAIN}}|$SLIPSTREAM_DOMAIN|g" "$OUTPUT_HTML"
-
-    # Python-based placeholder replacement - handles special chars and multiline safely
-    replace_placeholder() {
-        local placeholder="$1"
-        local value="$2"
-        python3 -c "
-import sys
-placeholder = sys.argv[1]
-value = sys.argv[2]
-filepath = sys.argv[3]
-with open(filepath, 'r') as f:
-    content = f.read()
-content = content.replace(placeholder, value)
-with open(filepath, 'w') as f:
-    f.write(content)
-" "$placeholder" "$value" "$OUTPUT_HTML"
-    }
-
-    # TrustTunnel password
-    if [[ -n "${USER_PASSWORD:-}" ]]; then
-        replace_placeholder "{{TRUSTTUNNEL_PASSWORD}}" "$USER_PASSWORD"
-    else
-        replace_placeholder "{{TRUSTTUNNEL_PASSWORD}}" "See trusttunnel.txt"
-    fi
-
-    # Remove demo notice placeholders (not a demo user)
-    replace_placeholder "{{DEMO_NOTICE_EN}}" ""
-    replace_placeholder "{{DEMO_NOTICE_FA}}" ""
-
-    # QR codes (base64) - these are safe for sed (no special chars in base64)
-    sed -i.bak "s|{{QR_REALITY}}|$QR_REALITY_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_HYSTERIA2}}|$QR_HYSTERIA2_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_TROJAN}}|$QR_TROJAN_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_ANYTLS}}|$QR_ANYTLS_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_WIREGUARD}}|$QR_WIREGUARD_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_WIREGUARD_WSTUNNEL}}|$QR_WIREGUARD_WSTUNNEL_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_AMNEZIAWG}}|$QR_AMNEZIAWG_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_TELEMT}}|$QR_TELEMT_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_XHTTP}}|$QR_XHTTP_B64|g" "$OUTPUT_HTML"
-    sed -i.bak "s|{{QR_SHADOWSOCKS}}|$QR_SHADOWSOCKS_B64|g" "$OUTPUT_HTML"
-
-    if [[ -n "$CONFIG_REALITY" ]]; then
-        replace_placeholder "{{CONFIG_REALITY}}" "$CONFIG_REALITY"
-    else
-        replace_placeholder "{{CONFIG_REALITY}}" "No Reality config available"
-    fi
-
-    if [[ -n "$CONFIG_HYSTERIA2" ]]; then
-        replace_placeholder "{{CONFIG_HYSTERIA2}}" "$CONFIG_HYSTERIA2"
-    else
-        replace_placeholder "{{CONFIG_HYSTERIA2}}" "No Hysteria2 config available"
-    fi
-
-    if [[ -n "$CONFIG_TROJAN" ]]; then
-        replace_placeholder "{{CONFIG_TROJAN}}" "$CONFIG_TROJAN"
-    else
-        replace_placeholder "{{CONFIG_TROJAN}}" "No Trojan config available"
-    fi
-
-    if [[ -n "$CONFIG_ANYTLS" ]]; then
-        replace_placeholder "{{CONFIG_ANYTLS}}" "$CONFIG_ANYTLS"
-    else
-        replace_placeholder "{{CONFIG_ANYTLS}}" "No AnyTLS config available"
-    fi
-
-    if [[ -n "$CONFIG_SHADOWSOCKS" ]]; then
-        replace_placeholder "{{CONFIG_SHADOWSOCKS}}" "$CONFIG_SHADOWSOCKS"
-    else
-        replace_placeholder "{{CONFIG_SHADOWSOCKS}}" "No Shadowsocks config available"
-    fi
-
-    # CDN VLESS+WS config
-    if [[ -n "$CONFIG_CDN" ]]; then
-        replace_placeholder "{{CONFIG_CDN}}" "$CONFIG_CDN"
-        replace_placeholder "{{CDN_DOMAIN}}" "$CDN_DOMAIN"
-        # CDN QR code
-        QR_CDN_B64=$(qr_to_base64 "$OUTPUT_DIR/cdn-vless-qr.png")
-        sed -i.bak "s|{{QR_CDN}}|$QR_CDN_B64|g" "$OUTPUT_HTML"
-    else
-        replace_placeholder "{{CONFIG_CDN}}" "CDN not configured"
-        replace_placeholder "{{CDN_DOMAIN}}" "Not configured"
-        sed -i.bak "s|{{QR_CDN}}||g" "$OUTPUT_HTML"
-    fi
-
-    # WireGuard configs (multiline)
-    if [[ -n "$CONFIG_WIREGUARD" ]]; then
-        replace_placeholder "{{CONFIG_WIREGUARD}}" "$CONFIG_WIREGUARD"
-    else
-        replace_placeholder "{{CONFIG_WIREGUARD}}" "No WireGuard config available"
-    fi
-
-    if [[ -n "$CONFIG_WIREGUARD_WSTUNNEL" ]]; then
-        replace_placeholder "{{CONFIG_WIREGUARD_WSTUNNEL}}" "$CONFIG_WIREGUARD_WSTUNNEL"
-    else
-        replace_placeholder "{{CONFIG_WIREGUARD_WSTUNNEL}}" "No WireGuard-wstunnel config available"
-    fi
-
-    # AmneziaWG config (multiline)
-    if [[ -n "$CONFIG_AMNEZIAWG" ]]; then
-        replace_placeholder "{{CONFIG_AMNEZIAWG}}" "$CONFIG_AMNEZIAWG"
-    else
-        replace_placeholder "{{CONFIG_AMNEZIAWG}}" "No AmneziaWG config available"
-    fi
-
-    # Slipstream instructions
-    if [[ -n "${CONFIG_SLIPSTREAM:-}" ]]; then
-        replace_placeholder "{{CONFIG_SLIPSTREAM}}" "$CONFIG_SLIPSTREAM"
-    else
-        replace_placeholder "{{CONFIG_SLIPSTREAM}}" "Slipstream not enabled"
-    fi
-
-    # telemt (Telegram MTProxy) link
-    if [[ -n "${CONFIG_TELEMT:-}" ]]; then
-        replace_placeholder "{{CONFIG_TELEMT}}" "$CONFIG_TELEMT"
-    else
-        replace_placeholder "{{CONFIG_TELEMT}}" "Telegram MTProxy not enabled"
-    fi
-
-    # XHTTP (Xray-core) share link
-    if [[ -n "${CONFIG_XHTTP:-}" ]]; then
-        replace_placeholder "{{CONFIG_XHTTP}}" "$CONFIG_XHTTP"
-    else
-        replace_placeholder "{{CONFIG_XHTTP}}" "XHTTP not enabled"
-    fi
-
-    # XDNS configs (multiline JSON — use file-based replacement)
-    if [[ -f "$OUTPUT_DIR/xdns-config.json" ]]; then
-        python3 -c "
-import sys
-html_path = sys.argv[1]
-dns_path = sys.argv[2]
-direct_path = sys.argv[3]
-with open(html_path, 'r') as f: html = f.read()
-try:
-    with open(dns_path, 'r') as f: dns_cfg = f.read().strip()
-except: dns_cfg = 'XDNS config not available'
-try:
-    with open(direct_path, 'r') as f: direct_cfg = f.read().strip()
-except: direct_cfg = 'XDNS direct config not available'
-html = html.replace('{{CONFIG_XDNS}}', dns_cfg)
-html = html.replace('{{CONFIG_XDNS_DIRECT}}', direct_cfg)
-html = html.replace('{{XDNS_DISPLAY}}', '')
-with open(html_path, 'w') as f: f.write(html)
-" "$OUTPUT_HTML" "$OUTPUT_DIR/xdns-config.json" "$OUTPUT_DIR/xdns-direct-config.json"
-    else
-        replace_placeholder "{{CONFIG_XDNS}}" "XDNS not enabled"
-        replace_placeholder "{{CONFIG_XDNS_DIRECT}}" "XDNS not enabled"
-        replace_placeholder "{{XDNS_DISPLAY}}" "display:none"
-    fi
-
-    # MasterDNS / GooseRelay (MahsaNG v16). These use a server-shared key that
-    # lives in the docker state volume, so the host-side `moav user add` path
-    # can't generate the instructions — `moav regenerate-users` (which runs in
-    # the bootstrap container) populates them. Toggle the section off here unless
-    # an instructions file is already present in the bundle.
-    if [[ -f "$OUTPUT_DIR/masterdns-instructions.txt" ]]; then
-        replace_placeholder "{{CONFIG_MASTERDNS}}" "$(cat "$OUTPUT_DIR/masterdns-instructions.txt")"
-        replace_placeholder "{{MASTERDNS_DISPLAY}}" ""
-    else
-        replace_placeholder "{{CONFIG_MASTERDNS}}" "Run 'moav regenerate-users' to include MasterDNS"
-        replace_placeholder "{{MASTERDNS_DISPLAY}}" "display:none"
-    fi
-    if [[ -f "$OUTPUT_DIR/gooserelay-instructions.txt" ]]; then
-        replace_placeholder "{{CONFIG_GOOSERELAY}}" "$(cat "$OUTPUT_DIR/gooserelay-instructions.txt")"
-        replace_placeholder "{{GOOSERELAY_DISPLAY}}" ""
-    else
-        replace_placeholder "{{CONFIG_GOOSERELAY}}" "Run 'moav regenerate-users' to include GooseRelay"
-        replace_placeholder "{{GOOSERELAY_DISPLAY}}" "display:none"
-    fi
-
-    # V2Ray subscription: base64 of the newline-joined compatible share-links,
-    # so the user can paste it once into any V2Ray app (MahsaNG, v2rayNG,
-    # Hiddify, ...) to import all proxy protocols. DNS tunnels + GooseRelay are
-    # configured separately and intentionally excluded.
-    _mahsanet_uris=""
-    for _f in reality cdn-vless xhttp-vless trojan anytls shadowsocks hysteria2 \
-              reality-ipv6 trojan-ipv6 anytls-ipv6 shadowsocks-ipv6 hysteria2-ipv6; do
-        [[ -f "$OUTPUT_DIR/$_f.txt" ]] || continue
-        _u=$(tr -d '\r' < "$OUTPUT_DIR/$_f.txt" | grep -aE '^(vless|trojan|anytls|ss|hysteria2|vmess)://' | head -1 || true)
-        [[ -n "$_u" ]] && _mahsanet_uris+="$_u"$'\n'
-    done
-    if [[ -n "$_mahsanet_uris" ]]; then
-        _mahsanet_sub=$(printf '%s' "$_mahsanet_uris" | base64 | tr -d '\n')
-        # Also drop the subscription as a standalone file so the bundle isn't
-        # HTML-only (handy for hosting as a sub URL or importing from a file).
-        printf '%s\n' "$_mahsanet_sub" > "$OUTPUT_DIR/subscription.txt"
-        replace_placeholder "{{MAHSANET_SUB}}" "$_mahsanet_sub"
-        replace_placeholder "{{MAHSANET_DISPLAY}}" ""
-    else
-        replace_placeholder "{{MAHSANET_SUB}}" "No V2Ray-compatible configs in this bundle"
-        replace_placeholder "{{MAHSANET_DISPLAY}}" "display:none"
-    fi
-
-    # Clean up backup files
-    rm -f "$OUTPUT_HTML.bak"
-
-    log_info "✓ README.html generated"
+    IS_DEMO_USER=false
+    render_bundle_readme "$USERNAME" "$OUTPUT_DIR" "$TEMPLATE_FILE" "host"
 else
     log_warn "Template not found: $TEMPLATE_FILE - skipping HTML guide"
 fi
@@ -1014,6 +454,10 @@ fi
     # -------------------------------------------------------------------------
     # Summary for this user
     # -------------------------------------------------------------------------
+    # Root-run paths (bootstrap container, host) leave root-owned files the
+    # admin app could not touch; hand the bundle + state to the admin uid with
+    # no world bits.
+    grant_admin_rw "$OUTPUT_DIR" "$STATE_DIR/users/$USERNAME"
     echo ""
     if [[ ${#ERRORS[@]} -gt 0 ]]; then
         log_error "User '$USERNAME' failed: ${ERRORS[*]}"
@@ -1053,10 +497,15 @@ fi
     # -------------------------------------------------------------------------
     if [[ "$CREATE_PACKAGE" == "true" ]]; then
         log_info "Creating package for $USERNAME..."
+        # NOTE: packaging runs after this user's pass/fail accounting (above) and
+        # inside an `if`, so a failure here is reported but does NOT fail the
+        # command — the user itself was created fine, only the extra archive is
+        # missing. user-package.sh now fails loudly (e.g. "zip command not
+        # found") instead of silently producing nothing.
         if "$SCRIPT_DIR/user-package.sh" "$USERNAME"; then
-            log_info "✓ Package created: outputs/bundles/$USERNAME.zip"
+            log_info "✓ Package created: outputs/bundles/${USERNAME}-configs.zip"
         else
-            log_error "✗ Failed to create package for $USERNAME"
+            log_error "✗ Failed to create package for $USERNAME (user was still created)"
         fi
     fi
 
@@ -1075,59 +524,59 @@ if [[ "$BATCH_MODE" == "true" ]] && [[ ${#CREATED_USERS[@]} -gt 0 ]]; then
 
     # Reload sing-box
     if [[ -f "configs/sing-box/config.json" ]]; then
-        if compose_timeout ps sing-box --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running sing-box; then
             log_info "Reloading sing-box..."
-            if compose_timeout exec -T sing-box sing-box reload 2>/dev/null; then
+            if svc_exec sing-box sing-box reload 2>/dev/null; then
                 log_info "✓ sing-box reloaded"
             else
                 log_info "Hot reload failed, restarting sing-box..."
-                compose_timeout restart sing-box || log_warn "Timed out restarting sing-box"
+                svc_restart sing-box || log_warn "Timed out restarting sing-box"
             fi
         fi
     fi
 
     # Reload WireGuard (needs to sync peers)
     if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]] && [[ -f "configs/wireguard/wg0.conf" ]]; then
-        if compose_timeout ps wireguard --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running wireguard; then
             log_info "Syncing WireGuard peers..."
-            compose_timeout exec -T wireguard wg syncconf wg0 <(compose_timeout exec -T wireguard wg-quick strip wg0) 2>/dev/null || \
-                compose_timeout restart wireguard || log_warn "Timed out restarting WireGuard"
+            svc_exec wireguard wg syncconf wg0 <(svc_exec wireguard wg-quick strip wg0) 2>/dev/null || \
+                svc_restart wireguard || log_warn "Timed out restarting WireGuard"
             log_info "✓ WireGuard synced"
         fi
     fi
 
     # Reload AmneziaWG
     if [[ "${ENABLE_AMNEZIAWG:-true}" == "true" ]] && [[ -f "configs/amneziawg/awg0.conf" ]]; then
-        if compose_timeout ps amneziawg --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running amneziawg; then
             log_info "Restarting AmneziaWG..."
-            compose_timeout restart amneziawg || log_warn "Timed out restarting AmneziaWG"
+            svc_restart amneziawg || log_warn "Timed out restarting AmneziaWG"
             log_info "✓ AmneziaWG restarted"
         fi
     fi
 
     # Reload TrustTunnel
     if [[ -f "configs/trusttunnel/credentials.toml" ]]; then
-        if compose_timeout ps trusttunnel --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running trusttunnel; then
             log_info "Restarting TrustTunnel..."
-            compose_timeout restart trusttunnel || log_warn "Timed out restarting TrustTunnel"
+            svc_restart trusttunnel || log_warn "Timed out restarting TrustTunnel"
             log_info "✓ TrustTunnel restarted"
         fi
     fi
 
     # Reload Xray (XHTTP)
     if [[ -f "configs/xray/config.json" ]]; then
-        if compose_timeout --profile xhttp ps xray --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running xray; then
             log_info "Restarting Xray..."
-            compose_timeout --profile xhttp restart xray || log_warn "Timed out restarting Xray"
+            svc_restart xray || log_warn "Timed out restarting Xray"
             log_info "✓ Xray restarted"
         fi
     fi
 
     # Reload telemt
     if [[ -f "configs/telemt/config.toml" ]]; then
-        if compose_timeout --profile telegram ps telemt --status running 2>/dev/null | tail -n +2 | grep -q .; then
+        if svc_running telemt; then
             log_info "Restarting telemt..."
-            compose_timeout --profile telegram restart telemt || log_warn "Timed out restarting telemt"
+            svc_restart telemt || log_warn "Timed out restarting telemt"
             log_info "✓ telemt restarted"
         fi
     fi

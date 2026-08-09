@@ -33,6 +33,48 @@ jobs:
         run: xargs shellcheck --severity=error < /tmp/shfiles
       - name: share-link golden test
         run: bash tests/singbox-links-test.sh
+      - name: peer-IP allocator unit test
+        run: bash tests/net-alloc-test.sh
+      - name: strict-mode regression test
+        run: bash tests/strict-mode-test.sh
+      - name: state key permission test
+        run: bash tests/state-perms-test.sh
+      - name: user-add timeout + wg dedup test
+        run: bash tests/user-add-timeout-test.sh
+      - name: bundle permission test
+        run: bash tests/bundle-perms-test.sh
+      - name: entrypoint strict-mode test
+        run: bash tests/entrypoint-strict-test.sh
+      - name: sing-box state read-only (no key-ownership downgrade)
+        run: bash tests/singbox-state-readonly-test.sh
+      - name: wg/awg keygen fallback (local image, not lscr.io)
+        run: bash tests/wg-keygen-fallback-test.sh
+      - name: user UUID capture (no two-line double-capture)
+        run: bash tests/uuid-capture-test.sh
+      - name: config naming (server label + wg 15-char limit)
+        run: bash tests/config-naming-test.sh
+      - name: grafana branding non-fatal
+        run: bash tests/grafana-branding-test.sh
+      - name: env resolution golden-diff
+        run: bash tests/env-resolution-test.sh
+      - name: env nested-fallback resolution
+        run: bash tests/env-fallback-test.sh
+      - name: .env.example slim/full split
+        run: bash tests/env-example-test.sh
+      - name: reality short_id desync guard
+        run: bash tests/reality-desync-test.sh
+      - name: bundle enabled-only (#73)
+        run: bash tests/bundle-enabled-only-test.sh
+      - name: docker management-plane isolation
+        run: bash tests/network-isolation-test.sh
+      - name: monitoring socket removal
+        run: bash tests/exporter-socket-test.sh
+      - name: admin TLS enforcement
+        run: bash tests/admin-tls-test.sh
+      - name: admin IP whitelist (CIDR) unit test
+        run: python3 tests/admin-ip-whitelist-test.py
+      - name: refactor verification (static)
+        run: bash tests/refactor-verify.sh
       - name: protocol-roster drift gate
         run: python3 scripts/gen-protocol-docs.py --check
 

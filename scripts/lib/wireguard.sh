@@ -66,8 +66,10 @@ EOF
 
 # Add a WireGuard peer
 wireguard_add_peer() {
-    local user_id="$1"
-    local peer_num="$2"
+    local user_id="$1"; shift
+    # Remaining args: octets already in use on a live interface (host path scrapes
+    # `wg show wg0 allowed-ips`). Merged with the config scan for collision safety.
+    local extra_used="$*"
 
     local client_private_key
     local client_public_key
@@ -75,24 +77,61 @@ wireguard_add_peer() {
     local client_ip_v6=""
 
     # Load existing client keys if available, only generate if missing
+    local have_state=false
     if [[ -f "$STATE_DIR/users/$user_id/wireguard.env" ]]; then
+        # Clear first: source does not unset, so without this a truncated file
+        # would silently validate against whatever a previous call left behind.
+        unset WG_PRIVATE_KEY WG_PUBLIC_KEY WG_CLIENT_IP WG_CLIENT_IP_V6
         source "$STATE_DIR/users/$user_id/wireguard.env"
+        # Validate before trusting it. A truncated state file -- a previous run
+        # that died between the mkdir and the heredoc write -- used to crash on
+        # the bare $WG_PRIVATE_KEY below and never self-heal, because the broken
+        # file kept winning this branch on every retry.
+        if [[ -n "${WG_PRIVATE_KEY:-}" && -n "${WG_PUBLIC_KEY:-}" && -n "${WG_CLIENT_IP:-}" ]]; then
+            have_state=true
+        else
+            log_warn "WireGuard: ignoring incomplete state file for $user_id"
+        fi
+    fi
+    if [[ "$have_state" == true ]]; then
         client_private_key="$WG_PRIVATE_KEY"
         client_public_key="$WG_PUBLIC_KEY"
         client_ip="$WG_CLIENT_IP"
         client_ip_v6="${WG_CLIENT_IP_V6:-}"
         log_info "Loaded existing WireGuard keys for $user_id"
+    elif grep -q "# $user_id$" "${WG_CONFIG_DIR}/wg0.conf" 2>/dev/null; then
+        # Third state: the server already has a peer for this user, but their key
+        # material is NOT in state. The private key only ever existed in their
+        # bundle, so it cannot be recovered — minting a fresh keypair here would
+        # write a bundle whose key the server does not know (the append below is
+        # skipped for an existing peer), silently breaking a user who works today.
+        # Leave both the peer and any existing bundle alone and tell the caller.
+        log_warn "WireGuard: $user_id has a server peer but no key material in state"
+        log_warn "  leaving the existing peer and bundle untouched (private key is unrecoverable)"
+        log_warn "  to re-issue this user: moav user revoke $user_id && moav user add $user_id"
+        return 2
     else
-        # Generate new client keys
-        client_private_key=$(wg genkey)
-        client_public_key=$(echo "$client_private_key" | wg pubkey)
+        # Generate new client keys (lib/keys.sh — CRLF-safe)
+        # Guarded: if wg_keypair fails it emits nothing, the first read returns 1,
+        # && short-circuits, and client_public_key stays declared-but-unset -- which
+        # under set -u kills the run later with a misleading "unbound variable".
+        if ! { read -r client_private_key && read -r client_public_key; } < <(wg_keypair); then
+            log_error "WireGuard: no wg/awg key generator available (install wireguard-tools or start the container)"
+            return 1
+        fi
 
-        # Calculate client IP (IPv4)
-        client_ip="10.66.66.$((peer_num + 1))"
+        # Allocate the next free host octet (collision-safe across revoked-user
+        # gaps; supersedes the old peer-count+1 scheme that reused freed IPs).
+        local octet
+        octet=$(net_next_free_octet "$WG_CONFIG_DIR/wg0.conf" "10.66.66" $extra_used) || {
+            log_error "No available IPs in WireGuard network"
+            return 1
+        }
+        client_ip="10.66.66.$octet"
 
         # Calculate client IPv6 if server has IPv6
         if [[ -n "${SERVER_IPV6:-}" ]]; then
-            client_ip_v6="fd00:cafe:beef::$((peer_num + 1))"
+            client_ip_v6="fd00:cafe:beef::$octet"
         fi
 
         # Save client credentials
@@ -140,7 +179,7 @@ wireguard_generate_client_config() {
     fi
 
     # Direct WireGuard config (IPv4 endpoint)
-    cat > "$output_dir/wireguard.conf" <<EOF
+    cat > "$output_dir/$(moav_wg_basename wg).conf" <<EOF
 [Interface]
 PrivateKey = $WG_PRIVATE_KEY
 Address = $client_addresses
@@ -156,7 +195,7 @@ EOF
 
     # Generate IPv6 endpoint config if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        cat > "$output_dir/wireguard-ipv6.conf" <<EOF
+        cat > "$output_dir/$(moav_wg_basename wg6).conf" <<EOF
 [Interface]
 PrivateKey = $WG_PRIVATE_KEY
 Address = $client_addresses
@@ -174,7 +213,7 @@ EOF
 
     # WireGuard-wstunnel config (for censored networks)
     # Points to localhost - user must run wstunnel client first
-    cat > "$output_dir/wireguard-wstunnel.conf" <<EOF
+    cat > "$output_dir/$(moav_wg_basename wgws).conf" <<EOF
 [Interface]
 PrivateKey = $WG_PRIVATE_KEY
 Address = $client_addresses
@@ -187,6 +226,12 @@ AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = 127.0.0.1:51820
 PersistentKeepalive = 25
 EOF
+
+    # Drop the pre-rename filenames. A regenerated bundle would otherwise ship
+    # two copies of the same tunnel — and the stale one still carries the old
+    # keys/endpoint, so importing it looks fine and silently fails to connect.
+    rm -f "$output_dir/wireguard.conf" "$output_dir/wireguard-wstunnel.conf" \
+          "$output_dir/wireguard-ipv6.conf" 2>/dev/null || true
 
     log_info "Generated WireGuard client config for $user_id"
 }
