@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-09
+
+The same protocols, rebuilt underneath: a security and correctness pass, a much
+smaller dispatcher (`moav.sh` 9,483 -> 1,076 lines across 15 modules), and a lot
+of quietly-broken things fixed. No new protocols; keys, users and certificates
+are preserved across the upgrade. See [docs/V2-MIGRATION.md](docs/V2-MIGRATION.md).
+
 ### Security
 - **sing-box no longer downgrades state-key ownership on every start.** It runs non-root (via `setpriv`) and mounted the state volume read-write only to write its clash cache; the entrypoint's blanket `chown -R moav:moav /state` swept in `state/keys/*` and reset every secret from `root:root` to the moav uid on each start, silently undoing the ownership hardening and the perms repair (this — not stale v1 images — was the real source of 999-owned keys). The cache moves to the moav-owned log volume, `/state` is mounted read-only for sing-box, and the entrypoint chowns only its log dir.
 
@@ -1528,7 +1535,7 @@ TrustTunnel config validity.
 - uTLS fingerprint spoofing (Chrome)
 - Automatic short ID generation for Reality
 
-[Unreleased]: https://github.com/MotherofallVPNs/moav/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/MotherofallVPNs/moav/compare/v2.0.0...HEAD
 [1.9.1]: https://github.com/MotherofallVPNs/moav/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/MotherofallVPNs/moav/compare/v1.8.5...v1.9.0
 [1.8.6]: https://github.com/MotherofallVPNs/moav/compare/v1.8.5...v1.8.6
@@ -1569,6 +1576,7 @@ TrustTunnel config validity.
 [1.2.4]: https://github.com/MotherofallVPNs/moav/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/MotherofallVPNs/moav/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/MotherofallVPNs/moav/compare/v1.2.0...v1.2.2
+[2.0.0]: https://github.com/MotherofallVPNs/moav/compare/v1.9.1...v2.0.0
 [1.2.0]: https://github.com/MotherofallVPNs/moav/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/MotherofallVPNs/moav/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/MotherofallVPNs/moav/compare/v1.0.2...v1.1.1
