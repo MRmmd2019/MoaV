@@ -166,5 +166,32 @@ jobs:
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
           gh release upload "$TAG" install.sh --clobber
+          # llms.txt rides along the same way: authored here, served from
+          # moav.sh/llms.txt by moav-site fetching the latest release asset.
+          if [ -f llms.txt ]; then gh release upload "$TAG" llms.txt --clobber; fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger moav-site deploy
+        # moav-site only redeploys on ITS OWN pushes, so without this nudge
+        # moav.sh/install.sh keeps serving the previous release until someone
+        # remembers to deploy the site (exactly what happened at v2.0.0).
+        # Best-effort: a missing/expired token must not fail the release —
+        # the site deploy can always be run by hand.
+        # Prereleases are skipped on the site side by 'releases/latest' itself
+        # (GitHub never points 'latest' at a prerelease), so dispatching on
+        # every tag is safe.
+        run: |
+          if [ -n "${SITE_DISPATCH_TOKEN}" ]; then
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${SITE_DISPATCH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              https://api.github.com/repos/MotherofallVPNs/moav-site/dispatches \
+              -d '{"event_type":"moav-release"}' \
+              && echo "moav-site deploy dispatched." \
+              || echo "::warning::moav-site dispatch failed — deploy the site manually (Actions → Deploy Site & Docs → Run workflow)."
+          else
+            echo "::warning::SITE_DISPATCH_TOKEN not set — deploy moav-site manually so moav.sh serves this release's install.sh."
+          fi
+        env:
+          SITE_DISPATCH_TOKEN: ${{ secrets.SITE_DISPATCH_TOKEN }}
