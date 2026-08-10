@@ -1067,8 +1067,12 @@ restart_services() {
 format_log_timestamps() {
     awk '
     BEGIN {
+        # 36 entries, all readable on a dark terminal. `moav start all` runs 30
+        # containers, so a smaller palette wraps and collides -- a 24-entry one
+        # put conduit, wireguard and amneziawg on the same colour.
         n = split("39,208,45,213,220,51,205,118,141,214,87,199,154,111,203,229," \
-                  "82,165,178,123,197,120,171,228,45,209", pal, ",")
+                  "82,165,178,123,197,120,171,228,209,80,105,191,168,75,186,135," \
+                  "115,216,99,156", pal, ",")
         next_c = 0
     }
     function svc_color(name) {
