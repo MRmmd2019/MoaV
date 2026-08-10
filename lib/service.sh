@@ -1052,10 +1052,47 @@ restart_services() {
     success "Services restarted!"
 }
 
-# Format Docker timestamps from ISO to readable format
+# Readable timestamps, plus a distinct colour per service name.
+#
 # 2026-02-04T20:17:10.426340440Z -> 2026-02-04 20:17:10
+#
+# compose picks service colours from a palette of about seven, so with ~29
+# services several share one -- sing-box and conduit both came out cyan, which
+# is exactly when you need to tell them apart. compose now emits plain text and
+# we colour the prefix from a 256-colour palette.
+#
+# Assigned in first-seen order rather than by hashing the name: hashing keeps a
+# colour stable between runs but collides (conduit and xray landed on the same
+# one), and distinctness is the whole point.
 format_log_timestamps() {
-    sed -u 's/\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)T\([0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\)\.[0-9]*Z/\1 \2/g'
+    awk '
+    BEGIN {
+        n = split("39,208,45,213,220,51,205,118,141,214,87,199,154,111,203,229," \
+                  "82,165,178,123,197,120,171,228,45,209", pal, ",")
+        next_c = 0
+    }
+    function svc_color(name) {
+        if (!(name in col)) { col[name] = pal[(next_c % n) + 1]; next_c++ }
+        return col[name]
+    }
+    {
+        line = $0
+        if (match(line, /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]*Z/)) {
+            ts = substr(line, RSTART, RLENGTH)
+            clean = substr(ts, 1, 10) " " substr(ts, 12, 8)
+            line = substr(line, 1, RSTART - 1) clean substr(line, RSTART + RLENGTH)
+        }
+        # compose emits "service  | message" (or "service-1  | message").
+        if (match(line, /^[a-zA-Z0-9._-]+ *\| /)) {
+            pfx = substr(line, 1, RLENGTH)
+            rest = substr(line, RLENGTH + 1)
+            name = pfx; sub(/ *\| $/, "", name)
+            printf "\033[38;5;%dm%s\033[0m%s\n", svc_color(name), pfx, rest
+        } else {
+            print line
+        }
+        fflush()
+    }'
 }
 
 view_logs() {
@@ -1657,8 +1694,10 @@ cmd_logs() {
         esac
     done
 
-    # Build docker compose command
-    local cmd="docker compose --ansi always"
+    # --ansi never: compose would otherwise colour the service prefix from a
+    # ~7-colour palette that repeats across ~29 services. format_log_timestamps
+    # colours it instead. Container output keeps its own ANSI either way.
+    local cmd="docker compose --ansi never"
     if [[ -z "$services_to_log" && -z "$profile_flags" ]]; then
         cmd="$cmd --profile all"
     elif [[ -n "$profile_flags" ]]; then

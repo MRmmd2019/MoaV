@@ -95,19 +95,36 @@ if [ -d /var/log/sing-box ] && ! grep -q '"output"' "$RUNTIME_CONFIG"; then
         chown moav:moav "$ACCESS_LOG" 2>/dev/null || true
         chmod 644 "$ACCESS_LOG" 2>/dev/null || true
 
-        # log.output silences the console; mirror it back or `moav logs` dies.
-        # It also strips the level colours (sing-box sets DisableColor for file
-        # output and it is not exposed in the config), so put them back on the
-        # way to stdout -- scanning for ERROR by eye is the point of them.
-        _e=$(printf '\033')
-        ( tail -n 0 -F "$ACCESS_LOG" 2>/dev/null | sed -u \
-              -e "s/^FATAL /${_e}[1;31mFATAL${_e}[0m /" \
-              -e "s/^PANIC /${_e}[1;31mPANIC${_e}[0m /" \
-              -e "s/^ERROR /${_e}[31mERROR${_e}[0m /" \
-              -e "s/^WARN /${_e}[33mWARN${_e}[0m /" \
-              -e "s/^INFO /${_e}[36mINFO${_e}[0m /" \
-              -e "s/^DEBUG /${_e}[90mDEBUG${_e}[0m /" \
-              -e "s/^TRACE /${_e}[90mTRACE${_e}[0m /" ) &
+        # log.output silences the console, so mirror it back or `moav logs` dies.
+        # It also strips colour (sing-box sets DisableColor for file output and
+        # it carries json:"-", so the config cannot re-enable it), so restore it
+        # here: the level, and the connection id, which is what lets you follow
+        # one connection across lines.
+        ( tail -n 0 -F "$ACCESS_LOG" 2>/dev/null | awk '
+        BEGIN {
+            lc["FATAL"]="1;31"; lc["PANIC"]="1;31"; lc["ERROR"]="31"
+            lc["WARN"]="33";    lc["INFO"]="36";    lc["DEBUG"]="90"
+            lc["TRACE"]="90"
+            n = split("41,227,83,155,117,214,213,85,120,209,147,80", pal, ",")
+        }
+        {
+            line = $0
+            if (match(line, /^[A-Z]+ /)) {
+                lvl = substr(line, 1, RLENGTH - 1)
+                if (lvl in lc)
+                    line = "\033[" lc[lvl] "m" lvl "\033[0m" substr(line, RLENGTH)
+            }
+            # "[3319605072 0ms]" -- colour the id by its own value, so a given
+            # connection keeps one colour for its whole life.
+            if (match(line, /\[[0-9]+ /)) {
+                id = substr(line, RSTART + 1, RLENGTH - 2)
+                line = substr(line, 1, RSTART) \
+                       "\033[38;5;" pal[(id % n) + 1] "m" id "\033[0m" \
+                       substr(line, RSTART + RLENGTH - 1)
+            }
+            print line
+            fflush()
+        }' ) &
 
         # sing-box cannot rotate. Truncating in place is safe for its append
         # handle and for the exporter's tail.
