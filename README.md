@@ -44,7 +44,7 @@ Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** commu
 
 ## Features
 
-- **Multiple protocols** — 16+ protocols covering every censorship scenario:
+- **Multiple protocols** — 16+ circumvention transports and fallback paths, plus optional Psiphon, Tor and MahsaNet donation integrations:
   - **High-stealth proxy** — Reality (VLESS), Trojan, Hysteria2, XHTTP (VLESS+XHTTP+Reality), CDN (VLESS+WS via Cloudflare)
   - **Full VPN** — WireGuard (direct & wstunnel), AmneziaWG
   - **Specialty** — TrustTunnel (HTTP/2+QUIC), Telegram MTProxy (fake-TLS), Shadowsocks-2022, GooseRelay (SOCKS5 via Google Apps Script)
@@ -163,7 +163,7 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 
 | Protocol | Port | Stealth | Speed | Default | Use Case |
 |----------|------|---------|-------|---------|----------|
-| Reality (VLESS) | 443/tcp | ★★★★★ | ★★★★☆ | ✅ | Primary, most reliable |
+| Reality (VLESS) | 443/tcp | ★★★★★ | ★★★★☆ | ✅ | Primary; a strong first choice where it works |
 | Hysteria2 | 443/udp | ★★★★☆ | ★★★★★ | ✅ | Fast, works when TCP throttled |
 | Trojan | 8443/tcp | ★★★★☆ | ★★★★☆ | ✅ | Backup, uses your domain |
 | AnyTLS | 8445/tcp | ★★★★★ | ★★★★☆ | ⬜ | Defeats TLS-in-TLS fingerprinting, uses your domain |
@@ -171,7 +171,7 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 | CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ✅ | When server IP is blocked |
 | TrustTunnel | 4443/tcp+udp | ★★★★★ | ★★★★☆ | ✅ | HTTP/2 & QUIC, looks like HTTPS |
 | WireGuard (Direct) | 51820/udp | ★★★☆☆ | ★★★★★ | ✅ | Full VPN, simple setup |
-| AmneziaWG | 51821/udp | ★★★★★ | ★★★★☆ | ✅ | Obfuscated WireGuard, defeats DPI |
+| AmneziaWG | 51821/udp | ★★★★★ | ★★★★☆ | ✅ | Obfuscated WireGuard, resists common DPI signatures |
 | WireGuard (wstunnel) | 8080/tcp | ★★★★☆ | ★★★★☆ | ✅ | VPN when UDP is blocked |
 | DNS Tunnel (dnstt) | 53/udp | ★★★☆☆ | ★☆☆☆☆ | ✅ | Last resort, hard to block |
 | Slipstream | 53/udp | ★★★☆☆ | ★★☆☆☆ | ✅ | QUIC-over-DNS, 1.5-5x faster than dnstt |
@@ -205,7 +205,9 @@ Each user gets a bundle in `outputs/bundles/<username>/` with config files, QR c
 
 - **Admin dashboard**: `https://your-server:9443` — user management, service status, MahsaNet donations
 - **Grafana**: `https://your-server:9444` — per-user traffic, protocol breakdown, GeoIP distribution
-- **Username**: `admin` | **Password**: set during install (stored in `.env` as `ADMIN_PASSWORD`)
+- **Admin dashboard login**: any username — only the password is checked
+- **Grafana login**: user `admin`
+- **Password** for both: set during install (stored in `.env` as `ADMIN_PASSWORD`)
 - **Reset password**: `moav admin password`
 
 ## Service Management
@@ -225,7 +227,7 @@ moav conduit link         # Psiphon Conduit claim link, QR & sharing guide
 
 **Psiphon Conduit:** once `conduit` is running it already serves Psiphon users (including in Iran) through the public pool — no link to share. To give specific people a private path, `moav conduit link` prints the Ryve claim link/QR and the Personal Pairing steps. The claim link embeds the private key — keep it secret; share with users only via Personal Pairing inside Ryve. See [Psiphon Conduit in docs/protocols.md](https://moav.sh/docs/protocols#psiphon-conduit).
 
-**Profiles:** `proxy`, `wireguard`, `amneziawg`, `dnstunnel`, `trusttunnel`, `telegram`, `xhttp`, `admin`, `conduit`, `snowflake`, `monitoring`, `all`
+**Profiles:** `proxy`, `wireguard`, `amneziawg`, `dnstunnel`, `trusttunnel`, `telegram`, `xhttp`, `admin`, `conduit`, `snowflake`, `gooserelay`, `monitoring`, `all`
 
 ## Server Migration
 
@@ -286,13 +288,13 @@ See the [Client Setup guide](https://moav.sh/docs/CLIENTS) for complete list and
 **Ports (open as needed):**
 | Port | Protocol | Service | Requires Domain |
 |------|----------|---------|-----------------|
-| 443/tcp | TCP | Reality (VLESS) | Yes |
+| 443/tcp | TCP | Reality (VLESS) | No — borrows a public SNI via `REALITY_TARGET` |
 | 443/udp | UDP | Hysteria2 | Yes |
 | 8443/tcp | TCP | Trojan | Yes |
 | 8445/tcp | TCP | AnyTLS | Yes |
 | 8388/tcp+udp | TCP+UDP | Shadowsocks-2022 | No |
 | 4443/tcp+udp | TCP+UDP | TrustTunnel | Yes |
-| 2082/tcp | TCP | CDN WebSocket | Yes (Cloudflare) |
+| 2082/tcp | TCP | CDN WebSocket | Cloudflare: yes · CloudFront: no |
 | 51820/udp | UDP | WireGuard | No |
 | 51821/udp | UDP | AmneziaWG | No |
 | 8080/tcp | TCP | wstunnel | No |
@@ -310,7 +312,7 @@ Don't have a domain? MoaV can run in **domainless mode** with:
 - **Reality** (VLESS+Reality, primary protocol)
 - **XHTTP** (VLESS+XHTTP+Reality via Xray-core)
 - **WireGuard** (direct UDP + WebSocket tunnel)
-- **AmneziaWG** (obfuscated WireGuard, defeats DPI)
+- **AmneziaWG** (obfuscated WireGuard, resists common DPI signatures)
 - **Telegram MTProxy** (fake-TLS, direct Telegram access)
 - **GooseRelay** (SOCKS5 over Google Apps Script — no domain needed)
 - **Admin dashboard** (uses self-signed certificate)
