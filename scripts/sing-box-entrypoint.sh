@@ -96,7 +96,18 @@ if [ -d /var/log/sing-box ] && ! grep -q '"output"' "$RUNTIME_CONFIG"; then
         chmod 644 "$ACCESS_LOG" 2>/dev/null || true
 
         # log.output silences the console; mirror it back or `moav logs` dies.
-        ( tail -n 0 -F "$ACCESS_LOG" 2>/dev/null ) &
+        # It also strips the level colours (sing-box sets DisableColor for file
+        # output and it is not exposed in the config), so put them back on the
+        # way to stdout -- scanning for ERROR by eye is the point of them.
+        _e=$(printf '\033')
+        ( tail -n 0 -F "$ACCESS_LOG" 2>/dev/null | sed -u \
+              -e "s/^FATAL /${_e}[1;31mFATAL${_e}[0m /" \
+              -e "s/^PANIC /${_e}[1;31mPANIC${_e}[0m /" \
+              -e "s/^ERROR /${_e}[31mERROR${_e}[0m /" \
+              -e "s/^WARN /${_e}[33mWARN${_e}[0m /" \
+              -e "s/^INFO /${_e}[36mINFO${_e}[0m /" \
+              -e "s/^DEBUG /${_e}[90mDEBUG${_e}[0m /" \
+              -e "s/^TRACE /${_e}[90mTRACE${_e}[0m /" ) &
 
         # sing-box cannot rotate. Truncating in place is safe for its append
         # handle and for the exporter's tail.
