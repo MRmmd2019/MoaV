@@ -1140,10 +1140,8 @@ services:
     networks:
       - moav_net
     volumes:
-      # Raw Docker socket removed. The Clash API supplies protocol, traffic and
-      # source IPs, but it carries NO user field at any level -- so per-user
-      # attribution comes from sing-box's log, published to this volume by the
-      # sing-box entrypoint. Same mechanism as the xray exporter.
+      # Socket removed. The Clash API has no user field, so per-user attribution
+      # comes from sing-box's log, published to this volume by its entrypoint.
       - moav_geoip:/geoip:ro
       - moav_state:/state:ro
       - moav_logs:/var/log/sing-box:ro

@@ -93,20 +93,9 @@ mahsanet_validate_link() {
     return 0
 }
 
-# The link MahsaNet shows alongside a donated config. Configurable so an
-# operator points it at their own channel instead of ours.
-#
-# FORM MATTERS: MahsaNet wants this WITHOUT a scheme and WITHOUT an "@", which is
-# what their own dashboard enforces. Their API enforces nothing -- OPTIONS on the
-# endpoint reports ads_url as {"type": "string", "max_length": 2000}, a plain
-# CharField -- so it silently accepts either form and normalises neither. We
-# therefore have to send the shape they want; nothing downstream will fix it.
-#
-# Rejecting "@" is also the credential guard, and a better one than a scheme
-# blocklist: every proxy share link carries user@host, so one rule covers their
-# formatting requirement and the leak. That leak was real -- an audit of live
-# donated records found 30 whose ads_url was a full share link with UUIDs and
-# trojan/hysteria2/obfs passwords in it.
+# The link MahsaNet shows alongside a donated config. MahsaNet requires no
+# scheme and no "@"; their API validates neither, so we have to send it right.
+# Keep in sync with .env.example, docker-compose.yml and admin/main.py.
 MAHSANET_ADS_URL_DEFAULT="t.me/motherofallvpns"
 mahsanet_ads_url() {
     local url="$MAHSANET_ADS_URL_DEFAULT"
@@ -120,20 +109,12 @@ mahsanet_ads_url() {
     url="${url#http://}"
     url="${url#https://}"
 
-    # Any "@" means either a proxy URI or a form MahsaNet rejects. Both are
-    # unusable, and one of them publishes credentials.
-    if [[ "$url" == *"@"* ]]; then
-        warn "MAHSANET_ADS_URL contains '@' — MahsaNet rejects that form and it may carry credentials; using the default"
+    # Every proxy share link is user@host, so this also stops a config URI
+    # (credentials and all) being published as the ads link.
+    if [[ "$url" == *"@"* || "$url" == *"://"* ]]; then
+        warn "MAHSANET_ADS_URL must have no scheme and no '@' — using the default"
         url="$MAHSANET_ADS_URL_DEFAULT"
     fi
-
-    # Belt and braces: a scheme'd proxy URI whose scheme we just did not strip.
-    case "$url" in
-        *://*)
-            warn "MAHSANET_ADS_URL still has a scheme after normalisation — refusing to publish it; using the default"
-            url="$MAHSANET_ADS_URL_DEFAULT"
-            ;;
-    esac
 
     [[ -n "$url" ]] || url="$MAHSANET_ADS_URL_DEFAULT"
     printf '%s' "$url"

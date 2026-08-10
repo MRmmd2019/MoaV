@@ -221,6 +221,25 @@ grep -qE 'MAHSANET_ADS_URL:-t\.me/' "$compose" \
     && ok "compose default for MAHSANET_ADS_URL is the bare form" \
     || bad "compose default for MAHSANET_ADS_URL still carries a scheme"
 
+# The default exists in four places and each is reachable on a different path:
+# .env.example is what operators copy, compose injects it into the admin
+# container, donate.sh runs on the HOST (so compose's default never applies to
+# it), and admin/main.py is the in-container fallback. Four copies is how the
+# sing-box version ended up disagreeing in nine places, so pin them.
+defaults=$(
+    { grep -oE '^MAHSANET_ADS_URL=.*' "$envex" | cut -d= -f2-
+      grep -oE 'MAHSANET_ADS_URL:-[^}]*' "$compose" | sed 's/.*:-//'
+      grep -oE 'MAHSANET_ADS_URL_DEFAULT="[^"]*"' "$donate" | cut -d'"' -f2
+      sed -n '/def _mahsanet_ads_url/,/^MAHSANET_ADS_URL =/p' "$admin" \
+        | grep -oE 'default = "[^"]*"' | cut -d'"' -f2
+    } | sed 's/[[:space:]]*$//' | sort -u
+)
+if [ "$(printf '%s\n' "$defaults" | grep -c .)" -eq 1 ]; then
+    ok "all four copies of the ads_url default agree ($defaults)"
+else
+    bad "ads_url default disagrees across files: $(printf '%s' "$defaults" | tr '\n' ' ')"
+fi
+
 if [ -n "$py" ]; then
     # Exercise the real functions rather than trusting a source read. Both
     # implementations must agree, or the CLI and the dashboard donate different

@@ -815,14 +815,9 @@ MAHSANET_POOL = os.environ.get("MAHSANET_POOL", "mahsa")
 def _mahsanet_ads_url() -> str:
     """The link MahsaNet shows next to a donated config.
 
-    Mirrors mahsanet_ads_url() in lib/donate.sh. MahsaNet wants this with no
-    scheme and no "@" -- their dashboard enforces that, their API does not
-    (OPTIONS reports ads_url as a plain string, max_length 2000), so it accepts
-    the wrong shape silently and never normalises it.
-
-    Rejecting "@" doubles as the credential guard: every proxy share link is
-    user@host, and an audit of live donated records found 30 whose ads_url was a
-    full share link with UUIDs and trojan/hysteria2/obfs passwords in it.
+    Mirrors mahsanet_ads_url() in lib/donate.sh -- keep both in sync. MahsaNet
+    requires no scheme and no "@"; their API validates neither. Rejecting "@"
+    also stops a config URI being published as the ads link.
     """
     default = "t.me/motherofallvpns"
     url = (os.environ.get("MAHSANET_ADS_URL") or "").strip() or default

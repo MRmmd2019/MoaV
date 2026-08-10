@@ -2,20 +2,10 @@
 """
 Sing-box User Prometheus Exporter
 
-Two sources, because neither one alone is enough:
-
-  * The Clash API (/connections) gives protocol, per-connection byte counters and
-    source IPs -- but NO user field at any level. Verified against sing-box
-    1.13.12 and 1.13.18: the connection JSON is byte-identical between them and
-    never emits InboundContext.User, even though sing-box tracks it internally.
-  * sing-box's log is the only place the username appears:
-        inbound/vless[vless-reality-in]: [alice] inbound connection to host:443
-    The entrypoint publishes it to a file on the shared log volume so this runs
-    without the raw Docker socket, the same way the xray exporter works.
-
-A previous refactor dropped the log tailer and assumed the Clash API could
-replace it for user attribution. It cannot, which silently zeroed every per-user
-panel while the protocol panels kept working.
+Two sources, because neither alone is enough:
+  * Clash API /connections -- protocol, byte counters, source IPs. No user field.
+  * sing-box's log -- the only place the username appears. Published to a file by
+    the entrypoint so this needs no Docker socket (same as the xray exporter).
 """
 
 import re
@@ -42,10 +32,8 @@ protocol_connections = defaultdict(int)  # protocol -> total connections
 country_connections = defaultdict(int)  # country -> total connections
 user_country = {}  # user -> last seen country code
 
-# Cumulative bytes per protocol. The Clash API reports counters per OPEN
-# connection, so a delta is taken per connection id -- summing the raw values
-# each poll would re-count everything still open, and reading only closed
-# connections would miss long-lived sessions entirely.
+# Clash reports byte counters per OPEN connection, so accumulate deltas per
+# connection id -- summing raw values would re-count everything still open.
 protocol_bytes_up = defaultdict(int)    # protocol -> cumulative upload bytes
 protocol_bytes_down = defaultdict(int)  # protocol -> cumulative download bytes
 conn_bytes_seen = {}  # connection id -> (upload, download) already accounted for
@@ -71,19 +59,8 @@ PROTOCOL_PATTERN = re.compile(r'inbound/(\w+)\[')
 # Active window in seconds (5 minutes)
 ACTIVE_WINDOW = 300
 
-# GeoIP poll interval (seconds)
-# Poll interval for the Clash API. This drives BOTH the GeoIP country stats and
-# (since the docker-logs tailer was removed) per-user connection counting.
-#
-# FIDELITY TRADEOFF, stated plainly: the old log tailer saw every "inbound
-# connection" event. A poller only sees connections that are still open when it
-# looks, so a connection that opens and closes entirely within one interval is
-# not counted. Long-lived sessions -- which is what the user-activity panels are
-# actually for -- are unaffected, and `user_last_seen` / active-user counts still
-# work. Short bursty connections will read low.
-#
-# 15s halves the window versus the previous 30s at modest extra API cost. Tune
-# with SINGBOX_POLL_INTERVAL if a deployment wants tighter or cheaper sampling.
+# Clash API poll interval: country stats, protocol counts and traffic. Per-user
+# counting comes from the log tailer, not from here.
 GEOIP_POLL_INTERVAL = int(os.environ.get("SINGBOX_POLL_INTERVAL", "15"))
 
 
@@ -124,22 +101,10 @@ def load_clash_secret():
 
 
 def parse_log_line(line: str) -> bool:
-    """Count one per-user connection event. Returns True if the line had a user.
+    """Count one per-user connection event. True if the line named a user.
 
-    Deliberately does NOT touch protocol_connections. The Clash poller owns that
-    series and labels it `vless/vless-reality-in` (protocol + inbound tag), while
-    this line only reveals `vless`. Incrementing both would put two overlapping
-    label sets on the same panel and double-count the same events.
-
-    The pattern requires the bracket to sit immediately before "inbound
-    connection", which is what distinguishes an authenticated line from the
-    anonymous one sing-box logs first:
-
-        inbound/vless[vless-reality-in]: [alice] inbound connection to host  <- user
-        inbound/vless[vless-reality-in]: inbound connection from 1.2.3.4     <- no user
-
-    The colon in the second form stops `\\]\\s*inbound` from matching, so the
-    inbound tag is never mistaken for a username.
+    Does not touch protocol_connections: the Clash poller owns that series with a
+    richer label, and counting both would double-count the same events.
     """
     user_match = USER_PATTERN.search(line)
     if not user_match:
@@ -156,13 +121,8 @@ def parse_log_line(line: str) -> bool:
 
 
 def tail_singbox_log():
-    """Tail the sing-box log published to the shared log volume.
-
-    The entrypoint sets log.output to this path and mirrors it back to stdout, so
-    `moav logs sing-box` is unchanged. It also caps the file, hence the shrink
-    detection here: on truncation or replacement we reattach instead of sitting
-    at a stale offset.
-    """
+    """Tail the sing-box log the entrypoint publishes. Reattaches on truncation,
+    since the entrypoint caps the file."""
     path = os.environ.get("SINGBOX_LOG_PATH", "/var/log/sing-box/sing-box.log")
     print(f"Starting sing-box log tailer: {path}")
 
@@ -261,9 +221,7 @@ def poll_clash_connections():
             for conn in connections:
                 meta = conn.get("metadata", {})
                 source_ip = meta.get("sourceIP", "")
-                # Kept for forward compatibility: if sing-box ever emits a user
-                # field here, this starts working with no other change. Today it
-                # is always absent, which is why the log tailer exists.
+                # Always absent today; kept in case sing-box ever emits it.
                 user = meta.get("inboundUser", "")
                 conn_id = conn.get("id", "")
 
@@ -273,16 +231,13 @@ def poll_clash_connections():
                     if user:
                         seen_user_country[user] = country
 
-                # Per-protocol traffic. Counters are cumulative per connection,
-                # so accumulate only the growth since the last poll.
                 proto_label = (meta.get("inboundName") or meta.get("type")
                                or meta.get("network") or "unknown")
                 up = conn.get("upload") or 0
                 down = conn.get("download") or 0
                 if conn_id and isinstance(up, int) and isinstance(down, int):
                     prev_up, prev_down = conn_bytes_seen.get(conn_id, (0, 0))
-                    # A counter that went backwards means the id was reused;
-                    # treat the current value as fresh rather than going negative.
+                    # Counter going backwards means a reused id.
                     d_up = up - prev_up if up >= prev_up else up
                     d_down = down - prev_down if down >= prev_down else down
                     if d_up:
@@ -396,8 +351,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 for protocol, count in sorted(protocol_connections.items()):
                     output.append(f'singbox_protocol_connections{{protocol="{protocol}"}} {count}')
 
-                # Traffic per protocol. Accumulated from per-connection deltas in
-                # the Clash poller, so these survive connections closing.
+                # Deltas accumulated in the poller, so these survive closes.
                 output.append('# HELP singbox_protocol_bytes_up Cumulative upload bytes per protocol')
                 output.append('# TYPE singbox_protocol_bytes_up counter')
                 for protocol, n in sorted(protocol_bytes_up.items()):
@@ -455,7 +409,7 @@ def main():
     print(f"Clash API: polling every {GEOIP_POLL_INTERVAL}s "
           "for source IPs, protocol counts and per-protocol traffic")
 
-    # Start the log tailer -- the ONLY source of usernames (the Clash API has none)
+    # The only source of usernames.
     tailer_thread = threading.Thread(target=tail_singbox_log, daemon=True)
     tailer_thread.start()
 

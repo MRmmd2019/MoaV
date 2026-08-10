@@ -305,13 +305,8 @@ select_profiles() {
         [[ "$enable_admin" != "true" ]] && admin_enabled=false
     fi
 
-    # Build menu lines with disabled indicators.
-    #
-    # Padded by width, never by hand-counted spaces. These rows were 64, 65 and
-    # 66 columns wide inside a 65-column box, so the right border visibly
-    # wobbled, and every wording change re-broke it somewhere else. profile_row
-    # computes the padding from the label, so the box stays square whatever the
-    # text says. Guarded by tests/cli-table-align-test.sh.
+    # Build menu lines with disabled indicators. profile_row pads from the
+    # label; hand-counted spaces had drifted the box out of square.
     local proxy_line wg_line amneziawg_line dnstunnel_line trusttunnel_line xhttp_line telegram_line admin_line
 
     if [[ "$proxy_enabled" == "true" ]]; then
@@ -332,8 +327,6 @@ select_profiles() {
         amneziawg_line=$(profile_row 3 amneziawg "AmneziaWG (disabled)" "$DIM")
     fi
 
-    # Names all four tunnels: the old "(dnstt + Slipstream)" understated the
-    # profile, which also starts MasterDNS and XDNS.
     if [[ "$dnstunnel_enabled" == "true" ]]; then
         dnstunnel_line=$(profile_row 4 dnstunnel "DNS tunnels (dnstt/Slipstream/MasterDNS/XDNS)" "$YELLOW")
     else

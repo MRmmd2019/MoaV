@@ -75,17 +75,9 @@ sed -i 's|/certs/|/tmp/certs/|g' "$RUNTIME_CONFIG"
 # config still points the cache at /state (no re-bootstrap needed).
 sed -i 's|/state/sing-box-cache.db|/var/log/sing-box/sing-box-cache.db|g' "$RUNTIME_CONFIG"
 
-# --- Per-user metrics -------------------------------------------------------
-# The exporter needs usernames, and they exist ONLY in sing-box's log:
-#   inbound/vless[vless-reality-in]: [alice] inbound connection to host:443
-# The Clash API carries no user field at any level (verified against 1.13.12 and
-# 1.13.18 -- its connection JSON is byte-identical and omits InboundContext.User),
-# so polling it can never attribute a connection to a user. Publishing the log to
-# a file the exporter tails is the same mechanism xray already uses, and needs no
-# Docker socket.
-#
-# Rewritten on the RUNTIME copy, like the cert and cache paths above, so existing
-# installs pick this up on restart without a re-bootstrap.
+# Publish the log to a file for the exporter to tail: usernames appear only in
+# the log, never in the Clash API. Rewritten on the runtime copy so existing
+# installs pick it up on restart without a re-bootstrap.
 ACCESS_LOG="/var/log/sing-box/sing-box.log"
 ACCESS_LOG_MAX_BYTES="${SINGBOX_LOG_MAX_BYTES:-33554432}"   # 32 MiB
 
@@ -93,26 +85,21 @@ if [ -d /var/log/sing-box ] && ! grep -q '"output"' "$RUNTIME_CONFIG"; then
     _cand="/tmp/sing-box-config.withlog.json"
     sed 's|"log"[[:space:]]*:[[:space:]]*{|"log": {"output": "'"$ACCESS_LOG"'",|' \
         "$RUNTIME_CONFIG" > "$_cand" 2>/dev/null || true
-    # Adopt only if sing-box still accepts it. A bad injection must degrade to
-    # "no per-user metrics", never to a server that will not boot.
+    # A bad injection must cost metrics, never boot.
     if [ -s "$_cand" ] && sing-box check -c "$_cand" >/dev/null 2>&1; then
         mv -f "$_cand" "$RUNTIME_CONFIG"
 
-        # Owned by moav so sing-box can append; 644 so the exporter can read it.
-        # The exporter runs as root but with cap_drop ALL, so it has no
-        # DAC_OVERRIDE and gets at a moav-owned file only via the world bits.
+        # moav-owned so sing-box can append; 644 because the exporter is
+        # cap_drop ALL and reads it only through the world bits.
         : >> "$ACCESS_LOG" 2>/dev/null || true
         chown moav:moav "$ACCESS_LOG" 2>/dev/null || true
         chmod 644 "$ACCESS_LOG" 2>/dev/null || true
 
-        # sing-box has ONE log stream and log.output silences the console, so
-        # republish it or `moav logs sing-box` goes dark. -n 0 so a restart does
-        # not replay the retained file into the container log.
+        # log.output silences the console; mirror it back or `moav logs` dies.
         ( tail -n 0 -F "$ACCESS_LOG" 2>/dev/null ) &
 
-        # sing-box cannot rotate, so cap it here rather than adding another
-        # moving part. Truncating in place is safe for both sing-box's append
-        # handle and the exporter's tail; both detect the shrink and continue.
+        # sing-box cannot rotate. Truncating in place is safe for its append
+        # handle and for the exporter's tail.
         ( while sleep 30; do
               [ -f "$ACCESS_LOG" ] || continue
               chmod 644 "$ACCESS_LOG" 2>/dev/null || true

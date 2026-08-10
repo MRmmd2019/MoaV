@@ -52,10 +52,22 @@ grep -q '^community_links()' "$ROOT/lib/common.sh" \
     && ok "community_links() exists as the single source" \
     || bad "no community_links() -- links will drift again"
 
-for want in 'moav.sh' 't.me/motherofallvpns' 'github.com/MotherofallVPNs' 'x.com/motherofallvpns' 'moav.sh/docs'; do
+for want in MOAV_URL_SITE MOAV_URL_TG MOAV_URL_X MOAV_URL_GH MOAV_URL_DOCS; do
     grep -q "$want" <<<"$(sed -n '/^community_links()/,/^}/p' "$ROOT/lib/common.sh")" \
-        && ok "community_links includes $want" \
+        && ok "community_links uses $want" \
         || bad "community_links is missing $want"
+done
+
+# Both formatters must read the same variables. lib/common.sh already had
+# print_community_links() when community_links() was added, and the two briefly
+# hardcoded overlapping URL literals.
+for fn in print_community_links community_links; do
+    body=$(sed -n "/^$fn()/,/^}/p" "$ROOT/lib/common.sh")
+    if grep -qE 'https?://' <<<"$body"; then
+        bad "$fn() hardcodes a URL instead of using the MOAV_URL_* variables"
+    else
+        ok "$fn() takes its URLs from the MOAV_URL_* variables"
+    fi
 done
 
 # The three surfaces must all use it rather than hand-listing.

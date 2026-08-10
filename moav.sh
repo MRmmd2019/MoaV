@@ -74,9 +74,8 @@ goodbye() {
     echo -e "${CYAN}Goodbye! Stay safe out there.${NC}"
     echo ""
     echo -e "${DIM}Come build MoaV with us:${NC}"
-    # community_links lives in lib/common.sh. The trap is installed before the
-    # modules are sourced, so fall back to a literal if Ctrl+C lands in that
-    # window -- an unbound function here would turn a clean exit into an error.
+    # The trap is installed before the modules are sourced, so Ctrl+C in that
+    # window would hit an unbound function.
     if declare -F community_links >/dev/null 2>&1; then
         community_links "${DIM}  "
     else
