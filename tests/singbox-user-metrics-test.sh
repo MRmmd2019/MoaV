@@ -208,24 +208,40 @@ for f in "$donate" "$admin"; do
     fi
 done
 
+# MahsaNet requires no scheme and no "@". Their API enforces neither -- OPTIONS
+# reports ads_url as {"type":"string","max_length":2000}, a plain CharField -- so
+# it accepts the wrong shape silently. These asserts are the only enforcement.
+if grep -qE 'MAHSANET_ADS_URL=t\.me/' "$envex"; then
+    ok ".env.example default has no scheme (MahsaNet requires the bare form)"
+else
+    bad ".env.example default is not in the bare t.me/... form MahsaNet requires"
+fi
+
+grep -qE 'MAHSANET_ADS_URL:-t\.me/' "$compose" \
+    && ok "compose default for MAHSANET_ADS_URL is the bare form" \
+    || bad "compose default for MAHSANET_ADS_URL still carries a scheme"
+
 if [ -n "$py" ]; then
-    # Exercise the real function rather than trusting the source read.
+    # Exercise the real functions rather than trusting a source read. Both
+    # implementations must agree, or the CLI and the dashboard donate different
+    # links from the same .env.
     out=$("$py" - "$admin" <<'PY'
-import importlib.util, os, sys, types
-# Import just the helper without pulling in FastAPI: exec the def in isolation.
+import os, sys
 src = open(sys.argv[1]).read()
 start = src.index("def _mahsanet_ads_url")
 end = src.index("MAHSANET_ADS_URL = _mahsanet_ads_url()")
 ns = {"os": os}
 exec(src[start:end], ns)
 f = ns["_mahsanet_ads_url"]
+D = "t.me/motherofallvpns"
 cases = {
-    "": "https://t.me/motherofallvpns",
-    "t.me/mychannel": "https://t.me/mychannel",
-    "https://example.org/x": "https://example.org/x",
-    "vless://uuid@1.2.3.4:443?x=y#name": "https://t.me/motherofallvpns",
-    "hysteria2://pw@1.2.3.4:443": "https://t.me/motherofallvpns",
-    "not a url": "https://t.me/motherofallvpns",
+    "":                                  D,      # unset -> default
+    "t.me/mychannel":                    "t.me/mychannel",
+    "https://t.me/mychannel":            "t.me/mychannel",   # scheme stripped
+    "http://example.org/x":              "example.org/x",
+    "vless://uuid@1.2.3.4:443?x=y#name": D,      # proxy URI refused
+    "hysteria2://pw@1.2.3.4:443":        D,
+    "someone@example.org":               D,      # bare "@" refused
 }
 bad = []
 for given, want in cases.items():
@@ -237,9 +253,37 @@ print("BAD=" + ("; ".join(bad) if bad else "none"))
 PY
 )
     case "$out" in
-        *"BAD=none"*) ok "ads_url resolver: bare t.me upgraded, proxy URIs and junk rejected" ;;
-        *) bad "ads_url resolver misbehaved: $out" ;;
+        *"BAD=none"*) ok "admin resolver: scheme stripped, '@' and proxy URIs refused" ;;
+        *) bad "admin ads_url resolver misbehaved: $out" ;;
     esac
+
+    # The bash implementation has to produce the same answers, or the CLI and the
+    # dashboard donate different links from one .env. Run it for real: extract the
+    # function, stub warn/get_env_val, and feed each input.
+    D="t.me/motherofallvpns"
+    bad_sh=""
+    while IFS='|' read -r given want; do
+        [ -n "$want" ] || continue
+        got=$(
+            warn() { :; }
+            get_env_val() { printf '%s' "$given"; }
+            eval "$(sed -n '/^MAHSANET_ADS_URL_DEFAULT=/,/^}$/p' "$donate")"
+            cd /tmp && : > .env      # the function gates the read on -f .env
+            mahsanet_ads_url
+        )
+        [ "$got" = "$want" ] || bad_sh="$bad_sh [${given:-<empty>} -> $got, want $want]"
+    done <<EOF
+|$D
+t.me/mychannel|t.me/mychannel
+https://t.me/mychannel|t.me/mychannel
+vless://uuid@1.2.3.4:443|$D
+someone@example.org|$D
+EOF
+    if [ -z "$bad_sh" ]; then
+        ok "donate.sh resolver agrees with the admin resolver on every case"
+    else
+        bad "donate.sh resolver disagrees:$bad_sh"
+    fi
 fi
 
 echo ""

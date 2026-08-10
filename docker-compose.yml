@@ -857,7 +857,7 @@ services:
       - MAHSANET_API_KEY=${MAHSANET_API_KEY:-}
       - MAHSANET_PROTOCOLS=${MAHSANET_PROTOCOLS:-reality hysteria2}
       - MAHSANET_POOL=${MAHSANET_POOL:-mahsa}
-      - MAHSANET_ADS_URL=${MAHSANET_ADS_URL:-https://t.me/motherofallvpns}
+      - MAHSANET_ADS_URL=${MAHSANET_ADS_URL:-t.me/motherofallvpns}
       - DOCKER_HOST=tcp://docker-proxy:2375
       - TZ=${TZ:-UTC}
     cap_drop:

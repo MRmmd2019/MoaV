@@ -815,21 +815,24 @@ MAHSANET_POOL = os.environ.get("MAHSANET_POOL", "mahsa")
 def _mahsanet_ads_url() -> str:
     """The link MahsaNet shows next to a donated config.
 
-    Mirrors mahsanet_ads_url() in lib/donate.sh, including the guard: an audit of
-    live donated records found 30 whose ads_url was a full share link with
-    credentials in it. Refuse to publish anything that looks like a proxy URI.
+    Mirrors mahsanet_ads_url() in lib/donate.sh. MahsaNet wants this with no
+    scheme and no "@" -- their dashboard enforces that, their API does not
+    (OPTIONS reports ads_url as a plain string, max_length 2000), so it accepts
+    the wrong shape silently and never normalises it.
+
+    Rejecting "@" doubles as the credential guard: every proxy share link is
+    user@host, and an audit of live donated records found 30 whose ads_url was a
+    full share link with UUIDs and trojan/hysteria2/obfs passwords in it.
     """
-    default = "https://t.me/motherofallvpns"
+    default = "t.me/motherofallvpns"
     url = (os.environ.get("MAHSANET_ADS_URL") or "").strip() or default
-    proxy_schemes = ("vless://", "vmess://", "trojan://", "hysteria2://", "hy2://",
-                     "ss://", "ssr://", "tuic://", "anytls://", "wireguard://")
-    if url.startswith(proxy_schemes):
+    for scheme in ("http://", "https://"):
+        if url.startswith(scheme):
+            url = url[len(scheme):]
+            break
+    if "@" in url or "://" in url:
         return default
-    if url.startswith("t.me/"):
-        return "https://" + url
-    if not url.startswith(("http://", "https://")):
-        return default
-    return url
+    return url or default
 
 
 MAHSANET_ADS_URL = _mahsanet_ads_url()

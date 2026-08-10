@@ -96,12 +96,18 @@ mahsanet_validate_link() {
 # The link MahsaNet shows alongside a donated config. Configurable so an
 # operator points it at their own channel instead of ours.
 #
-# The guard is not paranoia: an audit of live donated records found 30 whose
-# ads_url was a full share link -- UUIDs, trojan and hysteria2 passwords, obfs
-# passwords -- published to a third party. The bug that did it is gone, but this
-# field is one substitution away from carrying credentials again, so refuse
-# anything that looks like a proxy URI rather than trusting the caller.
-MAHSANET_ADS_URL_DEFAULT="https://t.me/motherofallvpns"
+# FORM MATTERS: MahsaNet wants this WITHOUT a scheme and WITHOUT an "@", which is
+# what their own dashboard enforces. Their API enforces nothing -- OPTIONS on the
+# endpoint reports ads_url as {"type": "string", "max_length": 2000}, a plain
+# CharField -- so it silently accepts either form and normalises neither. We
+# therefore have to send the shape they want; nothing downstream will fix it.
+#
+# Rejecting "@" is also the credential guard, and a better one than a scheme
+# blocklist: every proxy share link carries user@host, so one rule covers their
+# formatting requirement and the leak. That leak was real -- an audit of live
+# donated records found 30 whose ads_url was a full share link with UUIDs and
+# trojan/hysteria2/obfs passwords in it.
+MAHSANET_ADS_URL_DEFAULT="t.me/motherofallvpns"
 mahsanet_ads_url() {
     local url="$MAHSANET_ADS_URL_DEFAULT"
     if [[ -f ".env" ]]; then
@@ -110,22 +116,23 @@ mahsanet_ads_url() {
         [[ -n "$env_url" ]] && url="$env_url"
     fi
 
-    case "$url" in
-        vless://*|vmess://*|trojan://*|hysteria2://*|hy2://*|ss://*|ssr://*|tuic://*|anytls://*|wireguard://*)
-            warn "MAHSANET_ADS_URL looks like a proxy config URI — refusing to publish it; using the default"
-            url="$MAHSANET_ADS_URL_DEFAULT"
-            ;;
-        http://*|https://*|t.me/*|"")
-            ;;
-        *)
-            warn "MAHSANET_ADS_URL is not an http(s) or t.me link — using the default"
-            url="$MAHSANET_ADS_URL_DEFAULT"
-            ;;
-    esac
+    # Strip a scheme if someone pasted one; MahsaNet wants the bare form.
+    url="${url#http://}"
+    url="${url#https://}"
 
-    # A bare t.me/... is what people paste; MahsaNet wants a real URL.
+    # Any "@" means either a proxy URI or a form MahsaNet rejects. Both are
+    # unusable, and one of them publishes credentials.
+    if [[ "$url" == *"@"* ]]; then
+        warn "MAHSANET_ADS_URL contains '@' — MahsaNet rejects that form and it may carry credentials; using the default"
+        url="$MAHSANET_ADS_URL_DEFAULT"
+    fi
+
+    # Belt and braces: a scheme'd proxy URI whose scheme we just did not strip.
     case "$url" in
-        t.me/*) url="https://$url" ;;
+        *://*)
+            warn "MAHSANET_ADS_URL still has a scheme after normalisation — refusing to publish it; using the default"
+            url="$MAHSANET_ADS_URL_DEFAULT"
+            ;;
     esac
 
     [[ -n "$url" ]] || url="$MAHSANET_ADS_URL_DEFAULT"
