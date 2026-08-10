@@ -307,9 +307,12 @@ check_component_versions() {
     done
 
     echo ""
-    read -r -p "Update component versions in .env? [y/N] " update_versions
+    # Defaults to yes: these are the versions this release was tested against,
+    # so staying on the old pin is the unusual choice. Matches the [Y/n] on the
+    # equivalent question in check_env_additions.
+    read -r -p "Update component versions in .env? [Y/n] " update_versions
 
-    if [[ "$update_versions" =~ ^[Yy]$ ]]; then
+    if [[ ! "$update_versions" =~ ^[Nn]$ ]]; then
         for update in "${updates_available[@]}"; do
             local var new
             var=$(echo "$update" | cut -d: -f1)
