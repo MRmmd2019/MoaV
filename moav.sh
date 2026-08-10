@@ -74,8 +74,14 @@ goodbye() {
     echo -e "${CYAN}Goodbye! Stay safe out there.${NC}"
     echo ""
     echo -e "${DIM}Come build MoaV with us:${NC}"
-    echo -e "${DIM}  Questions or ideas:  https://t.me/motherofallvpns${NC}"
-    echo -e "${DIM}  Bugs, features, PRs: https://github.com/MotherofallVPNs/MoaV${NC}"
+    # community_links lives in lib/common.sh. The trap is installed before the
+    # modules are sourced, so fall back to a literal if Ctrl+C lands in that
+    # window -- an unbound function here would turn a clean exit into an error.
+    if declare -F community_links >/dev/null 2>&1; then
+        community_links "${DIM}  "
+    else
+        echo -e "${DIM}  https://moav.sh  ·  https://t.me/motherofallvpns${NC}"
+    fi
     echo -e "${DIM}  Run it with your AI: add moav.sh/llms.txt to your agent${NC}"
     echo ""
     exit 0

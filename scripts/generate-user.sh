@@ -139,7 +139,7 @@ EOF
 
     # Generate IPv6 link if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        REALITY_LINK_V6=$(singbox_reality_link "${USER_ID}-IPv6" "[${SERVER_IPV6}]")
+        REALITY_LINK_V6=$(singbox_reality_link "IPv6-${USER_ID}" "[${SERVER_IPV6}]")
         echo "$REALITY_LINK_V6" > "$OUTPUT_DIR/reality-ipv6.txt"
         qrencode -o "$OUTPUT_DIR/reality-ipv6-qr.png" -s 6 "$REALITY_LINK_V6" 2>/dev/null || true
     fi
@@ -197,7 +197,7 @@ EOF
 
     # Generate IPv6 link if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        TROJAN_LINK_V6=$(singbox_trojan_link "${USER_ID}-IPv6" "[${SERVER_IPV6}]")
+        TROJAN_LINK_V6=$(singbox_trojan_link "IPv6-${USER_ID}" "[${SERVER_IPV6}]")
         echo "$TROJAN_LINK_V6" > "$OUTPUT_DIR/trojan-ipv6.txt"
         qrencode -o "$OUTPUT_DIR/trojan-ipv6-qr.png" -s 6 "$TROJAN_LINK_V6" 2>/dev/null || true
     fi
@@ -248,7 +248,7 @@ EOF
 
     # Generate IPv6 link if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        ANYTLS_LINK_V6=$(singbox_anytls_link "${USER_ID}-IPv6" "[${SERVER_IPV6}]")
+        ANYTLS_LINK_V6=$(singbox_anytls_link "IPv6-${USER_ID}" "[${SERVER_IPV6}]")
         echo "$ANYTLS_LINK_V6" > "$OUTPUT_DIR/anytls-ipv6.txt"
         qrencode -o "$OUTPUT_DIR/anytls-ipv6-qr.png" -s 6 "$ANYTLS_LINK_V6" 2>/dev/null || true
     fi
@@ -321,7 +321,7 @@ EOF
 
     # Generate IPv6 link if available
     if [[ -n "${SERVER_IPV6:-}" ]]; then
-        HY2_LINK_V6=$(singbox_hysteria2_link "${USER_ID}-IPv6" "[${SERVER_IPV6}]")
+        HY2_LINK_V6=$(singbox_hysteria2_link "IPv6-${USER_ID}" "[${SERVER_IPV6}]")
         echo "$HY2_LINK_V6" > "$OUTPUT_DIR/hysteria2-ipv6.txt"
         qrencode -o "$OUTPUT_DIR/hysteria2-ipv6-qr.png" -s 6 "$HY2_LINK_V6" 2>/dev/null || true
     fi
@@ -391,7 +391,7 @@ EOF
         qrencode -o "$OUTPUT_DIR/shadowsocks-qr.png" -s 6 "$SS_LINK" 2>/dev/null || true
 
         if [[ -n "${SERVER_IPV6:-}" ]]; then
-            SS_LINK_V6=$(singbox_ss_link "${USER_ID}-IPv6" "[${SERVER_IPV6}]" "$SS_USERINFO" "$SS_PORT")
+            SS_LINK_V6=$(singbox_ss_link "IPv6-${USER_ID}" "[${SERVER_IPV6}]" "$SS_USERINFO" "$SS_PORT")
             echo "$SS_LINK_V6" > "$OUTPUT_DIR/shadowsocks-ipv6.txt"
             qrencode -o "$OUTPUT_DIR/shadowsocks-ipv6-qr.png" -s 6 "$SS_LINK_V6" 2>/dev/null || true
         fi

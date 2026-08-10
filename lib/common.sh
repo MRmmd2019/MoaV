@@ -102,12 +102,43 @@ print_header() {
     echo "║                                                    ║"
     echo "║  Multi-protocol Circumvention Stack                ║"
     printf "║  %-49s ║\n" "$version_line"
-    printf "║  %-49s ║\n" "t.me/motherofallvpns"
+    # Website first: it is the entry point that leads to the docs, the client and
+    # the channel. Both fit inside the 49-column field.
+    printf "║  %-49s ║\n" "moav.sh  ·  t.me/motherofallvpns"
     if [[ -n "$update_line" ]]; then
         printf "║  ${NC}${YELLOW}%-49s${CYAN} ║\n" "$update_line"
     fi
     echo "╚════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+# One row of the profile-selection box, padded to the box width.
+#
+# The colour codes are applied around the already-padded text, never inside it:
+# ANSI sequences occupy no columns, so mixing them into the padded field is how
+# the old hand-spaced rows ended up 64, 65 and 66 wide in a 65-column box.
+PROFILE_ROW_W=65
+profile_row() {
+    local num="$1" name="$2" desc="$3" color="${4:-}"
+    local text
+    text=$(printf '  %s   %-13s%s' "$num" "$name" "$desc")
+    printf '  %s│%s%s%-*s%s%s│%s' \
+        "$CYAN" "$NC" "$color" "$PROFILE_ROW_W" "$text" "$NC" "$CYAN" "$NC"
+}
+
+# Community links, in one place. They were listed in three: the Ctrl+C goodbye in
+# moav.sh, the footer of `moav help`, and the TUI exit -- which had none at all.
+# Three copies drifted immediately (the help footer never gained the repo link),
+# so every surface now prints this.
+#
+# $1: optional line prefix, so callers can dim or indent to taste.
+community_links() {
+    local p="${1:-  }"
+    echo -e "${p}Website:   https://moav.sh"
+    echo -e "${p}Telegram:  https://t.me/motherofallvpns"
+    echo -e "${p}Twitter/X: https://x.com/motherofallvpns"
+    echo -e "${p}GitHub:    https://github.com/MotherofallVPNs/MoaV"
+    echo -e "${p}Docs:      https://moav.sh/docs"
 }
 
 print_section() {

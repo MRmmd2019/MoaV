@@ -83,6 +83,10 @@ main_menu() {
             0|q|Q)
                 echo ""
                 info "🕊️ Goodbye! ✌️"
+                echo ""
+                echo -e "${DIM}Come build MoaV with us:${NC}"
+                community_links "${DIM}  "
+                echo -e "${NC}"
                 exit 0
                 ;;
             *)
@@ -145,6 +149,7 @@ show_usage() {
     echo "  regenerate-users      Regenerate all user bundles with current .env"
     echo "  conduit-offsets CMD   Manage Conduit lifetime-offset auto-updater (install/uninstall/status)"
     echo "  cert [CMD]            TLS certificate status/renew + auto-renewal timer (install/uninstall)"
+    echo "  net [status|apply|revert]  Kernel network tuning (BBR, buffers) for throughput"
     echo "  setup-dns             Free port 53 for DNS tunnels (disables systemd-resolved)"
     echo "  switch-dns [NAME|off] Enable/disable DNS tunnel daemons (dnstt/slipstream/masterdns/xdns)"
     echo ""
@@ -164,9 +169,7 @@ show_usage() {
     echo "  moav migrate-ip 1.2.3.4              # Update to new server IP"
     echo ""
     echo "Community & support:"
-    echo "  Telegram:  https://t.me/motherofallvpns"
-    echo "  Twitter/X: https://x.com/motherofallvpns"
-    echo "  Docs:      https://moav.sh/docs"
+    community_links "  "
 }
 
 cmd_check() {
