@@ -69,6 +69,10 @@ jobs:
         run: bash tests/network-isolation-test.sh
       - name: monitoring socket removal
         run: bash tests/exporter-socket-test.sh
+      - name: sing-box per-user metrics + MahsaNet ads_url
+        run: bash tests/singbox-user-metrics-test.sh
+      - name: CLI surface consistency (help/links/table/pins)
+        run: bash tests/cli-surface-test.sh
       - name: admin TLS enforcement
         run: bash tests/admin-tls-test.sh
       - name: admin IP whitelist (CIDR) unit test

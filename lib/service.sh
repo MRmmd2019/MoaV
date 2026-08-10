@@ -18,7 +18,7 @@ get_running_services() {
 show_versions() {
     local singbox_ver wstunnel_ver conduit_ver snowflake_ver slipstream_ver telemt_ver
     local trusttunnel_ver trusttunnel_client_ver awgtools_ver xray_ver dnstt_ver
-    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.12")
+    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.18")
     wstunnel_ver=$(get_component_version "WSTUNNEL_VERSION" "10.6.1")
     conduit_ver=$(get_component_version "CONDUIT_VERSION" "1.2.0")
     snowflake_ver=$(get_component_version "SNOWFLAKE_VERSION" "latest")
@@ -305,55 +305,56 @@ select_profiles() {
         [[ "$enable_admin" != "true" ]] && admin_enabled=false
     fi
 
-    # Build menu lines with disabled indicators
+    # Build menu lines with disabled indicators. profile_row pads from the
+    # label; hand-counted spaces had drifted the box out of square.
     local proxy_line wg_line amneziawg_line dnstunnel_line trusttunnel_line xhttp_line telegram_line admin_line
 
     if [[ "$proxy_enabled" == "true" ]]; then
-        proxy_line="  ${CYAN}│${NC}  ${GREEN}1${NC}   proxy        Reality, Trojan, Hysteria2 (v2ray apps)       ${CYAN}│${NC}"
+        proxy_line=$(profile_row 1 proxy "Reality, Trojan, Hysteria2 (v2ray apps)" "$GREEN")
     else
-        proxy_line="  ${CYAN}│${NC}  ${DIM}1   proxy        Reality, Trojan, Hysteria2 (disabled)${NC}        ${CYAN}│${NC}"
+        proxy_line=$(profile_row 1 proxy "Reality, Trojan, Hysteria2 (disabled)" "$DIM")
     fi
 
     if [[ "$wg_enabled" == "true" ]]; then
-        wg_line="  ${CYAN}│${NC}  ${GREEN}2${NC}   wireguard    WireGuard VPN + WebSocket tunnel              ${CYAN}│${NC}"
+        wg_line=$(profile_row 2 wireguard "WireGuard VPN + WebSocket tunnel" "$GREEN")
     else
-        wg_line="  ${CYAN}│${NC}  ${DIM}2   wireguard    WireGuard VPN (disabled)${NC}                      ${CYAN}│${NC}"
+        wg_line=$(profile_row 2 wireguard "WireGuard VPN (disabled)" "$DIM")
     fi
 
     if [[ "$amneziawg_enabled" == "true" ]]; then
-        amneziawg_line="  ${CYAN}│${NC}  ${GREEN}3${NC}   amneziawg    AmneziaWG (obfuscated WireGuard)               ${CYAN}│${NC}"
+        amneziawg_line=$(profile_row 3 amneziawg "AmneziaWG (obfuscated WireGuard)" "$GREEN")
     else
-        amneziawg_line="  ${CYAN}│${NC}  ${DIM}3   amneziawg    AmneziaWG (disabled)${NC}                         ${CYAN}│${NC}"
+        amneziawg_line=$(profile_row 3 amneziawg "AmneziaWG (disabled)" "$DIM")
     fi
 
     if [[ "$dnstunnel_enabled" == "true" ]]; then
-        dnstunnel_line="  ${CYAN}│${NC}  ${YELLOW}4${NC}   dnstunnel    DNS tunnels ${DIM}(dnstt + Slipstream)${NC}               ${CYAN}│${NC}"
+        dnstunnel_line=$(profile_row 4 dnstunnel "DNS tunnels (dnstt/Slipstream/MasterDNS/XDNS)" "$YELLOW")
     else
-        dnstunnel_line="  ${CYAN}│${NC}  ${DIM}4   dnstunnel    DNS tunnels (disabled)${NC}                       ${CYAN}│${NC}"
+        dnstunnel_line=$(profile_row 4 dnstunnel "DNS tunnels (disabled)" "$DIM")
     fi
 
     if [[ "$trusttunnel_enabled" == "true" ]]; then
-        trusttunnel_line="  ${CYAN}│${NC}  ${GREEN}5${NC}   trusttunnel  TrustTunnel VPN (HTTP/2 + QUIC)               ${CYAN}│${NC}"
+        trusttunnel_line=$(profile_row 5 trusttunnel "TrustTunnel VPN (HTTP/2 + QUIC)" "$GREEN")
     else
-        trusttunnel_line="  ${CYAN}│${NC}  ${DIM}5   trusttunnel  TrustTunnel VPN (disabled)${NC}                    ${CYAN}│${NC}"
+        trusttunnel_line=$(profile_row 5 trusttunnel "TrustTunnel VPN (disabled)" "$DIM")
     fi
 
     if [[ "$xhttp_enabled" == "true" ]]; then
-        xhttp_line="  ${CYAN}│${NC}  ${GREEN}6${NC}   xhttp        VLESS+XHTTP+Reality (Xray-core)               ${CYAN}│${NC}"
+        xhttp_line=$(profile_row 6 xhttp "VLESS+XHTTP+Reality (Xray-core)" "$GREEN")
     else
-        xhttp_line="  ${CYAN}│${NC}  ${DIM}6   xhttp        VLESS+XHTTP+Reality (disabled)${NC}                ${CYAN}│${NC}"
+        xhttp_line=$(profile_row 6 xhttp "VLESS+XHTTP+Reality (disabled)" "$DIM")
     fi
 
     if [[ "$telegram_enabled" == "true" ]]; then
-        telegram_line="  ${CYAN}│${NC}  ${GREEN}7${NC}   telegram     Telegram MTProxy (fake-TLS)                   ${CYAN}│${NC}"
+        telegram_line=$(profile_row 7 telegram "Telegram MTProxy (fake-TLS)" "$GREEN")
     else
-        telegram_line="  ${CYAN}│${NC}  ${DIM}7   telegram     Telegram MTProxy (disabled)${NC}                   ${CYAN}│${NC}"
+        telegram_line=$(profile_row 7 telegram "Telegram MTProxy (disabled)" "$DIM")
     fi
 
     if [[ "$admin_enabled" == "true" ]]; then
-        admin_line="  ${CYAN}│${NC}  ${GREEN}8${NC}   admin        Stats dashboard (port 9443)                   ${CYAN}│${NC}"
+        admin_line=$(profile_row 8 admin "Stats dashboard (port 9443)" "$GREEN")
     else
-        admin_line="  ${CYAN}│${NC}  ${DIM}8   admin        Stats dashboard (disabled)${NC}                   ${CYAN}│${NC}"
+        admin_line=$(profile_row 8 admin "Stats dashboard (disabled)" "$DIM")
     fi
 
     echo ""
@@ -1564,7 +1565,7 @@ cmd_restart() {
 cmd_status() {
     # Simple header without clearing terminal
     local singbox_ver wstunnel_ver conduit_ver branch
-    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.12")
+    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.18")
     wstunnel_ver=$(get_component_version "WSTUNNEL_VERSION" "10.6.1")
     conduit_ver=$(get_component_version "CONDUIT_VERSION" "1.2.0")
     branch=$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")

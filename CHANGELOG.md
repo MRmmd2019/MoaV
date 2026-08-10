@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - Unreleased
+
+A bug-fix release on top of 2.0.0. No protocol or config changes; keys, users
+and certificates are untouched. Upgrade with `moav update && moav build && moav start`.
+
+### Fixed
+- **The sing-box Grafana dashboard shows users again.** Every per-user panel read zero — Active Users, Total Users, an empty User Connections table — on servers logging tens of thousands of connections an hour. The exporter took per-user data from `metadata["inboundUser"]` on the Clash API, and that field does not exist: sing-box's `/connections` carries only network, type, host, source/destination and processPath, with no user identifier at any level. Removing the raw Docker socket in 2.0.0 was right, but nothing replaced the log tailer it had fed, so per-user attribution went silently to zero while the protocol panels kept working and masked it. The username appears only in sing-box's log, so sing-box now publishes its log to a file the exporter tails — the same socket-free mechanism the xray exporter already used. Existing installs self-heal on restart; no re-bootstrap. `moav logs sing-box` is unchanged, because the file is mirrored back to stdout (sing-box has one log stream and `log.output` otherwise silences the console).
+- **The MahsaNet donation link is now the official MoaV channel, and configurable.** It was hardcoded to a third party's Telegram in two separate places. `MAHSANET_ADS_URL` (ADVANCED section of `.env.example`) drives both the CLI and the admin dashboard, defaulting to `t.me/motherofallvpns`. Sent in the form MahsaNet requires — no scheme, no `@` — which their API does not enforce or normalise, so the wrong shape would have been accepted and kept silently.
+
+### Security
+- **The MahsaNet ads link can no longer carry credentials.** Any value containing `@` is refused in favour of the default. Every proxy share link is `user@host`, so one rule covers both MahsaNet's formatting requirement and the leak: an audit of live donated records found 30 whose ads link was a full share link, complete with UUIDs and trojan/hysteria2/obfs passwords, published to a third party. The code path that did it was already gone, but the field was one substitution from doing it again.
+
+- **`moav net` is documented.** It was dispatched but missing from `moav help`, so kernel network tuning was undiscoverable unless you read the source. CI now compares dispatch against help.
+- **The profile-selection box lines up again.** Its rows had drifted to 64, 65 and 66 columns inside a 65-column frame, so the right border visibly wobbled. Rows are padded from the label rather than by hand-counted spaces, and a test renders them to check.
+- **The `dnstunnel` profile no longer understates itself.** It was labelled "(dnstt + Slipstream)" while also starting MasterDNS and XDNS; all four are named.
+- **Community links are consistent everywhere.** They were listed in three places that had drifted — the Ctrl+C goodbye, the `moav help` footer (which never gained the GitHub link) and the interactive-menu exit (which had no links at all). All three now print from one function. The startup banner leads with the website.
+- **IPv6 profile names are distinguishable.** The marker was a `-IPv6` suffix on an already-long name, so clients that truncate showed two identical-looking rows for every dual-stack protocol. It now precedes the username, which is the part a reader can afford to lose. Bundle contents are unaffected: `README.html` is keyed on fixed filenames and protocol slugs, never on the label.
+
+### Changed
+- **sing-box 1.13.12 → 1.13.18.** Chiefly for 1.13.16, which stops the AnyTLS client from uploading metadata the open-source server never used and that vendors were reportedly using to profile and discriminate against users. The version turned out to be pinned in **nine** places, not the five that were documented — `Dockerfile.bootstrap` and `Dockerfile.client` embed it too, so a partial bump would have shipped a bootstrap rendering configs with a different binary than the server runs. CI now asserts every pin agrees.
+
+### Added
+- **sing-box dashboard: Connections by User and Traffic by Protocol panels.** Per-protocol traffic comes from the Clash API's per-connection byte counters, accumulated as deltas per connection id so closing connections do not reset the series.
+
+### Notes
+- Per-user *traffic* (as opposed to connections) is still unavailable for sing-box. It needs either sing-box's V2Ray stats API or a one-line upstream addition to the Clash API, which already reports byte counters and tracks the username internally without emitting it.
+
 ## [2.0.0] - 2026-08-09
 
 The same protocols, rebuilt underneath: a security and correctness pass, a much
