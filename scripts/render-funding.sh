@@ -55,7 +55,7 @@ head = {"en": ("Platform", "Link", "Coin", "Address"),
         "fa": ("پلتفرم", "لینک", "ارز", "نشانی")}[lang]
 notes = notes_en if lang == "en" else notes_fa
 
-plat, crypto = [], []
+plat, crypto, footnotes = [], [], []
 for line in open(funding, encoding="utf-8"):
     line = line.split("#", 1)[0].strip()
     m = re.match(r"^([A-Za-z_]+)\s*:\s*(.+)$", line)
@@ -72,15 +72,24 @@ for line in open(funding, encoding="utf-8"):
         nice = coins.get(key.upper(), key)
         label = f"{nice} ({key.upper()})" if nice.upper() != key.upper() else nice
         note = notes.get(key.upper())
-        cell = f"`{val}`"
-        crypto.append(f"| **{label}** | {cell} |" if not note
-                      else f"| **{label}**<br>{note} | {cell} |")
+        marker = ""
+        if note:
+            # Superscript numerals, not asterisks: a line starting with "*"
+            # renders as a bullet and "**" as broken bold.
+            sup = "¹²³⁴⁵⁶⁷⁸⁹"[len(footnotes)]
+            marker = sup
+            footnotes.append(f"{sup} **{label}** — {note}")
+        crypto.append(f"| **{label}**{marker} | `{val}` |")
 
 out = []
 if plat:
     out += [f"| {head[0]} | {head[1]} |", "|---|---|", *plat, ""]
 if crypto:
     out += [f"| {head[2]} | {head[3]} |", "|---|---|", *crypto]
+    # Notes live under the table: inline they wrap inside a narrow first column
+    # and blow the row height up to a dozen lines on GitHub.
+    if footnotes:
+        out += [""] + footnotes
 print("\n".join(out).rstrip())
 PY
 }

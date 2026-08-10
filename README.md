@@ -181,7 +181,7 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 | Hysteria2 | 443/udp | ★★★★☆ | ★★★★★ | ✅ | Fast, works when TCP throttled |
 | Trojan | 8443/tcp | ★★★★☆ | ★★★★☆ | ✅ | Backup, uses your domain |
 | AnyTLS | 8445/tcp | ★★★★★ | ★★★★☆ | ⬜ | Defeats TLS-in-TLS fingerprinting, uses your domain |
-| Shadowsocks-2022 | 8388/tcp+udp | ★★★★☆ | ★★★★☆ | ⬜ | AEAD-2022 anti-probing; Outline-app compatible |
+| Shadowsocks-2022 | 8388/tcp+udp | ★★★★☆ | ★★★★☆ | ✅ | AEAD-2022 anti-probing; Outline-app compatible |
 | CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ✅ | When server IP is blocked |
 | TrustTunnel | 4443/tcp+udp | ★★★★★ | ★★★★☆ | ✅ | HTTP/2 & QUIC, looks like HTTPS |
 | WireGuard (Direct) | 51820/udp | ★★★☆☆ | ★★★★★ | ✅ | Full VPN, simple setup |
@@ -194,9 +194,13 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 | GooseRelay | 8444/tcp | ★★★★★ | ★★☆☆☆ | ⬜ | SOCKS5 via Google Apps Script, fronted as google.com, MahsaNG v16 |
 | Telegram MTProxy | 993/tcp | ★★★★☆ | ★★★☆☆ | ✅ | Fake-TLS V2, direct Telegram access |
 | XHTTP (VLESS+XHTTP+Reality) | 2096/tcp | ★★★★★ | ★★★★☆ | ✅ | Xray-core, no domain needed |
-| Psiphon Conduit | — | — | — | ⬜ | Donate bandwidth to Psiphon (2M+ users) |
-| Tor Snowflake | — | — | — | ⬜ | Donate bandwidth to Tor network |
+| Psiphon Conduit | — | — | — | ✅ | Donate bandwidth to Psiphon (2M+ users) |
+| Tor Snowflake | — | — | — | ✅ | Donate bandwidth to Tor network |
 | MahsaNet | — | — | — | ⬜ | Donate VPN configs to Mahsa VPN (2M+ users) |
+
+**Default** = enabled in `.env.example`. Services still only run under their
+profile, so `moav start conduit` is what actually starts Conduit. MahsaNet is an
+action (`moav donate`), not a service.
 
 ## Using MoaV
 
@@ -391,9 +395,12 @@ capacity. Not salaries.
 | Coin | Address |
 |---|---|
 | **Bitcoin (BTC)** | `bc1qkfq3hg5kpzgy7muc8m3pmh6zemhv820a0ndqgg` |
-| **Ethereum (ETH)**<br>same address on every EVM chain (Arbitrum, Optimism, Base, Polygon, Gnosis…) and any ERC-20 | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
+| **Ethereum (ETH)**¹ | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
 | **Zcash (ZEC)** | `u1pclheucppc87qlffh9m8wjfw87w2nka40w9nxjuqnyppj0kx9xp7z9rg6wx556662y5f8dtfyeynmm2lnz5aqvaqzmnpajlq0mnmkntdqzqqegk8lwv09cnudf3ttzm3878p3030j3lwupj257rmmv9p3ea32hgwsuf3jdh8ycv7q587` |
-| **Tron**<br>TRX and TRC-20 only — not interchangeable with the EVM address | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
+| **Tron**² | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
+
+¹ **Ethereum (ETH)** — same address on every EVM chain (Arbitrum, Optimism, Base, Polygon, Gnosis…) and any ERC-20
+² **Tron** — TRX and TRC-20 only — not interchangeable with the EVM address
 <!-- FUNDING:END -->
 
 Addresses are generated from [`.github/FUNDING.yml`](.github/FUNDING.yml), the single
