@@ -250,19 +250,19 @@ fi
 
 # Generate IPv6 links if available
 if [[ -n "$SERVER_IPV6" ]]; then
-    REALITY_LINK_V6=$(singbox_reality_link "${USERNAME}-IPv6" "[${SERVER_IPV6}]")
+    REALITY_LINK_V6=$(singbox_reality_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
     echo "$REALITY_LINK_V6" > "$OUTPUT_DIR/reality-ipv6.txt"
 
     if [[ -n "${DOMAIN:-}" ]]; then
-        TROJAN_LINK_V6=$(singbox_trojan_link "${USERNAME}-IPv6" "[${SERVER_IPV6}]")
+        TROJAN_LINK_V6=$(singbox_trojan_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
         echo "$TROJAN_LINK_V6" > "$OUTPUT_DIR/trojan-ipv6.txt"
 
         if [[ "${ENABLE_ANYTLS:-false}" == "true" ]]; then
-            ANYTLS_LINK_V6=$(singbox_anytls_link "${USERNAME}-IPv6" "[${SERVER_IPV6}]")
+            ANYTLS_LINK_V6=$(singbox_anytls_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
             echo "$ANYTLS_LINK_V6" > "$OUTPUT_DIR/anytls-ipv6.txt"
         fi
 
-        HY2_LINK_V6=$(singbox_hysteria2_link "${USERNAME}-IPv6" "[${SERVER_IPV6}]")
+        HY2_LINK_V6=$(singbox_hysteria2_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
         echo "$HY2_LINK_V6" > "$OUTPUT_DIR/hysteria2-ipv6.txt"
     fi
 
@@ -368,7 +368,7 @@ EOF
         fi
 
         if [[ -n "$SERVER_IPV6" ]]; then
-            SS_LINK_V6=$(singbox_ss_link "${USERNAME}-IPv6" "[${SERVER_IPV6}]" "$SS_USERINFO" "$SS_PORT_LOCAL")
+            SS_LINK_V6=$(singbox_ss_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]" "$SS_USERINFO" "$SS_PORT_LOCAL")
             echo "$SS_LINK_V6" > "$OUTPUT_DIR/shadowsocks-ipv6.txt"
             command -v qrencode &>/dev/null && qrencode -o "$OUTPUT_DIR/shadowsocks-ipv6-qr.png" -s 6 "$SS_LINK_V6" 2>/dev/null || true
         fi

@@ -18,7 +18,7 @@ get_running_services() {
 show_versions() {
     local singbox_ver wstunnel_ver conduit_ver snowflake_ver slipstream_ver telemt_ver
     local trusttunnel_ver trusttunnel_client_ver awgtools_ver xray_ver dnstt_ver
-    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.12")
+    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.18")
     wstunnel_ver=$(get_component_version "WSTUNNEL_VERSION" "10.6.1")
     conduit_ver=$(get_component_version "CONDUIT_VERSION" "1.2.0")
     snowflake_ver=$(get_component_version "SNOWFLAKE_VERSION" "latest")
@@ -305,55 +305,56 @@ select_profiles() {
         [[ "$enable_admin" != "true" ]] && admin_enabled=false
     fi
 
-    # Build menu lines with disabled indicators
+    # Build menu lines with disabled indicators. profile_row pads from the
+    # label; hand-counted spaces had drifted the box out of square.
     local proxy_line wg_line amneziawg_line dnstunnel_line trusttunnel_line xhttp_line telegram_line admin_line
 
     if [[ "$proxy_enabled" == "true" ]]; then
-        proxy_line="  ${CYAN}│${NC}  ${GREEN}1${NC}   proxy        Reality, Trojan, Hysteria2 (v2ray apps)       ${CYAN}│${NC}"
+        proxy_line=$(profile_row 1 proxy "Reality, Trojan, Hysteria2 (v2ray apps)" "$GREEN")
     else
-        proxy_line="  ${CYAN}│${NC}  ${DIM}1   proxy        Reality, Trojan, Hysteria2 (disabled)${NC}        ${CYAN}│${NC}"
+        proxy_line=$(profile_row 1 proxy "Reality, Trojan, Hysteria2 (disabled)" "$DIM")
     fi
 
     if [[ "$wg_enabled" == "true" ]]; then
-        wg_line="  ${CYAN}│${NC}  ${GREEN}2${NC}   wireguard    WireGuard VPN + WebSocket tunnel              ${CYAN}│${NC}"
+        wg_line=$(profile_row 2 wireguard "WireGuard VPN + WebSocket tunnel" "$GREEN")
     else
-        wg_line="  ${CYAN}│${NC}  ${DIM}2   wireguard    WireGuard VPN (disabled)${NC}                      ${CYAN}│${NC}"
+        wg_line=$(profile_row 2 wireguard "WireGuard VPN (disabled)" "$DIM")
     fi
 
     if [[ "$amneziawg_enabled" == "true" ]]; then
-        amneziawg_line="  ${CYAN}│${NC}  ${GREEN}3${NC}   amneziawg    AmneziaWG (obfuscated WireGuard)               ${CYAN}│${NC}"
+        amneziawg_line=$(profile_row 3 amneziawg "AmneziaWG (obfuscated WireGuard)" "$GREEN")
     else
-        amneziawg_line="  ${CYAN}│${NC}  ${DIM}3   amneziawg    AmneziaWG (disabled)${NC}                         ${CYAN}│${NC}"
+        amneziawg_line=$(profile_row 3 amneziawg "AmneziaWG (disabled)" "$DIM")
     fi
 
     if [[ "$dnstunnel_enabled" == "true" ]]; then
-        dnstunnel_line="  ${CYAN}│${NC}  ${YELLOW}4${NC}   dnstunnel    DNS tunnels ${DIM}(dnstt + Slipstream)${NC}               ${CYAN}│${NC}"
+        dnstunnel_line=$(profile_row 4 dnstunnel "DNS tunnels (dnstt/Slipstream/MasterDNS/XDNS)" "$YELLOW")
     else
-        dnstunnel_line="  ${CYAN}│${NC}  ${DIM}4   dnstunnel    DNS tunnels (disabled)${NC}                       ${CYAN}│${NC}"
+        dnstunnel_line=$(profile_row 4 dnstunnel "DNS tunnels (disabled)" "$DIM")
     fi
 
     if [[ "$trusttunnel_enabled" == "true" ]]; then
-        trusttunnel_line="  ${CYAN}│${NC}  ${GREEN}5${NC}   trusttunnel  TrustTunnel VPN (HTTP/2 + QUIC)               ${CYAN}│${NC}"
+        trusttunnel_line=$(profile_row 5 trusttunnel "TrustTunnel VPN (HTTP/2 + QUIC)" "$GREEN")
     else
-        trusttunnel_line="  ${CYAN}│${NC}  ${DIM}5   trusttunnel  TrustTunnel VPN (disabled)${NC}                    ${CYAN}│${NC}"
+        trusttunnel_line=$(profile_row 5 trusttunnel "TrustTunnel VPN (disabled)" "$DIM")
     fi
 
     if [[ "$xhttp_enabled" == "true" ]]; then
-        xhttp_line="  ${CYAN}│${NC}  ${GREEN}6${NC}   xhttp        VLESS+XHTTP+Reality (Xray-core)               ${CYAN}│${NC}"
+        xhttp_line=$(profile_row 6 xhttp "VLESS+XHTTP+Reality (Xray-core)" "$GREEN")
     else
-        xhttp_line="  ${CYAN}│${NC}  ${DIM}6   xhttp        VLESS+XHTTP+Reality (disabled)${NC}                ${CYAN}│${NC}"
+        xhttp_line=$(profile_row 6 xhttp "VLESS+XHTTP+Reality (disabled)" "$DIM")
     fi
 
     if [[ "$telegram_enabled" == "true" ]]; then
-        telegram_line="  ${CYAN}│${NC}  ${GREEN}7${NC}   telegram     Telegram MTProxy (fake-TLS)                   ${CYAN}│${NC}"
+        telegram_line=$(profile_row 7 telegram "Telegram MTProxy (fake-TLS)" "$GREEN")
     else
-        telegram_line="  ${CYAN}│${NC}  ${DIM}7   telegram     Telegram MTProxy (disabled)${NC}                   ${CYAN}│${NC}"
+        telegram_line=$(profile_row 7 telegram "Telegram MTProxy (disabled)" "$DIM")
     fi
 
     if [[ "$admin_enabled" == "true" ]]; then
-        admin_line="  ${CYAN}│${NC}  ${GREEN}8${NC}   admin        Stats dashboard (port 9443)                   ${CYAN}│${NC}"
+        admin_line=$(profile_row 8 admin "Stats dashboard (port 9443)" "$GREEN")
     else
-        admin_line="  ${CYAN}│${NC}  ${DIM}8   admin        Stats dashboard (disabled)${NC}                   ${CYAN}│${NC}"
+        admin_line=$(profile_row 8 admin "Stats dashboard (disabled)" "$DIM")
     fi
 
     echo ""
@@ -1051,10 +1052,51 @@ restart_services() {
     success "Services restarted!"
 }
 
-# Format Docker timestamps from ISO to readable format
+# Readable timestamps, plus a distinct colour per service name.
+#
 # 2026-02-04T20:17:10.426340440Z -> 2026-02-04 20:17:10
+#
+# compose picks service colours from a palette of about seven, so with ~29
+# services several share one -- sing-box and conduit both came out cyan, which
+# is exactly when you need to tell them apart. compose now emits plain text and
+# we colour the prefix from a 256-colour palette.
+#
+# Assigned in first-seen order rather than by hashing the name: hashing keeps a
+# colour stable between runs but collides (conduit and xray landed on the same
+# one), and distinctness is the whole point.
 format_log_timestamps() {
-    sed -u 's/\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)T\([0-9]\{2\}:[0-9]\{2\}:[0-9]\{2\}\)\.[0-9]*Z/\1 \2/g'
+    awk '
+    BEGIN {
+        # 36 entries, all readable on a dark terminal. `moav start all` runs 30
+        # containers, so a smaller palette wraps and collides -- a 24-entry one
+        # put conduit, wireguard and amneziawg on the same colour.
+        n = split("39,208,45,213,220,51,205,118,141,214,87,199,154,111,203,229," \
+                  "82,165,178,123,197,120,171,228,209,80,105,191,168,75,186,135," \
+                  "115,216,99,156", pal, ",")
+        next_c = 0
+    }
+    function svc_color(name) {
+        if (!(name in col)) { col[name] = pal[(next_c % n) + 1]; next_c++ }
+        return col[name]
+    }
+    {
+        line = $0
+        if (match(line, /[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]*Z/)) {
+            ts = substr(line, RSTART, RLENGTH)
+            clean = substr(ts, 1, 10) " " substr(ts, 12, 8)
+            line = substr(line, 1, RSTART - 1) clean substr(line, RSTART + RLENGTH)
+        }
+        # compose emits "service  | message" (or "service-1  | message").
+        if (match(line, /^[a-zA-Z0-9._-]+ *\| /)) {
+            pfx = substr(line, 1, RLENGTH)
+            rest = substr(line, RLENGTH + 1)
+            name = pfx; sub(/ *\| $/, "", name)
+            printf "\033[38;5;%dm%s\033[0m%s\n", svc_color(name), pfx, rest
+        } else {
+            print line
+        }
+        fflush()
+    }'
 }
 
 view_logs() {
@@ -1564,7 +1606,7 @@ cmd_restart() {
 cmd_status() {
     # Simple header without clearing terminal
     local singbox_ver wstunnel_ver conduit_ver branch
-    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.12")
+    singbox_ver=$(get_component_version "SINGBOX_VERSION" "1.13.18")
     wstunnel_ver=$(get_component_version "WSTUNNEL_VERSION" "10.6.1")
     conduit_ver=$(get_component_version "CONDUIT_VERSION" "1.2.0")
     branch=$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
@@ -1656,8 +1698,10 @@ cmd_logs() {
         esac
     done
 
-    # Build docker compose command
-    local cmd="docker compose --ansi always"
+    # --ansi never: compose would otherwise colour the service prefix from a
+    # ~7-colour palette that repeats across ~29 services. format_log_timestamps
+    # colours it instead. Container output keeps its own ANSI either way.
+    local cmd="docker compose --ansi never"
     if [[ -z "$services_to_log" && -z "$profile_flags" ]]; then
         cmd="$cmd --profile all"
     elif [[ -n "$profile_flags" ]]; then

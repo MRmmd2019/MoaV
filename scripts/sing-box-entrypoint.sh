@@ -75,6 +75,76 @@ sed -i 's|/certs/|/tmp/certs/|g' "$RUNTIME_CONFIG"
 # config still points the cache at /state (no re-bootstrap needed).
 sed -i 's|/state/sing-box-cache.db|/var/log/sing-box/sing-box-cache.db|g' "$RUNTIME_CONFIG"
 
+# Publish the log to a file for the exporter to tail: usernames appear only in
+# the log, never in the Clash API. Rewritten on the runtime copy so existing
+# installs pick it up on restart without a re-bootstrap.
+ACCESS_LOG="/var/log/sing-box/sing-box.log"
+ACCESS_LOG_MAX_BYTES="${SINGBOX_LOG_MAX_BYTES:-33554432}"   # 32 MiB
+
+if [ -d /var/log/sing-box ] && ! grep -q '"output"' "$RUNTIME_CONFIG"; then
+    _cand="/tmp/sing-box-config.withlog.json"
+    sed 's|"log"[[:space:]]*:[[:space:]]*{|"log": {"output": "'"$ACCESS_LOG"'",|' \
+        "$RUNTIME_CONFIG" > "$_cand" 2>/dev/null || true
+    # A bad injection must cost metrics, never boot.
+    if [ -s "$_cand" ] && sing-box check -c "$_cand" >/dev/null 2>&1; then
+        mv -f "$_cand" "$RUNTIME_CONFIG"
+
+        # moav-owned so sing-box can append; 644 because the exporter is
+        # cap_drop ALL and reads it only through the world bits.
+        : >> "$ACCESS_LOG" 2>/dev/null || true
+        chown moav:moav "$ACCESS_LOG" 2>/dev/null || true
+        chmod 644 "$ACCESS_LOG" 2>/dev/null || true
+
+        # log.output silences the console, so mirror it back or `moav logs` dies.
+        # It also strips colour (sing-box sets DisableColor for file output and
+        # it carries json:"-", so the config cannot re-enable it), so restore it
+        # here: the level, and the connection id, which is what lets you follow
+        # one connection across lines.
+        ( tail -n 0 -F "$ACCESS_LOG" 2>/dev/null | awk '
+        BEGIN {
+            lc["FATAL"]="1;31"; lc["PANIC"]="1;31"; lc["ERROR"]="31"
+            lc["WARN"]="33";    lc["INFO"]="36";    lc["DEBUG"]="90"
+            lc["TRACE"]="90"
+            n = split("41,227,83,155,117,214,213,85,120,209,147,80", pal, ",")
+        }
+        {
+            line = $0
+            if (match(line, /^[A-Z]+ /)) {
+                lvl = substr(line, 1, RLENGTH - 1)
+                if (lvl in lc)
+                    line = "\033[" lc[lvl] "m" lvl "\033[0m" substr(line, RLENGTH)
+            }
+            # "[3319605072 0ms]" -- colour the id by its own value, so a given
+            # connection keeps one colour for its whole life.
+            if (match(line, /\[[0-9]+ /)) {
+                id = substr(line, RSTART + 1, RLENGTH - 2)
+                line = substr(line, 1, RSTART) \
+                       "\033[38;5;" pal[(id % n) + 1] "m" id "\033[0m" \
+                       substr(line, RSTART + RLENGTH - 1)
+            }
+            print line
+            fflush()
+        }' ) &
+
+        # sing-box cannot rotate. Truncating in place is safe for its append
+        # handle and for the exporter's tail.
+        ( while sleep 30; do
+              [ -f "$ACCESS_LOG" ] || continue
+              chmod 644 "$ACCESS_LOG" 2>/dev/null || true
+              _sz=$(stat -c %s "$ACCESS_LOG" 2>/dev/null || echo 0)
+              if [ "${_sz:-0}" -gt "$ACCESS_LOG_MAX_BYTES" ]; then
+                  : > "$ACCESS_LOG"
+                  echo "[sing-box] log exceeded ${ACCESS_LOG_MAX_BYTES}B - truncated"
+              fi
+          done ) &
+
+        echo "[sing-box] Logging to $ACCESS_LOG (mirrored to stdout) for per-user metrics"
+    else
+        rm -f "$_cand" 2>/dev/null || true
+        echo "[sing-box] WARN: could not enable file logging - per-user Grafana panels will stay empty"
+    fi
+fi
+
 # Run sing-box as non-root
 echo "[sing-box] Starting proxy server..."
 exec setpriv --reuid=moav --regid=moav --init-groups \

@@ -2,8 +2,10 @@
 """
 Sing-box User Prometheus Exporter
 
-Parses sing-box container logs to extract user connection metrics.
-Polls Clash API for source IPs to provide GeoIP country metrics.
+Two sources, because neither alone is enough:
+  * Clash API /connections -- protocol, byte counters, source IPs. No user field.
+  * sing-box's log -- the only place the username appears. Published to a file by
+    the entrypoint so this needs no Docker socket (same as the xray exporter).
 """
 
 import re
@@ -30,6 +32,12 @@ protocol_connections = defaultdict(int)  # protocol -> total connections
 country_connections = defaultdict(int)  # country -> total connections
 user_country = {}  # user -> last seen country code
 
+# Clash reports byte counters per OPEN connection, so accumulate deltas per
+# connection id -- summing raw values would re-count everything still open.
+protocol_bytes_up = defaultdict(int)    # protocol -> cumulative upload bytes
+protocol_bytes_down = defaultdict(int)  # protocol -> cumulative download bytes
+conn_bytes_seen = {}  # connection id -> (upload, download) already accounted for
+
 # Lock for thread safety
 metrics_lock = threading.Lock()
 
@@ -51,19 +59,8 @@ PROTOCOL_PATTERN = re.compile(r'inbound/(\w+)\[')
 # Active window in seconds (5 minutes)
 ACTIVE_WINDOW = 300
 
-# GeoIP poll interval (seconds)
-# Poll interval for the Clash API. This drives BOTH the GeoIP country stats and
-# (since the docker-logs tailer was removed) per-user connection counting.
-#
-# FIDELITY TRADEOFF, stated plainly: the old log tailer saw every "inbound
-# connection" event. A poller only sees connections that are still open when it
-# looks, so a connection that opens and closes entirely within one interval is
-# not counted. Long-lived sessions -- which is what the user-activity panels are
-# actually for -- are unaffected, and `user_last_seen` / active-user counts still
-# work. Short bursty connections will read low.
-#
-# 15s halves the window versus the previous 30s at modest extra API cost. Tune
-# with SINGBOX_POLL_INTERVAL if a deployment wants tighter or cheaper sampling.
+# Clash API poll interval: country stats, protocol counts and traffic. Per-user
+# counting comes from the log tailer, not from here.
 GEOIP_POLL_INTERVAL = int(os.environ.get("SINGBOX_POLL_INTERVAL", "15"))
 
 
@@ -104,7 +101,11 @@ def load_clash_secret():
 
 
 def parse_log_line(line: str) -> bool:
-    """Parse a log line and update metrics. Returns True if parsed."""
+    """Count one per-user connection event. True if the line named a user.
+
+    Does not touch protocol_connections: the Clash poller owns that series with a
+    richer label, and counting both would double-count the same events.
+    """
     user_match = USER_PATTERN.search(line)
     if not user_match:
         return False
@@ -112,16 +113,68 @@ def parse_log_line(line: str) -> bool:
     username = user_match.group(1)
     now = time.time()
 
-    # Extract protocol if present
-    protocol_match = PROTOCOL_PATTERN.search(line)
-    protocol = protocol_match.group(1) if protocol_match else "unknown"
-
     with metrics_lock:
         user_connections[username] += 1
         user_last_seen[username] = now
-        protocol_connections[protocol] += 1
 
     return True
+
+
+def tail_singbox_log():
+    """Tail the sing-box log the entrypoint publishes. Reattaches on truncation,
+    since the entrypoint caps the file."""
+    path = os.environ.get("SINGBOX_LOG_PATH", "/var/log/sing-box/sing-box.log")
+    print(f"Starting sing-box log tailer: {path}")
+
+    fh = None
+    inode = None
+    warned = False
+    while True:
+        try:
+            if fh is None:
+                if not os.path.exists(path):
+                    if not warned:
+                        print(f"Log tailer: {path} not present yet - per-user "
+                              "metrics stay empty until sing-box publishes it")
+                        warned = True
+                    time.sleep(5)
+                    continue
+                fh = open(path, "r", errors="replace")
+                st = os.fstat(fh.fileno())
+                inode = st.st_ino
+                fh.seek(0, os.SEEK_END)   # only new events matter
+                warned = False
+                print(f"Log tailer attached to {path}")
+
+            line = fh.readline()
+            if line:
+                if "inbound connection" in line and parse_log_line(line):
+                    update_active_users()
+                continue
+
+            # No data: detect truncation (shrank) or replacement (new inode).
+            try:
+                st_path = os.stat(path)
+                if st_path.st_size < fh.tell() or st_path.st_ino != inode:
+                    print("sing-box log rotated/truncated - reattaching")
+                    fh.close()
+                    fh = None
+                    continue
+            except FileNotFoundError:
+                fh.close()
+                fh = None
+                continue
+            time.sleep(1)
+
+        except Exception as exc:
+            print(f"Log tailer error: {exc}")
+            if fh is not None:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+            fh = None
+            time.sleep(5)
 
 
 def update_active_users():
@@ -162,9 +215,13 @@ def poll_clash_connections():
             new_user_hits = defaultdict(int)
             new_proto_hits = defaultdict(int)
 
+            new_bytes_up = defaultdict(int)
+            new_bytes_down = defaultdict(int)
+
             for conn in connections:
                 meta = conn.get("metadata", {})
                 source_ip = meta.get("sourceIP", "")
+                # Always absent today; kept in case sing-box ever emits it.
                 user = meta.get("inboundUser", "")
                 conn_id = conn.get("id", "")
 
@@ -173,6 +230,21 @@ def poll_clash_connections():
                     seen_countries[country] += 1
                     if user:
                         seen_user_country[user] = country
+
+                proto_label = (meta.get("inboundName") or meta.get("type")
+                               or meta.get("network") or "unknown")
+                up = conn.get("upload") or 0
+                down = conn.get("download") or 0
+                if conn_id and isinstance(up, int) and isinstance(down, int):
+                    prev_up, prev_down = conn_bytes_seen.get(conn_id, (0, 0))
+                    # Counter going backwards means a reused id.
+                    d_up = up - prev_up if up >= prev_up else up
+                    d_down = down - prev_down if down >= prev_down else down
+                    if d_up:
+                        new_bytes_up[proto_label] += d_up
+                    if d_down:
+                        new_bytes_down[proto_label] += d_down
+                    conn_bytes_seen[conn_id] = (up, down)
 
                 # Count each connection ONCE, the first time we see it. The old
                 # log tailer counted "inbound connection" events; a polled
@@ -184,12 +256,12 @@ def poll_clash_connections():
                         counted_connection_ids.add(conn_id)
                         if user:
                             new_user_hits[user] += 1
-                        proto = (meta.get("inboundName") or meta.get("type")
-                                 or meta.get("network") or "unknown")
-                        new_proto_hits[proto] += 1
+                        new_proto_hits[proto_label] += 1
 
-            # Forget IDs that are gone so the set cannot grow without bound.
+            # Forget IDs that are gone so neither map grows without bound.
             counted_connection_ids.intersection_update(current_ids)
+            for gone in [cid for cid in conn_bytes_seen if cid not in current_ids]:
+                del conn_bytes_seen[gone]
 
             now = time.time()
             with metrics_lock:
@@ -201,6 +273,10 @@ def poll_clash_connections():
                     user_last_seen[user] = now
                 for proto, hits in new_proto_hits.items():
                     protocol_connections[proto] += hits
+                for proto, n in new_bytes_up.items():
+                    protocol_bytes_up[proto] += n
+                for proto, n in new_bytes_down.items():
+                    protocol_bytes_down[proto] += n
                 if new_user_hits:
                     update_active_users()
 
@@ -275,6 +351,17 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 for protocol, count in sorted(protocol_connections.items()):
                     output.append(f'singbox_protocol_connections{{protocol="{protocol}"}} {count}')
 
+                # Deltas accumulated in the poller, so these survive closes.
+                output.append('# HELP singbox_protocol_bytes_up Cumulative upload bytes per protocol')
+                output.append('# TYPE singbox_protocol_bytes_up counter')
+                for protocol, n in sorted(protocol_bytes_up.items()):
+                    output.append(f'singbox_protocol_bytes_up{{protocol="{protocol}"}} {n}')
+
+                output.append('# HELP singbox_protocol_bytes_down Cumulative download bytes per protocol')
+                output.append('# TYPE singbox_protocol_bytes_down counter')
+                for protocol, n in sorted(protocol_bytes_down.items()):
+                    output.append(f'singbox_protocol_bytes_down{{protocol="{protocol}"}} {n}')
+
                 # Connections by country
                 output.append('# HELP singbox_connections_by_country Total connections by source country')
                 output.append('# TYPE singbox_connections_by_country counter')
@@ -316,10 +403,15 @@ def main():
     update_thread = threading.Thread(target=periodic_update, daemon=True)
     update_thread.start()
 
-    # Start GeoIP poller (uses Clash API for source IPs)
+    # Start GeoIP poller (Clash API: source IPs, protocol counts, traffic)
     geoip_thread = threading.Thread(target=poll_clash_connections, daemon=True)
     geoip_thread.start()
-    print("GeoIP: polling Clash API for source IPs every 30s")
+    print(f"Clash API: polling every {GEOIP_POLL_INTERVAL}s "
+          "for source IPs, protocol counts and per-protocol traffic")
+
+    # The only source of usernames.
+    tailer_thread = threading.Thread(target=tail_singbox_log, daemon=True)
+    tailer_thread.start()
 
     # Start HTTP server
     server = HTTPServer(('0.0.0.0', port), MetricsHandler)

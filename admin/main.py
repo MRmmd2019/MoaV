@@ -811,6 +811,27 @@ MAHSANET_API_KEY = os.environ.get("MAHSANET_API_KEY", "")
 MAHSANET_PROTOCOLS = os.environ.get("MAHSANET_PROTOCOLS", "reality hysteria2").split()
 MAHSANET_POOL = os.environ.get("MAHSANET_POOL", "mahsa")
 
+
+def _mahsanet_ads_url() -> str:
+    """The link MahsaNet shows next to a donated config.
+
+    Mirrors mahsanet_ads_url() in lib/donate.sh -- keep both in sync. MahsaNet
+    requires no scheme and no "@"; their API validates neither. Rejecting "@"
+    also stops a config URI being published as the ads link.
+    """
+    default = "t.me/motherofallvpns"
+    url = (os.environ.get("MAHSANET_ADS_URL") or "").strip() or default
+    for scheme in ("http://", "https://"):
+        if url.startswith(scheme):
+            url = url[len(scheme):]
+            break
+    if "@" in url or "://" in url:
+        return default
+    return url or default
+
+
+MAHSANET_ADS_URL = _mahsanet_ads_url()
+
 PROTOCOL_FILE_MAP = {
     "reality": "reality.txt",
     "hysteria2": "hysteria2.txt",
@@ -1011,7 +1032,7 @@ async def mahsanet_donate(request: Request, _: str = Depends(verify_auth)):
                 try:
                     resp = await mahsanet_api_call("POST", "", {
                         "url": link,
-                        "ads_url": "https://t.me/VahidOnline",
+                        "ads_url": MAHSANET_ADS_URL,
                         "pool": config_pool,
                         "use_mux": False,
                         "use_fragment": False,

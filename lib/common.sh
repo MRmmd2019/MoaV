@@ -60,11 +60,17 @@ version_gt() {
     return 1
 }
 
-# Footer-style community links, shown after `moav start` success and at the
-# end of `moav status`. GitHub is included for bug/issue reporting.
+# The project's links, defined once. Five surfaces print them in two shapes.
+MOAV_URL_SITE="https://moav.sh"
+MOAV_URL_DOCS="https://moav.sh/docs"
+MOAV_URL_TG="https://t.me/motherofallvpns"
+MOAV_URL_X="https://x.com/motherofallvpns"
+MOAV_URL_GH="https://github.com/MotherofallVPNs/MoaV"
+
+# Compact footer: after `moav start` and at the end of `moav status`.
 print_community_links() {
-    echo -e "  ${DIM}Community: https://t.me/motherofallvpns  |  https://x.com/motherofallvpns${NC}"
-    echo -e "  ${DIM}Issues/bugs: https://github.com/MotherofallVPNs/MoaV/issues${NC}"
+    echo -e "  ${DIM}Community: ${MOAV_URL_TG}  |  ${MOAV_URL_X}${NC}"
+    echo -e "  ${DIM}Issues/bugs: ${MOAV_URL_GH}/issues${NC}"
 }
 
 print_header() {
@@ -102,12 +108,33 @@ print_header() {
     echo "║                                                    ║"
     echo "║  Multi-protocol Circumvention Stack                ║"
     printf "║  %-49s ║\n" "$version_line"
-    printf "║  %-49s ║\n" "t.me/motherofallvpns"
+    printf "║  %-49s ║\n" "moav.sh  ·  t.me/motherofallvpns"
     if [[ -n "$update_line" ]]; then
         printf "║  ${NC}${YELLOW}%-49s${CYAN} ║\n" "$update_line"
     fi
     echo "╚════════════════════════════════════════════════════╝"
     echo -e "${NC}"
+}
+
+# One row of the profile-selection box, padded to the box width. Colour wraps
+# the padded field, never sits inside it -- ANSI occupies no columns.
+PROFILE_ROW_W=65
+profile_row() {
+    local num="$1" name="$2" desc="$3" color="${4:-}"
+    local text
+    text=$(printf '  %s   %-13s%s' "$num" "$name" "$desc")
+    printf '  %s│%s%s%-*s%s%s│%s' \
+        "$CYAN" "$NC" "$color" "$PROFILE_ROW_W" "$text" "$NC" "$CYAN" "$NC"
+}
+
+# Full list: `moav help` footer, TUI exit, Ctrl+C goodbye. $1 = line prefix.
+community_links() {
+    local p="${1:-  }"
+    echo -e "${p}Website:   ${MOAV_URL_SITE}"
+    echo -e "${p}Telegram:  ${MOAV_URL_TG}"
+    echo -e "${p}Twitter/X: ${MOAV_URL_X}"
+    echo -e "${p}GitHub:    ${MOAV_URL_GH}"
+    echo -e "${p}Docs:      ${MOAV_URL_DOCS}"
 }
 
 print_section() {
