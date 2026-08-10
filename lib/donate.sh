@@ -93,6 +93,45 @@ mahsanet_validate_link() {
     return 0
 }
 
+# The link MahsaNet shows alongside a donated config. Configurable so an
+# operator points it at their own channel instead of ours.
+#
+# The guard is not paranoia: an audit of live donated records found 30 whose
+# ads_url was a full share link -- UUIDs, trojan and hysteria2 passwords, obfs
+# passwords -- published to a third party. The bug that did it is gone, but this
+# field is one substitution away from carrying credentials again, so refuse
+# anything that looks like a proxy URI rather than trusting the caller.
+MAHSANET_ADS_URL_DEFAULT="https://t.me/motherofallvpns"
+mahsanet_ads_url() {
+    local url="$MAHSANET_ADS_URL_DEFAULT"
+    if [[ -f ".env" ]]; then
+        local env_url
+        env_url=$(get_env_val "MAHSANET_ADS_URL" ".env")
+        [[ -n "$env_url" ]] && url="$env_url"
+    fi
+
+    case "$url" in
+        vless://*|vmess://*|trojan://*|hysteria2://*|hy2://*|ss://*|ssr://*|tuic://*|anytls://*|wireguard://*)
+            warn "MAHSANET_ADS_URL looks like a proxy config URI — refusing to publish it; using the default"
+            url="$MAHSANET_ADS_URL_DEFAULT"
+            ;;
+        http://*|https://*|t.me/*|"")
+            ;;
+        *)
+            warn "MAHSANET_ADS_URL is not an http(s) or t.me link — using the default"
+            url="$MAHSANET_ADS_URL_DEFAULT"
+            ;;
+    esac
+
+    # A bare t.me/... is what people paste; MahsaNet wants a real URL.
+    case "$url" in
+        t.me/*) url="https://$url" ;;
+    esac
+
+    [[ -n "$url" ]] || url="$MAHSANET_ADS_URL_DEFAULT"
+    printf '%s' "$url"
+}
+
 mahsanet_protocol_to_file() {
     local protocol="$1"
     case "$protocol" in
@@ -457,8 +496,12 @@ cmd_donate_mahsanet_donate() {
         [[ -n "$env_pool" ]] && pool="$env_pool"
     fi
 
+    local ads_url
+    ads_url=$(mahsanet_ads_url)
+
     echo -e "  ${WHITE}Protocols:${NC} $protocols"
     echo -e "  ${WHITE}Pool:${NC} $pool"
+    echo -e "  ${WHITE}Ads link:${NC} $ads_url"
     echo ""
 
     # Ask for user count and prefix
@@ -580,8 +623,9 @@ cmd_donate_mahsanet_donate() {
             local json_data
             json_data=$(jq -n \
                 --arg url "$link" \
+                --arg ads "$ads_url" \
                 --arg pool "$config_pool" \
-                '{"url": $url, "ads_url": "https://t.me/VahidOnline", "pool": $pool, "use_mux": false, "use_fragment": false}')
+                '{"url": $url, "ads_url": $ads, "pool": $pool, "use_mux": false, "use_fragment": false}')
 
             local response
             response=$(mahsanet_api_call "POST" "" "$json_data" "$api_key")

@@ -811,6 +811,29 @@ MAHSANET_API_KEY = os.environ.get("MAHSANET_API_KEY", "")
 MAHSANET_PROTOCOLS = os.environ.get("MAHSANET_PROTOCOLS", "reality hysteria2").split()
 MAHSANET_POOL = os.environ.get("MAHSANET_POOL", "mahsa")
 
+
+def _mahsanet_ads_url() -> str:
+    """The link MahsaNet shows next to a donated config.
+
+    Mirrors mahsanet_ads_url() in lib/donate.sh, including the guard: an audit of
+    live donated records found 30 whose ads_url was a full share link with
+    credentials in it. Refuse to publish anything that looks like a proxy URI.
+    """
+    default = "https://t.me/motherofallvpns"
+    url = (os.environ.get("MAHSANET_ADS_URL") or "").strip() or default
+    proxy_schemes = ("vless://", "vmess://", "trojan://", "hysteria2://", "hy2://",
+                     "ss://", "ssr://", "tuic://", "anytls://", "wireguard://")
+    if url.startswith(proxy_schemes):
+        return default
+    if url.startswith("t.me/"):
+        return "https://" + url
+    if not url.startswith(("http://", "https://")):
+        return default
+    return url
+
+
+MAHSANET_ADS_URL = _mahsanet_ads_url()
+
 PROTOCOL_FILE_MAP = {
     "reality": "reality.txt",
     "hysteria2": "hysteria2.txt",
@@ -1011,7 +1034,7 @@ async def mahsanet_donate(request: Request, _: str = Depends(verify_auth)):
                 try:
                     resp = await mahsanet_api_call("POST", "", {
                         "url": link,
-                        "ads_url": "https://t.me/VahidOnline",
+                        "ads_url": MAHSANET_ADS_URL,
                         "pool": config_pool,
                         "use_mux": False,
                         "use_fragment": False,

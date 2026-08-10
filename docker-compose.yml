@@ -857,6 +857,7 @@ services:
       - MAHSANET_API_KEY=${MAHSANET_API_KEY:-}
       - MAHSANET_PROTOCOLS=${MAHSANET_PROTOCOLS:-reality hysteria2}
       - MAHSANET_POOL=${MAHSANET_POOL:-mahsa}
+      - MAHSANET_ADS_URL=${MAHSANET_ADS_URL:-https://t.me/motherofallvpns}
       - DOCKER_HOST=tcp://docker-proxy:2375
       - TZ=${TZ:-UTC}
     cap_drop:
@@ -1139,9 +1140,13 @@ services:
     networks:
       - moav_net
     volumes:
-      # Raw Docker socket removed: user attribution now comes from the Clash API.
+      # Raw Docker socket removed. The Clash API supplies protocol, traffic and
+      # source IPs, but it carries NO user field at any level -- so per-user
+      # attribution comes from sing-box's log, published to this volume by the
+      # sing-box entrypoint. Same mechanism as the xray exporter.
       - moav_geoip:/geoip:ro
       - moav_state:/state:ro
+      - moav_logs:/var/log/sing-box:ro
     environment:
       - CLASH_TOKEN=${CLASH_API_SECRET:-}
       - TZ=${TZ:-UTC}
