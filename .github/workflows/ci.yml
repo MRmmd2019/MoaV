@@ -77,6 +77,8 @@ jobs:
         run: bash tests/dns-tunnel-bundle-test.sh
       - name: user subscription vs bundle-blob distinction
         run: bash tests/user-subscription-test.sh
+      - name: bundle guide section visibility (all protocols)
+        run: bash tests/bundle-guide-sections-test.sh
       - name: admin TLS enforcement
         run: bash tests/admin-tls-test.sh
       - name: admin IP whitelist (CIDR) unit test
