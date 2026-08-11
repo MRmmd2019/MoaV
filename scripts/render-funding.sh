@@ -50,14 +50,10 @@ NO_SUFFIX = {"LN", "LIGHTNING", "LN_ADDRESS"}
 notes_en = {
     "ETH": "same address on every EVM chain (Arbitrum, Optimism, Base, Gnosis…) and any ERC20 (USDC, USDT, DAI…)",
     "TRON": "TRX and TRC-20 only — not interchangeable with the EVM address",
-    "LN": "BOLT12 offer — reusable, paste into a wallet that supports offers",
-    "LN_ADDRESS": "easier option: works like an email address in most Lightning wallets",
 }
 notes_fa = {
     "ETH": "همین نشانی روی همهٔ زنجیره‌های EVM کار می‌کند و برای هر توکن ERC-20",
     "TRON": "فقط TRX و TRC-20 — با نشانی EVM بالا یکی نیست",
-    "LN": "پیشنهاد BOLT12 — قابل استفادهٔ چندباره، در کیف‌پولی که offer را پشتیبانی می‌کند",
-    "LN_ADDRESS": "گزینهٔ ساده‌تر: در بیشتر کیف‌پول‌های لایتنینگ مثل نشانی ایمیل کار می‌کند",
 }
 head = {"en": ("Platform", "Link", "Coin", "Address"),
         "fa": ("پلتفرم", "لینک", "ارز", "نشانی")}[lang]

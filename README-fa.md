@@ -428,17 +428,13 @@ Raspberry Pi کافی است.
 | **Ethereum (ETH)** ¹ | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
 | **Monero (XMR)** | `8BmduJgZLok9xiaX8FboSWBBbzYAugqLxUts7eZNsF2x9QDhk3Ua7iwQufBBNB8VFzcMEMAE1Uo6PjQvAYNYHmXsBRbqQqG` |
 | **Zcash (ZEC)** | `u1pclheucppc87qlffh9m8wjfw87w2nka40w9nxjuqnyppj0kx9xp7z9rg6wx556662y5f8dtfyeynmm2lnz5aqvaqzmnpajlq0mnmkntdqzqqegk8lwv09cnudf3ttzm3878p3030j3lwupj257rmmv9p3ea32hgwsuf3jdh8ycv7q587` |
-| **Lightning** ² | `lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0q0zdgjjahpdv7tnd9vstumyrw43snsmfmlzv0pgkqrjkgy48tsne6qsr0k64d8rz4k394pmre2rgnmstdxqsfj0w4dsmq2ec73ssek5wzqtqqv7argu9ptk09h9vfvvvham5xnwe306zjw6lptxx0d2yfk5rlvznjwefmsrmmpu8qnkqmghe0v96c8qy3m3nqgm977ay8f5p6k2d2ll2j3knnc8c4s6haufe203jx4ufy8z25tsscqqseg8jzh2qykejnc9sp2v4qm3z2q` |
-| **Lightning Address** ³ | `shayan@bitrefill.me` |
-| **Tron** ⁴ | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
+| **Lightning** | `lno1zrxq8pjw7qjlm68mtp7e3yvxee4y5xrgjhhyf2fxhlphpckrvevh50u0q0zdgjjahpdv7tnd9vstumyrw43snsmfmlzv0pgkqrjkgy48tsne6qsr0k64d8rz4k394pmre2rgnmstdxqsfj0w4dsmq2ec73ssek5wzqtqqv7argu9ptk09h9vfvvvham5xnwe306zjw6lptxx0d2yfk5rlvznjwefmsrmmpu8qnkqmghe0v96c8qy3m3nqgm977ay8f5p6k2d2ll2j3knnc8c4s6haufe203jx4ufy8z25tsscqqseg8jzh2qykejnc9sp2v4qm3z2q` |
+| **Lightning Address** | `shayan@bitrefill.me` |
+| **Tron** ² | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
 
 ¹ **Ethereum (ETH)** — همین نشانی روی همهٔ زنجیره‌های EVM کار می‌کند و برای هر توکن ERC-20
 
-² **Lightning** — پیشنهاد BOLT12 — قابل استفادهٔ چندباره، در کیف‌پولی که offer را پشتیبانی می‌کند
-
-³ **Lightning Address** — گزینهٔ ساده‌تر: در بیشتر کیف‌پول‌های لایتنینگ مثل نشانی ایمیل کار می‌کند
-
-⁴ **Tron** — فقط TRX و TRC-20 — با نشانی EVM بالا یکی نیست
+² **Tron** — فقط TRX و TRC-20 — با نشانی EVM بالا یکی نیست
 <!-- FUNDING:END -->
 
 نشانی‌ها از [`.github/FUNDING.yml`](.github/FUNDING.yml) ساخته می‌شوند، که تنها مرجع است، پس
