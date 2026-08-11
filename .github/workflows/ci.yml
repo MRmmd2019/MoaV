@@ -73,6 +73,20 @@ jobs:
         run: bash tests/singbox-user-metrics-test.sh
       - name: CLI surface consistency (help/links/table/pins)
         run: bash tests/cli-surface-test.sh
+      - name: DNS-tunnel bundle completeness
+        run: bash tests/dns-tunnel-bundle-test.sh
+      - name: user subscription vs bundle-blob distinction
+        run: bash tests/user-subscription-test.sh
+      - name: bundle guide section visibility (all protocols)
+        run: bash tests/bundle-guide-sections-test.sh
+      - name: ENABLE_* gating in the user-add paths
+        run: bash tests/enable-flag-gating-test.sh
+      - name: ENABLE_CDN opt-in flag
+        run: bash tests/cdn-flag-test.sh
+      - name: llms.txt link hygiene (structure)
+        run: bash tests/llms-links-test.sh
+      - name: moav update rebuild prompts (baked-in changes)
+        run: bash tests/update-rebuild-test.sh
       - name: admin TLS enforcement
         run: bash tests/admin-tls-test.sh
       - name: admin IP whitelist (CIDR) unit test
@@ -83,6 +97,12 @@ jobs:
         run: python3 scripts/gen-protocol-docs.py --check
       - name: funding block drift gate (README from FUNDING.yml)
         run: bash scripts/render-funding.sh --check
+      - name: release footer generator
+        run: bash tests/release-footer-test.sh
+      - name: release footer links resolve (network)
+        run: bash scripts/render-release-footer.sh --check
+      - name: llms.txt links resolve (network)
+        run: LLMS_CHECK_URLS=1 bash tests/llms-links-test.sh
 
   go-test:
     name: go test dns-router

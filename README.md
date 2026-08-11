@@ -182,7 +182,7 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 | Trojan | 8443/tcp | ★★★★☆ | ★★★★☆ | ✅ | Backup, uses your domain |
 | AnyTLS | 8445/tcp | ★★★★★ | ★★★★☆ | ⬜ | Defeats TLS-in-TLS fingerprinting, uses your domain |
 | Shadowsocks-2022 | 8388/tcp+udp | ★★★★☆ | ★★★★☆ | ✅ | AEAD-2022 anti-probing; Outline-app compatible |
-| CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ✅ | When server IP is blocked |
+| CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ⬜ | When server IP is blocked; needs Cloudflare fronting first |
 | TrustTunnel | 4443/tcp+udp | ★★★★★ | ★★★★☆ | ✅ | HTTP/2 & QUIC, looks like HTTPS |
 | WireGuard (Direct) | 51820/udp | ★★★☆☆ | ★★★★★ | ✅ | Full VPN, simple setup |
 | AmneziaWG | 51821/udp | ★★★★★ | ★★★★☆ | ✅ | Obfuscated WireGuard, resists common DPI signatures |

@@ -190,7 +190,7 @@ moav help                 # نمایش همهٔ فرمان‌ها
 | Trojan | 8443/tcp | ★★★★☆ | ★★★★☆ | ✅ | پشتیبان، از دامنهٔ شما استفاده می‌کند |
 | AnyTLS | 8445/tcp | ★★★★★ | ★★★★☆ | ⬜ | مقاوم در برابر انگشت‌نگاری TLS-in-TLS، از دامنهٔ شما استفاده می‌کند |
 | Shadowsocks-2022 | 8388/tcp+udp | ★★★★☆ | ★★★★☆ | ✅ | AEAD-2022 ضد کاوش فعال؛ سازگار با اپ Outline |
-| CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ✅ | وقتی IP سرور بسته شده |
+| CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ⬜ | وقتی IP سرور بسته شده؛ نیاز به تنظیم Cloudflare دارد |
 | TrustTunnel | 4443/tcp+udp | ★★★★★ | ★★★★☆ | ✅ | HTTP/2 و QUIC، شبیه HTTPS دیده می‌شود |
 | WireGuard (Direct) | 51820/udp | ★★★☆☆ | ★★★★★ | ✅ | VPN کامل، راه‌اندازی ساده |
 | AmneziaWG | 51821/udp | ★★★★★ | ★★★★☆ | ✅ | WireGuard مبهم‌شده، مقاوم در برابر امضاهای رایج DPI |

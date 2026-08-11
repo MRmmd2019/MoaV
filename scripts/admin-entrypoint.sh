@@ -89,6 +89,35 @@ chmod -R ug+rwX,o+rX,o-w /project/configs/sing-box /project/configs/xray /projec
 CLASH_API_SECRET=$(grep '^CLASH_API_SECRET=' /state/keys/clash-api.env 2>/dev/null | tail -1 | cut -d= -f2- || true)
 export CLASH_API_SECRET
 
+# Load .env here rather than via compose `env_file`, which bakes every value into
+# the container's Config.Env where `docker inspect` reports it -- that exposed
+# ADMIN_PASSWORD, REALITY_PRIVATE_KEY and MAHSANET_API_KEY. Read as root (the
+# file is 0600) and exported only into this process, so the app sees the same
+# environment while the container config carries no secrets.
+#
+# Parsed literally, not sourced: values legitimately contain `|` (GOPROXY) and
+# other metacharacters that `source` would execute.
+if [ -r /project/.env ]; then
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        case "$_line" in ''|\#*) continue ;; esac
+        _key=${_line%%=*}
+        [ "$_key" = "$_line" ] && continue                  # no '=', not an assignment
+        case "$_key" in *[!A-Za-z0-9_]*) continue ;; esac    # skip malformed keys
+        # Compose `environment:` must still win, as it did when it overrode
+        # env_file; only fill in what is not already set.
+        eval "_isset=\${$_key+x}"
+        [ -n "${_isset:-}" ] && continue
+        _val=${_line#*=}
+        # Strip one layer of matching surrounding quotes (.env quotes some values).
+        case "$_val" in
+            \"*\") _val=${_val#\"}; _val=${_val%\"} ;;
+            \'*\') _val=${_val#\'}; _val=${_val%\'} ;;
+        esac
+        export "$_key=$_val"
+    done < /project/.env
+    unset _line _key _val _isset
+fi
+
 # Run the dashboard as non-root
 echo "[admin] Starting uvicorn server..."
 exec su-exec moav python main.py

@@ -58,6 +58,10 @@ if [[ -f .env && -r .env ]]; then
     set +a
 fi
 
+# Donate mode must be re-applied: the source above just reset every ENABLE_*
+# to the operator's .env values. See docs/devdocs/DONATE-MODE.md
+apply_donate_mode
+
 CONFIG_FILE="configs/sing-box/config.json"
 STATE_DIR="${STATE_DIR:-./state}"
 OUTPUT_DIR="outputs/bundles/$USERNAME"
@@ -227,11 +231,16 @@ REALITY_TARGET_HOST=$(echo "$REALITY_TARGET" | cut -d: -f1)
 # -----------------------------------------------------------------------------
 
 # Reality link (IPv4)
-REALITY_LINK=$(singbox_reality_link "$USERNAME" "$SERVER_IP")
-echo "$REALITY_LINK" > "$OUTPUT_DIR/reality.txt"
+# Gated like every other protocol: without this the host add path shipped
+# Reality/Trojan/Hysteria2 links even with their ENABLE_* set to false, so a
+# bundle advertised inbounds the operator had turned off.
+if [[ "${ENABLE_REALITY:-true}" == "true" ]]; then
+    REALITY_LINK=$(singbox_reality_link "$USERNAME" "$SERVER_IP")
+    echo "$REALITY_LINK" > "$OUTPUT_DIR/reality.txt"
+fi
 
-# Trojan link (IPv4) — only if domain is set (requires TLS cert)
-if [[ -n "${DOMAIN:-}" ]]; then
+# Trojan link (IPv4) — only if enabled and domain is set (requires TLS cert)
+if [[ "${ENABLE_TROJAN:-true}" == "true" ]] && [[ -n "${DOMAIN:-}" ]]; then
     TROJAN_LINK=$(singbox_trojan_link "$USERNAME" "$SERVER_IP")
     echo "$TROJAN_LINK" > "$OUTPUT_DIR/trojan.txt"
 fi
@@ -242,28 +251,34 @@ if [[ "${ENABLE_ANYTLS:-false}" == "true" ]] && [[ -n "${DOMAIN:-}" ]]; then
     echo "$ANYTLS_LINK" > "$OUTPUT_DIR/anytls.txt"
 fi
 
-# Hysteria2 link (IPv4) — only if domain is set (requires TLS cert)
-if [[ -n "${DOMAIN:-}" ]]; then
+# Hysteria2 link (IPv4) — only if enabled and domain is set (requires TLS cert)
+if [[ "${ENABLE_HYSTERIA2:-true}" == "true" ]] && [[ -n "${DOMAIN:-}" ]]; then
     HY2_LINK=$(singbox_hysteria2_link "$USERNAME" "$SERVER_IP")
     echo "$HY2_LINK" > "$OUTPUT_DIR/hysteria2.txt"
 fi
 
 # Generate IPv6 links if available
 if [[ -n "$SERVER_IPV6" ]]; then
-    REALITY_LINK_V6=$(singbox_reality_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
-    echo "$REALITY_LINK_V6" > "$OUTPUT_DIR/reality-ipv6.txt"
+    if [[ "${ENABLE_REALITY:-true}" == "true" ]]; then
+        REALITY_LINK_V6=$(singbox_reality_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
+        echo "$REALITY_LINK_V6" > "$OUTPUT_DIR/reality-ipv6.txt"
+    fi
 
     if [[ -n "${DOMAIN:-}" ]]; then
-        TROJAN_LINK_V6=$(singbox_trojan_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
-        echo "$TROJAN_LINK_V6" > "$OUTPUT_DIR/trojan-ipv6.txt"
+        if [[ "${ENABLE_TROJAN:-true}" == "true" ]]; then
+            TROJAN_LINK_V6=$(singbox_trojan_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
+            echo "$TROJAN_LINK_V6" > "$OUTPUT_DIR/trojan-ipv6.txt"
+        fi
 
         if [[ "${ENABLE_ANYTLS:-false}" == "true" ]]; then
             ANYTLS_LINK_V6=$(singbox_anytls_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
             echo "$ANYTLS_LINK_V6" > "$OUTPUT_DIR/anytls-ipv6.txt"
         fi
 
-        HY2_LINK_V6=$(singbox_hysteria2_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
-        echo "$HY2_LINK_V6" > "$OUTPUT_DIR/hysteria2-ipv6.txt"
+        if [[ "${ENABLE_HYSTERIA2:-true}" == "true" ]]; then
+            HY2_LINK_V6=$(singbox_hysteria2_link "IPv6-${USERNAME}" "[${SERVER_IPV6}]")
+            echo "$HY2_LINK_V6" > "$OUTPUT_DIR/hysteria2-ipv6.txt"
+        fi
     fi
 
     log_info "Generated IPv6 links (server: $SERVER_IPV6)"
@@ -271,28 +286,31 @@ fi
 
 # Generate QR codes
 if command -v qrencode &>/dev/null; then
-    qrencode -o "$OUTPUT_DIR/reality-qr.png" -s 6 "$REALITY_LINK" 2>/dev/null || true
+    [[ -n "${REALITY_LINK:-}" ]] && qrencode -o "$OUTPUT_DIR/reality-qr.png" -s 6 "$REALITY_LINK" 2>/dev/null || true
     [[ -n "${TROJAN_LINK:-}" ]] && qrencode -o "$OUTPUT_DIR/trojan-qr.png" -s 6 "$TROJAN_LINK" 2>/dev/null || true
     [[ -n "${ANYTLS_LINK:-}" ]] && qrencode -o "$OUTPUT_DIR/anytls-qr.png" -s 6 "$ANYTLS_LINK" 2>/dev/null || true
     [[ -n "${HY2_LINK:-}" ]] && qrencode -o "$OUTPUT_DIR/hysteria2-qr.png" -s 6 "$HY2_LINK" 2>/dev/null || true
 
     # IPv6 QR codes
     if [[ -n "$SERVER_IPV6" ]]; then
-        qrencode -o "$OUTPUT_DIR/reality-ipv6-qr.png" -s 6 "$REALITY_LINK_V6" 2>/dev/null || true
+        [[ -n "${REALITY_LINK_V6:-}" ]] && qrencode -o "$OUTPUT_DIR/reality-ipv6-qr.png" -s 6 "$REALITY_LINK_V6" 2>/dev/null || true
         [[ -n "${TROJAN_LINK_V6:-}" ]] && qrencode -o "$OUTPUT_DIR/trojan-ipv6-qr.png" -s 6 "$TROJAN_LINK_V6" 2>/dev/null || true
         [[ -n "${ANYTLS_LINK_V6:-}" ]] && qrencode -o "$OUTPUT_DIR/anytls-ipv6-qr.png" -s 6 "$ANYTLS_LINK_V6" 2>/dev/null || true
         [[ -n "${HY2_LINK_V6:-}" ]] && qrencode -o "$OUTPUT_DIR/hysteria2-ipv6-qr.png" -s 6 "$HY2_LINK_V6" 2>/dev/null || true
     fi
 fi
 
-# Generate CDN VLESS+WS link (if CDN configured)
+# Generate CDN VLESS+WS link (if CDN configured and, in donate mode, requested)
 # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
-CDN_DOMAIN="${CDN_DOMAIN:-$(get_env_val "CDN_DOMAIN" ".env" "")}"
-if [[ -z "$CDN_DOMAIN" ]]; then
-    CDN_SUBDOMAIN="${CDN_SUBDOMAIN:-$(get_env_val "CDN_SUBDOMAIN" ".env" "")}"
-    DOMAIN_FROM_ENV="${DOMAIN:-$(get_env_val "DOMAIN" ".env" "")}"
-    if [[ -n "$CDN_SUBDOMAIN" && -n "$DOMAIN_FROM_ENV" ]]; then
-        CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN_FROM_ENV}"
+CDN_DOMAIN=""
+if donate_allows cdn && cdn_enabled; then
+    CDN_DOMAIN="${CDN_DOMAIN:-$(get_env_val "CDN_DOMAIN" ".env" "")}"
+    if [[ -z "$CDN_DOMAIN" ]]; then
+        CDN_SUBDOMAIN="${CDN_SUBDOMAIN:-$(get_env_val "CDN_SUBDOMAIN" ".env" "")}"
+        DOMAIN_FROM_ENV="${DOMAIN:-$(get_env_val "DOMAIN" ".env" "")}"
+        if [[ -n "$CDN_SUBDOMAIN" && -n "$DOMAIN_FROM_ENV" ]]; then
+            CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN_FROM_ENV}"
+        fi
     fi
 fi
 # Load CDN WS path: .env → state file (bootstrap-generated) → fallback
@@ -377,9 +395,11 @@ EOF
     fi
 fi
 
-# Add user to TrustTunnel (if config exists)
+# Add user to TrustTunnel (if enabled and its config exists). The file-exists
+# check alone was not enough: credentials.toml survives disabling the protocol,
+# so bundles kept shipping TrustTunnel configs after ENABLE_TRUSTTUNNEL=false.
 TRUSTTUNNEL_CREDS="configs/trusttunnel/credentials.toml"
-if [[ -f "$TRUSTTUNNEL_CREDS" ]]; then
+if [[ "${ENABLE_TRUSTTUNNEL:-true}" == "true" ]] && [[ -f "$TRUSTTUNNEL_CREDS" ]]; then
     log_info "Adding $USERNAME to TrustTunnel..."
 
     # Check if user already exists in TrustTunnel
@@ -513,8 +533,10 @@ fi
 echo ""
 log_info "=== User '$USERNAME' created ==="
 echo ""
-echo "Reality Link:"
-echo "$REALITY_LINK"
+if [[ -n "${REALITY_LINK:-}" ]]; then
+    echo "Reality Link:"
+    echo "$REALITY_LINK"
+fi
 if [[ -n "${TROJAN_LINK:-}" ]]; then
     echo ""
     echo "Trojan Link:"
@@ -535,8 +557,10 @@ echo ""
 if [[ -n "${SERVER_IPV6:-}" ]]; then
     echo "=== IPv6 Links ==="
     echo ""
-    echo "Reality (IPv6):"
-    echo "$REALITY_LINK_V6"
+    if [[ -n "${REALITY_LINK_V6:-}" ]]; then
+        echo "Reality (IPv6):"
+        echo "$REALITY_LINK_V6"
+    fi
     if [[ -n "${TROJAN_LINK_V6:-}" ]]; then
         echo ""
         echo "Trojan (IPv6):"

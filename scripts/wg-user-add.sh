@@ -56,6 +56,10 @@ if [[ -f .env && -r .env ]]; then
     set +a
 fi
 
+# Donate mode must be re-applied: the source above just reset every ENABLE_*
+# to the operator's .env values. See docs/devdocs/DONATE-MODE.md
+apply_donate_mode
+
 WG_CONFIG_DIR="configs/wireguard"
 STATE_DIR="${STATE_DIR:-./state}"
 OUTPUT_DIR="outputs/bundles/$USERNAME"
@@ -213,9 +217,6 @@ if command -v qrencode &>/dev/null; then
             log_info "IPv6 QR image saved to: $OUTPUT_DIR/wireguard-ipv6-qr.png"
     fi
 
-    # wstunnel QR code
-    qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wgws).conf" 2>/dev/null && \
-        log_info "wstunnel QR image saved to: $OUTPUT_DIR/wireguard-wstunnel-qr.png"
 fi
 
 echo ""

@@ -133,7 +133,8 @@ show_usage() {
     echo "  user add --batch N [--prefix P]    Batch create (user01, user02...)"
     echo "  user revoke NAME      Revoke a user"
     echo "  user package NAME     Create zip bundle for existing user"
-    echo "  user base64 NAME      Base64 text-only bundle (for e2e / quick import)"
+    echo "  user sub NAME         Base64 subscription for phone apps (Streisand, v2rayNG...)"
+    echo "  user base64 NAME      Base64 ZIPPED bundle for moav-client e2e (not a subscription)"
     echo "  admin password        Reset admin dashboard password"
     echo ""
     echo "Donate & Test:"
@@ -163,6 +164,7 @@ show_usage() {
     echo "  moav start proxy admin               # Start specific profiles"
     echo "  moav user add alice bob --package     # Add users with zip bundles"
     echo "  moav user add --batch 10 --prefix vip # Batch create vip01..vip10"
+    echo "  moav user sub alice                  # Subscription blob to paste into a phone app"
     echo "  moav donate                          # Donate configs to MahsaNet"
     echo "  moav doctor dns                      # Check DNS configuration"
     echo "  moav export                          # Backup to moav-backup-TIMESTAMP.tar.gz"
@@ -408,14 +410,50 @@ update_env_var() {
 # files + subscription.txt; excludes the QR PNGs and README.html, which are the
 # bulk). Paste it into moav-client's e2e `bundle_b64` input, or use it for a
 # quick client import:  moav user base64 alice | pbcopy
+# Base64 V2Ray subscription for a user. Hands over the bundle's subscription.txt
+# rather than re-encoding, so there is no second format to keep in sync.
+cmd_user_subscription() {
+    local user="${1:-}"
+    if [[ -z "$user" ]]; then
+        error "Usage: moav user sub USERNAME"
+        {
+            echo ""
+            echo "Prints the base64 V2Ray subscription for a user -- paste into Streisand,"
+            echo "v2rayNG, NekoBox, Hiddify, or any client that accepts a subscription blob."
+            echo "For the whole bundle as a zipped blob (moav-client e2e): moav user base64"
+            echo ""
+            echo "Available users:"
+            ls -1 outputs/bundles/ 2>/dev/null || echo "  No users found"
+        } >&2
+        exit 1
+    fi
+    local sub="outputs/bundles/$user/subscription.txt"
+    if [[ ! -d "outputs/bundles/$user" ]]; then
+        error "User bundle not found: outputs/bundles/$user"
+        exit 1
+    fi
+    if [[ ! -s "$sub" ]]; then
+        error "No subscription.txt in $user's bundle."
+        error "  Regenerate it with: moav user package $user   (or: moav regenerate-users)"
+        exit 1
+    fi
+    # strip the trailing newline; some importers choke on a blank line
+    printf '%s\n' "$(tr -d '\r\n' < "$sub")"
+}
+
 cmd_user_base64() {
     local user="${1:-}"
     if [[ -z "$user" ]]; then
         error "Usage: moav user base64 USERNAME"
         {
             echo ""
-            echo "Emits base64 of a text-only bundle (configs + subscription.txt; no QR PNGs / README)."
-            echo "Paste into moav-client's e2e 'bundle_b64' input, or:  moav user base64 alice | pbcopy"
+            echo "Emits base64 of a zipped, text-only bundle (configs + subscription.txt;"
+            echo "no QR PNGs / README) for moav-client's e2e 'bundle_b64' input:"
+            echo "  moav user base64 alice | pbcopy"
+            echo ""
+            echo "This is NOT a client subscription. Phone apps (Streisand, v2rayNG,"
+            echo "NekoBox, Hiddify) will reject it -- it is a zip, not a config list."
+            echo "For those, use:  moav user sub USERNAME"
             echo ""
             echo "Available users:"
             ls -1 outputs/bundles/ 2>/dev/null || echo "  No users found"
@@ -440,7 +478,8 @@ cmd_user_base64() {
     b64="$(base64 < "$zip" | tr -d '\n')"
     size="$(wc -c < "$zip" | tr -d ' ')"
     rm -rf "$tmp"
-    echo "[moav] text-only bundle for '$user': ${size}B zipped -> ${#b64} base64 chars" >&2
+    echo "[moav] zipped text-only bundle for '$user' (for moav-client, not a client subscription):" >&2
+    echo "[moav]   ${size}B zipped -> ${#b64} base64 chars. Phone apps want: moav user sub $user" >&2
     printf '%s\n' "$b64"
 }
 

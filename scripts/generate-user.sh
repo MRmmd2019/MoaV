@@ -405,7 +405,9 @@ fi
 # Generate CDN VLESS+WS client config (if CDN_DOMAIN is set)
 # -----------------------------------------------------------------------------
 # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
-if [[ -z "${CDN_DOMAIN:-}" ]]; then
+if ! cdn_enabled; then
+    CDN_DOMAIN=""
+elif [[ -z "${CDN_DOMAIN:-}" ]]; then
     if [[ -n "${CDN_SUBDOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
         CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN}"
     fi
@@ -516,7 +518,6 @@ if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]]; then
         BUNDLE_CHANGED=true
         wireguard_generate_client_config "$USER_ID" "$OUTPUT_DIR"
         qrencode -o "$OUTPUT_DIR/wireguard-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg).conf" 2>/dev/null || true
-        qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wgws).conf" 2>/dev/null || true
         if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" ]]; then
             qrencode -o "$OUTPUT_DIR/wireguard-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" 2>/dev/null || true
         fi
@@ -639,6 +640,11 @@ if [[ -f "$OUTPUT_HTML" ]] && [[ "$BUNDLE_CHANGED" == "false" ]] && [[ "$FORCE_R
 else
     # DNSTT public key source is context-specific (state volume in the container).
     DNSTT_PUBKEY=$(cat "$STATE_DIR/keys/dnstt-server.pub.hex" 2>/dev/null || echo "")
+    if [[ "${ENABLE_DNSTT:-true}" == "true" && -n "$DNSTT_PUBKEY" ]]; then
+        dnstt_write_client_pubkey "$OUTPUT_DIR" "$DNSTT_PUBKEY" || true
+    else
+        DNSTT_PUBKEY=""
+    fi
     render_bundle_readme "$USER_ID" "$OUTPUT_DIR" "$TEMPLATE_FILE" "container"
 fi
 

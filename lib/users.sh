@@ -331,11 +331,15 @@ cmd_user() {
                 exit 1
             fi
             ;;
-        base64|b64)
+        sub|subscription)
+            cmd_user_subscription "$username"
+            ;;
+        # emits a zipped bundle for moav-client's e2e, not a client subscription
+        base64|b64|bundle-b64)
             cmd_user_base64 "$username"
             ;;
         *)
-            error "Usage: moav user [list|add|revoke|package|base64] [USERNAME]"
+            error "Usage: moav user [list|add|revoke|package|sub|base64] [USERNAME]"
             exit 1
             ;;
     esac

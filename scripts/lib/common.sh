@@ -294,3 +294,60 @@ get_env_val() {
     val=$(grep "^${key}=" "$file" 2>/dev/null | tail -1 | cut -d'=' -f2- | sed 's/#.*//' | tr -d '"' | tr -d "'" | xargs) || true
     echo "${val:-$default}"
 }
+
+# Donate mode: restrict a user to the protocols in DONATE_ONLY_PROTOCOLS.
+# Reference, including how to add a protocol: docs/devdocs/DONATE-MODE.md
+#
+# Call this AFTER sourcing .env, in every script that generates per-user configs.
+# It used to live only in user-add.sh, un-exported, and each sub-script then
+# re-sourced .env — so the overrides never reached singbox-user-add.sh or
+# wg-user-add.sh, and donated users got the operator's full protocol set.
+apply_donate_mode() {
+    local list=" ${DONATE_ONLY_PROTOCOLS:-} "
+    [[ -n "${DONATE_ONLY_PROTOCOLS:-}" ]] || return 0
+
+    # Not donatable: each needs a client-side daemon, a tunnel device or a DNS
+    # delegation, which a recipient pasting a share link does not have.
+    export ENABLE_WIREGUARD=false ENABLE_AMNEZIAWG=false ENABLE_TRUSTTUNNEL=false \
+           ENABLE_GOOSERELAY=false ENABLE_DNSTT=false ENABLE_SLIPSTREAM=false \
+           ENABLE_MASTERDNS=false ENABLE_XDNS=false
+
+    _dm() { [[ "$list" == *" $1 "* ]]; }
+    _dm reality     && export ENABLE_REALITY=true   || export ENABLE_REALITY=false
+    _dm trojan      && export ENABLE_TROJAN=true    || export ENABLE_TROJAN=false
+    _dm anytls      && export ENABLE_ANYTLS=true    || export ENABLE_ANYTLS=false
+    _dm hysteria2   && export ENABLE_HYSTERIA2=true || export ENABLE_HYSTERIA2=false
+    _dm shadowsocks && export ENABLE_SS=true        || export ENABLE_SS=false
+    _dm telegram    && export ENABLE_TELEMT=true    || export ENABLE_TELEMT=false
+    _dm xhttp       && export ENABLE_XHTTP=true     || export ENABLE_XHTTP=false
+    unset -f _dm
+}
+
+# True when donate mode is off, or when $1 is in the donated list. For protocols
+# with no ENABLE_ flag to switch (CDN keys off CDN_SUBDOMAIN, and clearing that
+# does not stick because the generator re-reads .env when it is empty).
+donate_allows() {
+    [[ -z "${DONATE_ONLY_PROTOCOLS:-}" ]] && return 0
+    [[ " ${DONATE_ONLY_PROTOCOLS} " == *" $1 "* ]]
+}
+
+# Is the Cloudflare-fronted CDN inbound in use?
+#
+# ENABLE_CDN is the flag; .env.example ships it false, because a CDN link only
+# works once the subdomain is proxied through Cloudflare, and an unconfigured
+# one hands users a config that cannot connect.
+#
+# When the flag is ABSENT the legacy rule applies -- CDN is on if CDN_SUBDOMAIN
+# is set. Servers built before the flag existed keep their working CDN instead
+# of silently losing it on upgrade.
+cdn_enabled() {
+    local flag="${ENABLE_CDN:-}"
+    [[ -z "$flag" && -f .env ]] && flag="$(get_env_val "ENABLE_CDN" ".env" "")"
+    if [[ -n "$flag" ]]; then
+        [[ "$flag" == "true" ]]
+        return
+    fi
+    local sub="${CDN_SUBDOMAIN:-}"
+    [[ -z "$sub" && -f .env ]] && sub="$(get_env_val "CDN_SUBDOMAIN" ".env" "")"
+    [[ -n "$sub" || -n "${CDN_DOMAIN:-}" ]]
+}

@@ -381,7 +381,9 @@ export TELEMT_STUN_TCP_FALLBACK="${TELEMT_STUN_TCP_FALLBACK:-true}"
 export TELEMT_API_ENABLED="${TELEMT_API_ENABLED:-true}"
 export TELEMT_API_PORT="${TELEMT_API_PORT:-9091}"
 # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
-if [[ -z "${CDN_DOMAIN:-}" && -n "${CDN_SUBDOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
+if ! cdn_enabled; then
+    CDN_DOMAIN=""
+elif [[ -z "${CDN_DOMAIN:-}" && -n "${CDN_SUBDOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
     export CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN}"
 else
     export CDN_DOMAIN="${CDN_DOMAIN:-}"

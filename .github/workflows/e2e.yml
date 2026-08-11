@@ -313,6 +313,197 @@ jobs:
           done
           [ "$bad" -eq 0 ]
 
+      - name: Protocol gating — normal add, disabled protocols, donate mode (CLI + dashboard)
+        run: |
+          # Two user reports live here: bundles carrying protocols the operator
+          # disabled, and donate mode handing recipients the operator's full
+          # protocol set. Donate mode was silently a no-op for everything the
+          # sub-scripts generate, so this asserts the DASHBOARD path too --
+          # admin/main.py runs the same script with DONATE_ONLY_PROTOCOLS in the
+          # environment, and that is the path the MahsaNet donation actually uses.
+          set -u
+          fails=0
+          have() { [ -e "outputs/bundles/$1/$2" ]; }
+          # want <user> <file>...  — every file must be present
+          want() { u=$1; shift; for f in "$@"; do have "$u" "$f" || { echo "::error::$u: $f missing (should be present)"; fails=$((fails+1)); }; done; }
+          # deny <user> <file>...  — none may be present
+          deny() { u=$1; shift; for f in "$@"; do ! have "$u" "$f" || { echo "::error::$u: $f present (should be absent)"; fails=$((fails+1)); }; done; }
+          own() { sudo chown -R "$USER" configs state outputs 2>/dev/null || true; }
+
+          cp .env /tmp/e2e-env.bak
+          trap 'cp /tmp/e2e-env.bak .env' EXIT
+
+          # --- 1. normal add: everything enabled must be there -----------------
+          ./moav.sh user add gate-normal; own
+          want gate-normal reality.txt trojan.txt hysteria2.txt shadowsocks.txt \
+                           xhttp-vless.txt trusttunnel.toml telegram-proxy-link.txt
+
+          # --- 2. disabled protocols must not reach the bundle -----------------
+          sed -i 's/^ENABLE_TROJAN=.*/ENABLE_TROJAN=false/;s/^ENABLE_HYSTERIA2=.*/ENABLE_HYSTERIA2=false/' .env
+          grep -q '^ENABLE_TROJAN='    .env || echo 'ENABLE_TROJAN=false'    >> .env
+          grep -q '^ENABLE_HYSTERIA2=' .env || echo 'ENABLE_HYSTERIA2=false' >> .env
+          ./moav.sh user add gate-off; own
+          deny gate-off trojan.txt trojan-qr.png hysteria2.txt hysteria2-qr.png
+          want gate-off reality.txt          # converse: a gate that hid everything must fail
+          if base64 -d outputs/bundles/gate-off/subscription.txt 2>/dev/null | grep -qE '^(trojan|hysteria2)://'; then
+            echo "::error::subscription.txt advertises a disabled protocol"; fails=$((fails+1))
+          fi
+          cp /tmp/e2e-env.bak .env
+
+          # --- 3. donate mode via the CLI --------------------------------------
+          DONATE_ONLY_PROTOCOLS="reality hysteria2" ./moav.sh user add gate-donate; own
+          want gate-donate reality.txt hysteria2.txt
+          deny gate-donate trojan.txt shadowsocks.txt xhttp-vless.txt cdn-vless.txt \
+                           trusttunnel.toml trusttunnel.json masterdns-client_config.toml \
+                           xdns-config.json slipstream-client.conf telegram-proxy-link.txt
+          for w in moav-*-wg.conf moav-*-awg.conf; do
+            if compgen -G "outputs/bundles/gate-donate/$w" >/dev/null; then
+              echo "::error::gate-donate: $w present (WireGuard family is never donated)"; fails=$((fails+1))
+            fi
+          done
+          n=$(base64 -d outputs/bundles/gate-donate/subscription.txt 2>/dev/null | grep -c '://' || true)
+          [ "$n" -eq 2 ] || { echo "::error::donated subscription has $n entries, expected 2"; fails=$((fails+1)); }
+
+          # --- 4. donate mode via the DASHBOARD path ---------------------------
+          # admin/main.py: subprocess.run(["bash", user-add.sh, ...], cwd=/project,
+          # env={... DONATE_ONLY_PROTOCOLS}). Same shape, inside the container.
+          docker compose exec -T -w /project \
+            -e DONATE_ONLY_PROTOCOLS="reality hysteria2" \
+            admin bash scripts/user-add.sh gate-dash; own
+          want gate-dash reality.txt hysteria2.txt
+          deny gate-dash trojan.txt shadowsocks.txt xhttp-vless.txt trusttunnel.toml \
+                         masterdns-client_config.toml xdns-config.json
+
+          for u in gate-normal gate-off gate-donate gate-dash; do
+            ./moav.sh user revoke "$u" >/dev/null 2>&1 || true
+            rm -rf "outputs/bundles/$u" "state/users/$u"
+          done
+          [ "$fails" -eq 0 ]
+
+      - name: CDN toggle — off then on, same server (ENABLE_CDN)
+        run: |
+          # The flip both ways on one server, which the static truth table cannot
+          # prove: CDN used to be implied by CDN_SUBDOMAIN being non-empty, so a
+          # fresh install generated CDN links whether or not Cloudflare was set
+          # up. The disabled->ENABLED direction matters as much as the reverse --
+          # an over-eager gate would pass a test that only checks "absent".
+          set -u
+          fails=0
+          cp .env /tmp/e2e-cdn-env.bak
+          trap 'cp /tmp/e2e-cdn-env.bak .env' EXIT
+          own() { sudo chown -R "$USER" configs state outputs 2>/dev/null || true; }
+
+          setflag() {  # <true|false>
+            if grep -q '^ENABLE_CDN=' .env; then
+              sed -i "s/^ENABLE_CDN=.*/ENABLE_CDN=$1/" .env
+            else
+              echo "ENABLE_CDN=$1" >> .env
+            fi
+          }
+
+          # --- OFF: no CDN artifacts, and nothing else lost --------------------
+          setflag false
+          ./moav.sh user add cdn-off; own
+          for f in cdn-vless.txt cdn-vless-qr.png; do
+            if [ -e "outputs/bundles/cdn-off/$f" ]; then
+              echo "::error::cdn-off: $f present with ENABLE_CDN=false"; fails=$((fails+1))
+            fi
+          done
+          if base64 -d outputs/bundles/cdn-off/subscription.txt 2>/dev/null | grep -q 'type=ws'; then
+            echo "::error::cdn-off: subscription still carries the CDN entry"; fails=$((fails+1))
+          fi
+          # The gate must not take anything else with it.
+          for f in reality.txt subscription.txt README.html; do
+            [ -s "outputs/bundles/cdn-off/$f" ] || { echo "::error::cdn-off: $f missing — the CDN gate broke an unrelated protocol"; fails=$((fails+1)); }
+          done
+          # The guide must hide the CDN section rather than show an empty one.
+          if grep -q 'id="cdn-en" style=""' outputs/bundles/cdn-off/README.html; then
+            echo "::error::cdn-off: guide shows the CDN section with no CDN config"; fails=$((fails+1))
+          fi
+
+          # --- ON: the same server now produces them ---------------------------
+          setflag true
+          ./moav.sh user add cdn-on; own
+          for f in cdn-vless.txt; do
+            [ -s "outputs/bundles/cdn-on/$f" ] || { echo "::error::cdn-on: $f missing with ENABLE_CDN=true"; fails=$((fails+1)); }
+          done
+          grep -q '^vless://' outputs/bundles/cdn-on/cdn-vless.txt \
+            || { echo "::error::cdn-on: cdn-vless.txt is not a vless link"; fails=$((fails+1)); }
+          if ! grep -q 'id="cdn-en" style=""' outputs/bundles/cdn-on/README.html; then
+            echo "::error::cdn-on: guide hides the CDN section although the config is present"; fails=$((fails+1))
+          fi
+
+          # --- doctor must follow the flag, not the subdomain -------------------
+          setflag false
+          ./moav.sh doctor dns 2>&1 | grep -q 'CDN check skipped' \
+            || { echo "::error::doctor still checks CDN with ENABLE_CDN=false"; fails=$((fails+1)); }
+
+          for u in cdn-off cdn-on; do
+            ./moav.sh user revoke "$u" >/dev/null 2>&1 || true
+            rm -rf "outputs/bundles/$u" "state/users/$u"
+          done
+          [ "$fails" -eq 0 ]
+
+      - name: Toggle flip across the three generation code paths
+        run: |
+          # CDN and the sing-box protocols are flipped elsewhere. These three each
+          # go through DIFFERENT code, which is why they are worth their own pass:
+          #   xhttp        -> scripts/lib/xray.sh   (via singbox-user-add.sh)
+          #   MasterDNS    -> user-add.sh's own DNS-family blocks
+          #   WireGuard    -> wg-user-add.sh
+          # Two adds, not six: one with all three off, one with all three on. That
+          # still exercises both directions per protocol at a third of the cost,
+          # and each assertion names its own file so a failure is unambiguous.
+          set -u
+          fails=0
+          own() { sudo chown -R "$USER" configs state outputs 2>/dev/null || true; }
+          setflag() {  # <NAME> <true|false>
+            if grep -q "^ENABLE_$1=" .env; then sed -i "s/^ENABLE_$1=.*/ENABLE_$1=$2/" .env
+            else echo "ENABLE_$1=$2" >> .env; fi
+          }
+          # present <user> <glob>  /  absent <user> <glob>
+          present() { if ! compgen -G "outputs/bundles/$1/$2" >/dev/null; then echo "::error::$1: $2 missing (protocol is enabled)"; fails=$((fails+1)); fi; }
+          absent()  { if   compgen -G "outputs/bundles/$1/$2" >/dev/null; then echo "::error::$1: $2 present (protocol is disabled)"; fails=$((fails+1)); fi; }
+
+          cp .env /tmp/e2e-flip-env.bak
+          trap 'cp /tmp/e2e-flip-env.bak .env' EXIT
+
+          # --- all three OFF ----------------------------------------------------
+          for p in XHTTP MASTERDNS WIREGUARD; do setflag "$p" false; done
+          ./moav.sh user add flip-off; own
+          absent flip-off 'xhttp-vless.txt'
+          absent flip-off 'xhttp-qr.png'
+          absent flip-off 'masterdns-client_config.toml'
+          absent flip-off 'moav-*-wg.conf'
+          absent flip-off 'wireguard-qr.png'
+          # An over-broad gate must not take the rest of the bundle with it.
+          present flip-off 'reality.txt'
+          present flip-off 'README.html'
+          present flip-off 'subscription.txt'
+
+          # --- all three ON, same server ---------------------------------------
+          for p in XHTTP MASTERDNS WIREGUARD; do setflag "$p" true; done
+          ./moav.sh user add flip-on; own
+          present flip-on 'xhttp-vless.txt'
+          present flip-on 'masterdns-client_config.toml'
+          present flip-on 'moav-*-wg.conf'
+          # The guide must follow the artifacts in both directions.
+          for pair in "xhttp:flip-on::flip-off" "wireguard:flip-on::flip-off"; do
+            sec="${pair%%:*}"
+            if ! grep -q "id=\"${sec}-en\" style=\"\"" "outputs/bundles/flip-on/README.html"; then
+              echo "::error::flip-on: guide hides the $sec section although its config is present"; fails=$((fails+1))
+            fi
+            if ! grep -q "id=\"${sec}-en\" style=\"display:none\"" "outputs/bundles/flip-off/README.html"; then
+              echo "::error::flip-off: guide shows the $sec section with no config"; fails=$((fails+1))
+            fi
+          done
+
+          for u in flip-off flip-on; do
+            ./moav.sh user revoke "$u" >/dev/null 2>&1 || true
+            rm -rf "outputs/bundles/$u" "state/users/$u"
+          done
+          [ "$fails" -eq 0 ]
+
       - name: Run connectivity tests
         run: |
           set -o pipefail

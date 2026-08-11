@@ -717,9 +717,11 @@ def list_users():
         has_telemt = (user_dir / "telegram-proxy-link.txt").exists()
         has_xhttp = (user_dir / "xhttp-vless.txt").exists()
         has_xdns = (user_dir / "xdns-config.json").exists()
-        # dnstt is server-shared (no per-user bundle artifact) — detect it from the
-        # server pubkey next to the bundles dir.
-        has_dnstt = (bundle_path.parent / "dnstt" / "server.pub").exists()
+        # Per-user, like every sibling above. Reading the SERVER pubkey next to
+        # the bundles dir claimed dnstt for every user on a dnstt-enabled server,
+        # including donated users provisioned with dnstt off. Bundles generated
+        # before this shipped gain the file on the next `moav regenerate-users`.
+        has_dnstt = (user_dir / "dnstt-server.pub").exists()
         has_slipstream = (user_dir / "slipstream-cert.pem").exists()
         has_masterdns = (user_dir / "masterdns-client_config.toml").exists()
         has_gooserelay = (user_dir / "gooserelay-client_config.json").exists()
