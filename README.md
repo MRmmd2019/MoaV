@@ -8,7 +8,7 @@
 
 [![Website](https://img.shields.io/badge/website-moav.sh-06b6d4.svg)](https://moav.sh) [![Docs](https://img.shields.io/badge/docs-moav.sh%2Fdocs-2563eb.svg)](https://moav.sh/docs/) [![Release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?label=release&color=16a34a&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV/releases/latest) [![Pre-release](https://img.shields.io/github/v/release/MotherofallVPNs/MoaV?include_prereleases&label=pre-release&color=f59e0b&logo=github&logoColor=white)](https://github.com/MotherofallVPNs/MoaV/releases)
 
-[![Protocols](https://img.shields.io/badge/protocols-16%2B-ef4444.svg)](#protocols) [![AI agents](https://img.shields.io/badge/AI_agents-AGENTS.md-8b5cf6.svg)](AGENTS.md) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
+[![Protocols](https://img.shields.io/badge/protocols-16%2B-ef4444.svg)](#protocols) [![moav-client](https://img.shields.io/badge/client-moav--client-06b6d4.svg?logo=github&logoColor=white)](https://github.com/MotherofallVPNs/moav-client) [![AI agents](https://img.shields.io/badge/AI_agents-AGENTS.md-8b5cf6.svg)](AGENTS.md) [![Telegram](https://img.shields.io/badge/Telegram-motherofallvpns-2CA5E0.svg?logo=telegram)](https://t.me/motherofallvpns) [![X](https://img.shields.io/badge/X-@motherofallvpns-000000.svg?logo=x)](https://x.com/motherofallvpns)
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22c55e.svg)](LICENSE) [![Stars](https://img.shields.io/github/stars/MotherofallVPNs/MoaV?style=social)](https://github.com/MotherofallVPNs/MoaV/stargazers) [![Forks](https://img.shields.io/github/forks/MotherofallVPNs/MoaV?style=social)](https://github.com/MotherofallVPNs/MoaV/network/members) [![Last commit](https://img.shields.io/github/last-commit/MotherofallVPNs/MoaV/dev?label=last%20commit&color=64748b)](https://github.com/MotherofallVPNs/MoaV/commits/dev)
 
@@ -16,9 +16,23 @@
 
 Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** community.
 
-**Local client:** **[moav-client](https://github.com/MotherofallVPNs/moav-client)** — the desktop/CLI app that ingests a MoaV subscription bundle and picks the best live endpoint.
-
 </div>
+
+---
+
+## Why MoaV exists
+
+No single transport survives every censor. A protocol that works this morning can be
+fingerprinted by the afternoon, and the person depending on it has no way to know in
+advance which one will hold.
+
+So MoaV ships many at once, from the same server and the same user bundle. When one
+path stops working the user switches to another instead of waiting for someone to
+re-deploy. That is the whole idea; everything else here is in service of it.
+
+Read the [Mission](https://moav.sh/docs/mission), the [Threat Model](https://moav.sh/docs/threat-model)
+for what MoaV does and does not protect, and the [Philosophy](https://moav.sh/docs/philosophy)
+for the longer argument.
 
 ---
 
@@ -26,15 +40,15 @@ Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** commu
 
 **Links** &nbsp;·&nbsp; [Website](https://moav.sh) &nbsp;·&nbsp; [Docs](https://moav.sh/docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns) &nbsp;·&nbsp; [moav-client](https://github.com/MotherofallVPNs/moav-client)
 
-**Get started** &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements)
+**Get started** &nbsp;·&nbsp; [Why MoaV exists](#why-moav-exists) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements) &nbsp;·&nbsp; [Running without a domain](#running-without-a-domain)
 
-**Use it** &nbsp;·&nbsp; [User Management](#user-management) &nbsp;·&nbsp; [Admin Dashboard & Monitoring](#admin-dashboard--monitoring) &nbsp;·&nbsp; [Service Management](#service-management) &nbsp;·&nbsp; [Testing](#testing) &nbsp;·&nbsp; [Client Apps](#client-apps)
+**Use it** &nbsp;·&nbsp; [Using MoaV](#using-moav) &nbsp;·&nbsp; [Client Apps](#client-apps) &nbsp;·&nbsp; [Documentation](#documentation)
 
-**Under the hood** &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Protocols](#protocols) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Documentation](#documentation)
+**Under the hood** &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Protocols](#protocols) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Security](#security)
 
-**Operate** &nbsp;·&nbsp; [Server Migration](#server-migration) &nbsp;·&nbsp; [Security](#security)
+**Help out** &nbsp;·&nbsp; [Support the project](#support-the-project) &nbsp;·&nbsp; [Community](#community) &nbsp;·&nbsp; [Related projects](#related-projects)
 
-**More** &nbsp;·&nbsp; [License](#license) &nbsp;·&nbsp; [Changelog](#changelog) &nbsp;·&nbsp; [Community & Support](#community--support) &nbsp;·&nbsp; [Disclaimer](#disclaimer)
+**More** &nbsp;·&nbsp; [License](#license) &nbsp;·&nbsp; [Changelog](#changelog) &nbsp;·&nbsp; [Disclaimer](#disclaimer)
 
 ---
 
@@ -44,7 +58,7 @@ Built and maintained by the **[MoaV](https://github.com/MotherofallVPNs)** commu
 
 ## Features
 
-- **Multiple protocols** — 16+ protocols covering every censorship scenario:
+- **Multiple protocols** — 16+ circumvention transports and fallback paths, plus optional Psiphon, Tor and MahsaNet donation integrations:
   - **High-stealth proxy** — Reality (VLESS), Trojan, Hysteria2, XHTTP (VLESS+XHTTP+Reality), CDN (VLESS+WS via Cloudflare)
   - **Full VPN** — WireGuard (direct & wstunnel), AmneziaWG
   - **Specialty** — TrustTunnel (HTTP/2+QUIC), Telegram MTProxy (fake-TLS), Shadowsocks-2022, GooseRelay (SOCKS5 via Google Apps Script)
@@ -163,15 +177,15 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 
 | Protocol | Port | Stealth | Speed | Default | Use Case |
 |----------|------|---------|-------|---------|----------|
-| Reality (VLESS) | 443/tcp | ★★★★★ | ★★★★☆ | ✅ | Primary, most reliable |
+| Reality (VLESS) | 443/tcp | ★★★★★ | ★★★★☆ | ✅ | Primary; a strong first choice where it works |
 | Hysteria2 | 443/udp | ★★★★☆ | ★★★★★ | ✅ | Fast, works when TCP throttled |
 | Trojan | 8443/tcp | ★★★★☆ | ★★★★☆ | ✅ | Backup, uses your domain |
 | AnyTLS | 8445/tcp | ★★★★★ | ★★★★☆ | ⬜ | Defeats TLS-in-TLS fingerprinting, uses your domain |
-| Shadowsocks-2022 | 8388/tcp+udp | ★★★★☆ | ★★★★☆ | ⬜ | AEAD-2022 anti-probing; Outline-app compatible |
+| Shadowsocks-2022 | 8388/tcp+udp | ★★★★☆ | ★★★★☆ | ✅ | AEAD-2022 anti-probing; Outline-app compatible |
 | CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ✅ | When server IP is blocked |
 | TrustTunnel | 4443/tcp+udp | ★★★★★ | ★★★★☆ | ✅ | HTTP/2 & QUIC, looks like HTTPS |
 | WireGuard (Direct) | 51820/udp | ★★★☆☆ | ★★★★★ | ✅ | Full VPN, simple setup |
-| AmneziaWG | 51821/udp | ★★★★★ | ★★★★☆ | ✅ | Obfuscated WireGuard, defeats DPI |
+| AmneziaWG | 51821/udp | ★★★★★ | ★★★★☆ | ✅ | Obfuscated WireGuard, resists common DPI signatures |
 | WireGuard (wstunnel) | 8080/tcp | ★★★★☆ | ★★★★☆ | ✅ | VPN when UDP is blocked |
 | DNS Tunnel (dnstt) | 53/udp | ★★★☆☆ | ★☆☆☆☆ | ✅ | Last resort, hard to block |
 | Slipstream | 53/udp | ★★★☆☆ | ★★☆☆☆ | ✅ | QUIC-over-DNS, 1.5-5x faster than dnstt |
@@ -180,76 +194,59 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 | GooseRelay | 8444/tcp | ★★★★★ | ★★☆☆☆ | ⬜ | SOCKS5 via Google Apps Script, fronted as google.com, MahsaNG v16 |
 | Telegram MTProxy | 993/tcp | ★★★★☆ | ★★★☆☆ | ✅ | Fake-TLS V2, direct Telegram access |
 | XHTTP (VLESS+XHTTP+Reality) | 2096/tcp | ★★★★★ | ★★★★☆ | ✅ | Xray-core, no domain needed |
-| Psiphon Conduit | — | — | — | ⬜ | Donate bandwidth to Psiphon (2M+ users) |
-| Tor Snowflake | — | — | — | ⬜ | Donate bandwidth to Tor network |
+| Psiphon Conduit | — | — | — | ✅ | Donate bandwidth to Psiphon (2M+ users) |
+| Tor Snowflake | — | — | — | ✅ | Donate bandwidth to Tor network |
 | MahsaNet | — | — | — | ⬜ | Donate VPN configs to Mahsa VPN (2M+ users) |
 
-## User Management
+**Default** = enabled in `.env.example`. Services still only run under their
+profile, so `moav start conduit` is what actually starts Conduit. MahsaNet is an
+action (`moav donate`), not a service.
+
+## Using MoaV
 
 ```bash
-moav user list            # List all users
-moav user add joe         # Add user to all protocols
-moav user add alice bob   # Add multiple users
-moav user add --batch 10 --prefix team  # Batch create team01..team10
-moav user revoke joe      # Revoke user
-moav user package joe     # Create zip bundle
+moav                          # interactive menu over everything below
+moav status                   # what's running, which profiles, health at a glance
+moav doctor                   # diagnose DNS, ports, certificates, resources
+moav logs sing-box            # tail a service
+
+moav user add alice --package # create a user and build their .zip bundle
+moav user add --batch 10      # ten at once
+moav user list                # who exists
+moav user revoke alice        # revoke immediately
+moav test alice               # prove alice's configs actually pass traffic
+
+moav start proxy admin        # start specific profiles
+moav restart sing-box         # apply an .env change to one service
+moav donate                   # donate configs/bandwidth (MahsaNet, Psiphon, Snowflake)
 ```
 
-Each user gets a bundle in `outputs/bundles/<username>/` with config files, QR codes, and a README.html guide.
+Each user gets `outputs/bundles/<username>/` with config files, QR codes and a
+`README.html` guide, plus a base64 **V2Ray subscription** in `subscription.txt` that
+imports every proxy protocol at once into [MahsaNG](https://github.com/GFW-knocker/MahsaNG),
+v2rayNG or Hiddify. See the [MahsaNG import guide](https://moav.sh/docs/mahsanet).
 
-**MahsaNG / V2Ray users (MahsaNG has 2M+ in Iran):** every bundle includes a standard base64 **V2Ray subscription** — in `subscription.txt` and as a click-to-copy block at the top of the bundle's README — so users paste it once into [MahsaNG](https://github.com/GFW-knocker/MahsaNG), v2rayNG, Hiddify, or any V2Ray app to import all proxy protocols at once. See the [MahsaNG import guide](https://moav.sh/docs/mahsanet).
+To verify a bundle from a client's point of view, [**moav-client**](https://github.com/MotherofallVPNs/moav-client) ingests the subscription, probes every endpoint through its own tunnel and routes through whichever is live and fastest.
 
-**Download bundles** from the admin dashboard at `https://your-server:9443` or via SCP.
+**Dashboards** — password for both is set during install (`ADMIN_PASSWORD` in `.env`),
+reset with `moav admin password`:
 
-## Admin Dashboard & Monitoring
+| | URL | Login |
+|---|---|---|
+| **Admin dashboard** | `https://your-server:9443` | any username — only the password is checked |
+| **Grafana** | `https://your-server:9444` | user `admin` |
 
-- **Admin dashboard**: `https://your-server:9443` — user management, service status, MahsaNet donations
-- **Grafana**: `https://your-server:9444` — per-user traffic, protocol breakdown, GeoIP distribution
-- **Username**: `admin` | **Password**: set during install (stored in `.env` as `ADMIN_PASSWORD`)
-- **Reset password**: `moav admin password`
+**Profiles:** `proxy`, `wireguard`, `amneziawg`, `dnstunnel`, `trusttunnel`, `telegram`, `xhttp`, `admin`, `conduit`, `snowflake`, `gooserelay`, `monitoring`, `all`
 
-## Service Management
+**Moving to a new server:** `moav export`, then on the new host `moav import moav-backup-*.tar.gz`
+and `moav migrate-ip <new-ip>`. Walkthrough in the [Setup Guide](https://moav.sh/docs/SETUP#server-migration).
 
-```bash
-moav status               # Show all service status
-moav start                # Start services
-moav start proxy admin    # Start specific profiles
-moav stop                 # Stop all services
-moav restart sing-box     # Restart specific service
-moav logs sing-box        # View service logs
-moav doctor               # Run diagnostics
-moav doctor dns           # Check DNS configuration
-moav donate               # Donate configs to MahsaNet/Psiphon/Snowflake
-moav conduit link         # Psiphon Conduit claim link, QR & sharing guide
-```
+**Psiphon Conduit:** once `conduit` is running it already serves Psiphon users through the
+public pool — nothing to share. `moav conduit link` prints a private claim link/QR for
+specific people; it embeds the private key, so share it only via Personal Pairing inside
+Ryve. See [Psiphon Conduit](https://moav.sh/docs/protocols#psiphon-conduit).
 
-**Psiphon Conduit:** once `conduit` is running it already serves Psiphon users (including in Iran) through the public pool — no link to share. To give specific people a private path, `moav conduit link` prints the Ryve claim link/QR and the Personal Pairing steps. The claim link embeds the private key — keep it secret; share with users only via Personal Pairing inside Ryve. See [Psiphon Conduit in docs/protocols.md](https://moav.sh/docs/protocols#psiphon-conduit).
-
-**Profiles:** `proxy`, `wireguard`, `amneziawg`, `dnstunnel`, `trusttunnel`, `telegram`, `xhttp`, `admin`, `conduit`, `snowflake`, `monitoring`, `all`
-
-## Server Migration
-
-Export and migrate your MoaV installation to a new server:
-
-```bash
-# Export full backup (keys, users, configs)
-moav export                        # Creates moav-backup-TIMESTAMP.tar.gz
-
-# On new server: import and update IP
-moav import moav-backup-*.tar.gz   # Restore configuration
-moav migrate-ip 1.2.3.4            # Update all configs to new IP
-moav start                         # Start services
-```
-
-See the [Setup Guide → Server Migration](https://moav.sh/docs/SETUP#server-migration) for detailed migration workflow.
-
-## Testing
-
-```bash
-moav test user1           # Test all protocols for a user
-moav test user1 -v        # Verbose output for debugging
-moav client connect user1 # Connect as user (exposes local SOCKS5/HTTP proxy)
-```
+Every command, flag and environment variable: **[CLI Reference](https://moav.sh/docs/CLI)**.
 
 ## Client Apps
 
@@ -261,19 +258,23 @@ moav client connect user1 # Connect as user (exposes local SOCKS5/HTTP proxy)
 | Windows | Happ, v2rayN, Hiddify, WireGuard |
 | Linux | Hiddify, sing-box, WireGuard |
 
-See the [Client Setup guide](https://moav.sh/docs/CLIENTS) for complete list and setup instructions.
+See the [Client Setup guide](https://moav.sh/docs/CLIENTS) for the complete list and setup instructions, or [**moav-client**](https://github.com/MotherofallVPNs/moav-client) ([docs](https://moav.sh/docs/client)) for a desktop/CLI client with automatic failover.
 
 ## Documentation
 
-- [Setup Guide](https://moav.sh/docs/SETUP) - Complete installation instructions
-- [CLI Reference](https://moav.sh/docs/CLI) - All moav commands and options
-- [DNS Configuration](https://moav.sh/docs/DNS) - DNS records setup
-- [Client Setup](https://moav.sh/docs/CLIENTS) - How to connect from devices
-- [MahsaNG Import](https://moav.sh/docs/mahsanet) - Import MoaV configs into the MahsaNG app (Iran)
-- [VPS Deployment](https://moav.sh/docs/DEPLOY) - One-click cloud deployment
-- [Monitoring](https://moav.sh/docs/MONITORING) - Grafana + Prometheus observability
-- [Troubleshooting](https://moav.sh/docs/TROUBLESHOOTING) - Common issues and solutions
-- [OpSec Guide](https://moav.sh/docs/OPSEC) - Security best practices
+Full docs: **[moav.sh/docs](https://moav.sh/docs/)**
+
+**Deploy** — [Quick Start](https://moav.sh/docs/quick-start) · [Setup Guide](https://moav.sh/docs/SETUP) · [VPS Deployment](https://moav.sh/docs/DEPLOY) · [DNS Configuration](https://moav.sh/docs/DNS)
+
+**Understand** — [Supported Protocols](https://moav.sh/docs/protocols) · [Architecture](https://moav.sh/docs/architecture) · [Threat Model](https://moav.sh/docs/threat-model) · [Mission](https://moav.sh/docs/mission) · [Philosophy](https://moav.sh/docs/philosophy)
+
+**Connect users** — [Client Apps](https://moav.sh/docs/CLIENTS) · [MahsaNG Import](https://moav.sh/docs/mahsanet) · [MoaV Client](https://moav.sh/docs/client)
+
+**Operate** — [CLI Reference](https://moav.sh/docs/CLI) · [Monitoring](https://moav.sh/docs/MONITORING) · [Troubleshooting](https://moav.sh/docs/TROUBLESHOOTING) · [OPSEC Guide](https://moav.sh/docs/OPSEC)
+
+**Contribute** — [Development & Testing](https://moav.sh/docs/development) · [Translating the Docs](https://moav.sh/docs/TRANSLATING) · [Support MoaV](https://moav.sh/docs/support)
+
+**For AI agents** — [AGENTS.md](AGENTS.md) for working in this repo, [llms.txt](https://moav.sh/llms.txt) as a compact index, [llms-full.txt](https://moav.sh/llms-full.txt) for the whole corpus.
 
 ## Requirements
 
@@ -286,13 +287,13 @@ See the [Client Setup guide](https://moav.sh/docs/CLIENTS) for complete list and
 **Ports (open as needed):**
 | Port | Protocol | Service | Requires Domain |
 |------|----------|---------|-----------------|
-| 443/tcp | TCP | Reality (VLESS) | Yes |
+| 443/tcp | TCP | Reality (VLESS) | No — borrows a public SNI via `REALITY_TARGET` |
 | 443/udp | UDP | Hysteria2 | Yes |
 | 8443/tcp | TCP | Trojan | Yes |
 | 8445/tcp | TCP | AnyTLS | Yes |
 | 8388/tcp+udp | TCP+UDP | Shadowsocks-2022 | No |
 | 4443/tcp+udp | TCP+UDP | TrustTunnel | Yes |
-| 2082/tcp | TCP | CDN WebSocket | Yes (Cloudflare) |
+| 2082/tcp | TCP | CDN WebSocket | Cloudflare: yes · CloudFront: no |
 | 51820/udp | UDP | WireGuard | No |
 | 51821/udp | UDP | AmneziaWG | No |
 | 8080/tcp | TCP | wstunnel | No |
@@ -304,13 +305,13 @@ See the [Client Setup guide](https://moav.sh/docs/CLIENTS) for complete list and
 | 53/udp | UDP | DNS tunnels (dnstt / Slipstream / MasterDNS / XDNS — all share this port) | Yes |
 | 80/tcp | TCP | Let's Encrypt | Yes (during setup) |
 
-### Domainless Mode
+## Running without a domain
 
 Don't have a domain? MoaV can run in **domainless mode** with:
 - **Reality** (VLESS+Reality, primary protocol)
 - **XHTTP** (VLESS+XHTTP+Reality via Xray-core)
 - **WireGuard** (direct UDP + WebSocket tunnel)
-- **AmneziaWG** (obfuscated WireGuard, defeats DPI)
+- **AmneziaWG** (obfuscated WireGuard, resists common DPI signatures)
 - **Telegram MTProxy** (fake-TLS, direct Telegram access)
 - **GooseRelay** (SOCKS5 over Google Apps Script — no domain needed)
 - **Admin dashboard** (uses self-signed certificate)
@@ -319,40 +320,31 @@ Don't have a domain? MoaV can run in **domainless mode** with:
 
 Run `moav` and select "No domain" when prompted, or use `moav domainless` to configure.
 
-**Recommended VPS:**
-- VPS Price Trackers: [VPS-PRICES](https://vps-prices.com/)، [VPS Price Tracker](https://vpspricetracker.com/), [Cheap VPS Price Cheat Sheet](https://docs.google.com/spreadsheets/d/e/2PACX-1vTOC_THbM2RZzfRUhFCNp3SDXKdYDkfmccis4vxr7WtVIcPmXM-2lGKuZTBr8o_MIJ4XgIUYz1BmcqM/pubhtml)
-- [Time4VPS](https://www.time4vps.com/?affid=8471): 1 vCPU، 1GB RAM، IPv4، 3.99€/Month
-
-
 ## Project Structure
 
 ```
 MoaV/
-├── moav.sh                 # CLI management tool (install with: ./moav.sh install)
-├── docker-compose.yml      # Main compose file
-├── .env.example            # Environment template
-├── Dockerfile.*            # Container definitions
-├── configs/                # Service configurations
-│   ├── sing-box/
-│   ├── wireguard/
-│   ├── amneziawg/
-│   ├── trusttunnel/
-│   ├── dnstt/
-│   ├── masterdns/
-│   ├── gooserelay/
-│   ├── telemt/
-│   └── monitoring/
-├── scripts/                # Management scripts
-│   ├── bootstrap.sh
-│   ├── user-add.sh
-│   ├── user-revoke.sh
-│   └── lib/
-├── outputs/                # Generated configs (gitignored)
-│   └── bundles/
-├── web/                    # Decoy website
-├── admin/                  # Stats dashboard
-└── docs/                   # Dev docs (devdocs/) + README assets
+├── moav.sh              # the CLI: argument parsing, then straight into a cmd_* function
+├── lib/                 # 15 host-side modules — service, users, bootstrap, doctor,
+│                        #   cert, migrate, donate, nettune, dns, peers, menu, …
+├── scripts/             # container entrypoints + provisioning
+│   ├── *-entrypoint.sh  #   one per service
+│   └── lib/             #   shared libraries, mounted into containers as /app/lib
+├── configs/             # *.template files (tracked) rendered into *.json/*.conf (gitignored)
+├── dockerfiles/         # image builds, one per service
+├── exporters/           # Prometheus exporters (sing-box, xray, wireguard, amneziawg, …)
+├── dns-router/          # Go daemon fanning port 53 out to the four DNS tunnels
+├── admin/               # FastAPI dashboard
+├── web/                 # decoy website
+├── data/                # protocols.json — the protocol roster, source of truth
+├── tests/               # the regression suite, named after the bug class each pins
+├── docs/devdocs/        # contributor docs (the user docs live in moav-site)
+├── docker-compose.yml
+└── .env.example         # annotated config reference; commonly-changed vars up top
 ```
+
+`moav.sh` is a dispatcher — the logic lives in `lib/`. `outputs/` (user bundles) and
+`state/` (keys) are generated and gitignored.
 
 ## Security
 
@@ -371,6 +363,98 @@ mode. If that trade-off is not acceptable, run without the monitoring profile.
 
 See the [OPSEC guide](https://moav.sh/docs/OPSEC) for security guidelines.
 
+## Support the project
+
+**Run a server.** The highest-leverage thing you can do. Every MoaV server is capacity
+that did not exist before — for your family, your colleagues, or people you will never
+meet. Nobody runs infrastructure on your behalf; the network *is* the people running
+servers. A $5/month VPS or a Raspberry Pi is enough.
+
+**Donate capacity you already have.** Relay for other circumvention networks without
+having users of your own — `moav start conduit` (Psiphon) and `moav start snowflake`
+(Tor), both opt-in and capped. Or donate configs to [MahsaNet](https://www.mahsaserver.com/)
+with `moav donate`, which hands them to users in Iran who cannot set up a server.
+
+**Contribute or translate.** Bugs, protocols, packaging, docs — see
+[Development & Testing](https://moav.sh/docs/development). Translation is the most useful
+non-code contribution: the docs are scaffolded for Farsi and Russian and one page is a
+complete contribution ([how to translate](https://moav.sh/docs/TRANSLATING)). Bug reports
+count too — a reproducible report with `moav doctor` output is often more work than the fix.
+
+> Never paste bundles, `.env` contents or share links into an issue — they contain live keys.
+
+**Fund the infrastructure.** Test servers for the end-to-end suite, domains, build
+capacity. Not salaries.
+
+<!-- FUNDING:START -->
+| Platform | Link |
+|---|---|
+| **GitHub Sponsors** | [github.com/sponsors/shayanb](https://github.com/sponsors/shayanb) |
+| **Buy Me a Coffee** | [buymeacoffee.com/pangana](https://buymeacoffee.com/pangana) |
+
+| Coin | Address |
+|---|---|
+| **Bitcoin (BTC)** | `bc1qkfq3hg5kpzgy7muc8m3pmh6zemhv820a0ndqgg` |
+| **Ethereum (ETH)** ¹ | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
+| **Zcash (ZEC)** | `u1pclheucppc87qlffh9m8wjfw87w2nka40w9nxjuqnyppj0kx9xp7z9rg6wx556662y5f8dtfyeynmm2lnz5aqvaqzmnpajlq0mnmkntdqzqqegk8lwv09cnudf3ttzm3878p3030j3lwupj257rmmv9p3ea32hgwsuf3jdh8ycv7q587` |
+| **Tron** ² | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
+
+¹ **Ethereum (ETH)** — same address on every EVM chain (Arbitrum, Optimism, Base, Gnosis…) and any ERC20 (USDC, USDT, DAI…)
+
+² **Tron** — TRX and TRC-20 only — not interchangeable with the EVM address
+<!-- FUNDING:END -->
+
+Addresses are generated from [`.github/FUNDING.yml`](.github/FUNDING.yml), the single
+source of truth, so what you see here is whatever that file says. Take them from this
+page or the repository over HTTPS and check the first and last characters after pasting.
+**We will never DM you an address.**
+
+## Community
+
+- **Telegram:** [t.me/motherofallvpns](https://t.me/motherofallvpns) — questions, help, release announcements
+- **X:** [@motherofallvpns](https://x.com/motherofallvpns)
+- **Issues:** [GitHub Issues](https://github.com/MotherofallVPNs/MoaV/issues) for bugs and feature requests
+- **Docs:** [moav.sh/docs](https://moav.sh/docs)
+
+## Related projects
+
+MoaV is a deployment layer. The protocol work belongs to these projects:
+
+**Companion client** — [moav-client](https://github.com/MotherofallVPNs/moav-client): desktop/CLI
+client that ingests a MoaV subscription, probes every endpoint through its own tunnel and routes
+through whichever is live and fastest ([docs](https://moav.sh/docs/client)).
+
+**Protocol engines**
+
+| Project | What MoaV uses it for |
+|---|---|
+| [sing-box](https://github.com/SagerNet/sing-box) | Reality, Trojan, AnyTLS, Hysteria2, Shadowsocks-2022, CDN VLESS+WS |
+| [Xray-core](https://github.com/XTLS/Xray-core) | XHTTP and XDNS |
+| [REALITY](https://github.com/XTLS/REALITY) | the TLS camouflage Reality and XHTTP are built on |
+| [AmneziaWG](https://github.com/amnezia-vpn/amneziawg-go) · [tools](https://github.com/amnezia-vpn/amneziawg-tools) | DPI-resistant WireGuard |
+| [WireGuard](https://www.wireguard.com/) | the direct UDP VPN |
+| [wstunnel](https://github.com/erebe/wstunnel) | WireGuard over `wss://` when UDP is blocked |
+| [TrustTunnel](https://github.com/TrustTunnel/TrustTunnel) · [client](https://github.com/TrustTunnel/TrustTunnelClient) | HTTP/2 + QUIC transport |
+| [telemt](https://github.com/telemt/telemt) | Telegram MTProxy (fake-TLS) |
+| [dnstt](https://www.bamsoftware.com/software/dnstt/) | the original DNS tunnel |
+| [Slipstream](https://github.com/net2share/slipstream-rust-build) | QUIC-over-DNS |
+| [MasterDNS](https://github.com/masterking32/MasterDnsVPN) | ARQ + resolver load-balancing DNS tunnel |
+| [GooseRelay](https://github.com/kianmhz/GooseRelayVPN) | SOCKS5 over Google Apps Script |
+
+**Networks you can donate capacity to**
+
+| Project | |
+|---|---|
+| [Psiphon Conduit](https://github.com/Psiphon-Inc/conduit) | relay for Psiphon users |
+| [Tor Snowflake](https://snowflake.torproject.org/) | relay for Tor users |
+| [MahsaNet](https://www.mahsaserver.com/) · [MahsaNG](https://github.com/GFW-knocker/MahsaNG) | config donation and the client most Iranian users have |
+
+**Monitoring** — [Prometheus](https://github.com/prometheus/prometheus), [Grafana](https://github.com/grafana/grafana),
+[node_exporter](https://github.com/prometheus/node_exporter), [cAdvisor](https://github.com/google/cadvisor),
+[clash-exporter](https://github.com/zxh326/clash-exporter).
+
+Pinned versions for all of these live in [`.env.example`](.env.example).
+
 ## License
 
 MIT
@@ -379,13 +463,6 @@ MIT
 See [CHANGELOG.md](CHANGELOG.md) for release notes and version history.
 
 
-
-## Community & support
-
-- **Telegram:** [t.me/motherofallvpns](https://t.me/motherofallvpns) — questions, help, and release announcements
-- **Twitter/X:** [@motherofallvpns](https://x.com/motherofallvpns)
-- **Issues:** [GitHub Issues](https://github.com/MotherofallVPNs/MoaV/issues) for bugs and feature requests
-- **Docs:** [moav.sh/docs](https://moav.sh/docs)
 
 ---
 ## Disclaimer
