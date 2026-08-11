@@ -36,14 +36,17 @@ OUT = os.environ.get("STAR_OUT", "assets/star-history.svg")
 LOGO = os.environ.get("STAR_LOGO", "branding/favicon-56.png")
 
 W, H = 800, 533
-PAD_L, PAD_R, PAD_T, PAD_B = 84, 28, 58, 74
-BG = "#ffffff"
-INK = "#1f2328"      # axes + title, on white
-MUTED = "#57606a"    # tick labels
-GRID = "#d0d7de"
-# From the logo's own gradient (#00e8fe cyan -> #0097f9 blue), so the chart and
-# the watermark belong to each other.
-SERIES = ["#00d8fb", "#0969da"]
+PAD_L, PAD_R, PAD_T, PAD_B = 84, 30, 62, 76
+# Dark card in the site's register rather than star-history's white one: the
+# layout is what readers recognise, and the palette is what makes it ours.
+BG_TOP, BG_BOTTOM = "#1f1b33", "#14111f"
+INK = "#e6e1f5"      # titles + axis names
+MUTED = "#9a92b8"    # tick labels
+GRID = "#ffffff"     # drawn at low opacity
+AXIS = "#4a4266"
+# MoaV's own accent purple leads; the logo cyan follows, so the two series read
+# as the brand rather than as arbitrary chart colours.
+SERIES = ["#a371f7", "#00d4ff"]
 # Hand-drawn feel without embedding a webfont. Resolves per viewer, so the last
 # entry matters: layout stays right even where none of the others exist.
 FONT = ("'Comic Sans MS','Chalkboard SE','Marker Felt','Segoe Print',"
@@ -150,7 +153,7 @@ def render(datasets):
         v = ymax * i / 4
         gy = y(v)
         grid.append(f'<line x1="{PAD_L}" y1="{gy:.1f}" x2="{W - PAD_R}" y2="{gy:.1f}" '
-                    f'stroke="{GRID}" stroke-width="1"/>')
+                    f'stroke="{GRID}" stroke-opacity="0.07" stroke-width="1"/>')
         grid.append(f'<text x="{PAD_L - 12}" y="{gy + 5:.1f}" text-anchor="end" '
                     f'font-size="14" fill="{MUTED}">{kfmt(v)}</text>')
 
@@ -169,7 +172,7 @@ def render(datasets):
         seen.add(lab)
         tx = x(dt)
         xt.append(f'<line x1="{tx:.1f}" y1="{y(0):.1f}" x2="{tx:.1f}" y2="{y(0) + 6:.1f}" '
-                  f'stroke="{MUTED}" stroke-width="1.5"/>')
+                  f'stroke="{AXIS}" stroke-width="1.5"/>')
         xt.append(f'<text x="{tx:.1f}" y="{y(0) + 26:.1f}" text-anchor="middle" '
                   f'font-size="14" fill="{MUTED}">{lab}</text>')
 
@@ -186,33 +189,52 @@ def render(datasets):
                     f'<stop offset="100%" stop-color="{colour}" stop-opacity="0.02"/></linearGradient>')
         paths.append(f'<path d="{area}" fill="url(#fade{idx})"/>')
         paths.append(f'<path d="{line}" fill="none" stroke="{colour}" stroke-width="3" '
-                     f'stroke-linejoin="round" stroke-linecap="round"/>')
-        paths.append(f'<circle cx="{xy[-1][0]:.1f}" cy="{xy[-1][1]:.1f}" r="4.5" fill="{colour}"/>')
+                     f'stroke-linejoin="round" stroke-linecap="round" filter="url(#glow)"/>')
+        paths.append(f'<circle cx="{xy[-1][0]:.1f}" cy="{xy[-1][1]:.1f}" r="9" fill="{colour}" '
+                     f'fill-opacity="0.22"/>'
+                     f'<circle cx="{xy[-1][0]:.1f}" cy="{xy[-1][1]:.1f}" r="4.5" fill="{colour}"/>')
         ly = PAD_T + 14 + idx * 22
         legend.append(f'<circle cx="{PAD_L + 14}" cy="{ly - 4}" r="5" fill="{colour}"/>'
                       f'<text x="{PAD_L + 26}" y="{ly}" font-size="15" fill="{INK}">'
                       f'{esc(repo)} <tspan fill="{MUTED}">({pts[-1][1]})</tspan></text>')
 
-    # Watermark: bottom-right INSIDE the card but clear of the plot frame, so it
-    # never sits on an axis or over the data.
+    # Watermark: large, upper-LEFT. A cumulative curve starts low and rises, so
+    # that quadrant is the reliably empty one -- and it keeps the mark away from
+    # the smaller series, which hugs the bottom.
     logo = logo_data_uri()
     mark = ""
     if logo:
-        size = 30
-        mark = (f'<image href="{logo}" x="{W - PAD_R - size}" y="{H - 46}" '
-                f'width="{size}" height="{size}" opacity="0.85"/>')
+        size = 112
+        mx, my = PAD_L + 22, PAD_T + 34
+        mark = (f'<g opacity="0.30" filter="url(#logoshadow)">'
+                f'<image href="{logo}" x="{mx}" y="{my}" width="{size}" height="{size}"/>'
+                f'</g>')
 
     summary = ", ".join(f"{r} {p[-1][1]}" for r, p in datasets)
     return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-label="Star history: {esc(summary)}">
   <title>Star History — {esc(summary)} as of {t1.strftime('%Y-%m-%d')}</title>
-  <defs>{"".join(defs)}</defs>
-  <rect width="{W}" height="{H}" rx="8" fill="{BG}"/>
+  <defs>
+    <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="{BG_TOP}"/><stop offset="100%" stop-color="{BG_BOTTOM}"/>
+    </linearGradient>
+    <filter id="logoshadow" x="-30%" y="-30%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="6" stdDeviation="9" flood-color="#000000" flood-opacity="0.55"/>
+    </filter>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    {"".join(defs)}
+  </defs>
+  <rect width="{W}" height="{H}" rx="10" fill="url(#card)"/>
+  <rect x="0.5" y="0.5" width="{W - 1}" height="{H - 1}" rx="10" fill="none"
+        stroke="#ffffff" stroke-opacity="0.06"/>
   <g font-family="{FONT}">
     <text x="{W / 2:.0f}" y="34" text-anchor="middle" font-size="22" fill="{INK}">Star History</text>
     {"".join(grid)}
     {"".join(paths)}
-    <line x1="{PAD_L}" y1="{PAD_T}" x2="{PAD_L}" y2="{y(0):.1f}" stroke="{INK}" stroke-width="2"/>
-    <line x1="{PAD_L}" y1="{y(0):.1f}" x2="{W - PAD_R}" y2="{y(0):.1f}" stroke="{INK}" stroke-width="2"/>
+    <line x1="{PAD_L}" y1="{PAD_T}" x2="{PAD_L}" y2="{y(0):.1f}" stroke="{AXIS}" stroke-width="1.5"/>
+    <line x1="{PAD_L}" y1="{y(0):.1f}" x2="{W - PAD_R}" y2="{y(0):.1f}" stroke="{AXIS}" stroke-width="1.5"/>
     {"".join(xt)}
     <text x="{W / 2:.0f}" y="{H - 18}" text-anchor="middle" font-size="15" fill="{INK}">Date</text>
     <text transform="translate(26,{H / 2:.0f}) rotate(-90)" text-anchor="middle"
