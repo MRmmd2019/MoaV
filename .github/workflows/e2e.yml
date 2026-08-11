@@ -444,6 +444,66 @@ jobs:
           done
           [ "$fails" -eq 0 ]
 
+      - name: Toggle flip across the three generation code paths
+        run: |
+          # CDN and the sing-box protocols are flipped elsewhere. These three each
+          # go through DIFFERENT code, which is why they are worth their own pass:
+          #   xhttp        -> scripts/lib/xray.sh   (via singbox-user-add.sh)
+          #   MasterDNS    -> user-add.sh's own DNS-family blocks
+          #   WireGuard    -> wg-user-add.sh
+          # Two adds, not six: one with all three off, one with all three on. That
+          # still exercises both directions per protocol at a third of the cost,
+          # and each assertion names its own file so a failure is unambiguous.
+          set -u
+          fails=0
+          own() { sudo chown -R "$USER" configs state outputs 2>/dev/null || true; }
+          setflag() {  # <NAME> <true|false>
+            if grep -q "^ENABLE_$1=" .env; then sed -i "s/^ENABLE_$1=.*/ENABLE_$1=$2/" .env
+            else echo "ENABLE_$1=$2" >> .env; fi
+          }
+          # present <user> <glob>  /  absent <user> <glob>
+          present() { if ! compgen -G "outputs/bundles/$1/$2" >/dev/null; then echo "::error::$1: $2 missing (protocol is enabled)"; fails=$((fails+1)); fi; }
+          absent()  { if   compgen -G "outputs/bundles/$1/$2" >/dev/null; then echo "::error::$1: $2 present (protocol is disabled)"; fails=$((fails+1)); fi; }
+
+          cp .env /tmp/e2e-flip-env.bak
+          trap 'cp /tmp/e2e-flip-env.bak .env' EXIT
+
+          # --- all three OFF ----------------------------------------------------
+          for p in XHTTP MASTERDNS WIREGUARD; do setflag "$p" false; done
+          ./moav.sh user add flip-off; own
+          absent flip-off 'xhttp-vless.txt'
+          absent flip-off 'xhttp-qr.png'
+          absent flip-off 'masterdns-client_config.toml'
+          absent flip-off 'moav-*-wg.conf'
+          absent flip-off 'wireguard-qr.png'
+          # An over-broad gate must not take the rest of the bundle with it.
+          present flip-off 'reality.txt'
+          present flip-off 'README.html'
+          present flip-off 'subscription.txt'
+
+          # --- all three ON, same server ---------------------------------------
+          for p in XHTTP MASTERDNS WIREGUARD; do setflag "$p" true; done
+          ./moav.sh user add flip-on; own
+          present flip-on 'xhttp-vless.txt'
+          present flip-on 'masterdns-client_config.toml'
+          present flip-on 'moav-*-wg.conf'
+          # The guide must follow the artifacts in both directions.
+          for pair in "xhttp:flip-on::flip-off" "wireguard:flip-on::flip-off"; do
+            sec="${pair%%:*}"
+            if ! grep -q "id=\"${sec}-en\" style=\"\"" "outputs/bundles/flip-on/README.html"; then
+              echo "::error::flip-on: guide hides the $sec section although its config is present"; fails=$((fails+1))
+            fi
+            if ! grep -q "id=\"${sec}-en\" style=\"display:none\"" "outputs/bundles/flip-off/README.html"; then
+              echo "::error::flip-off: guide shows the $sec section with no config"; fails=$((fails+1))
+            fi
+          done
+
+          for u in flip-off flip-on; do
+            ./moav.sh user revoke "$u" >/dev/null 2>&1 || true
+            rm -rf "outputs/bundles/$u" "state/users/$u"
+          done
+          [ "$fails" -eq 0 ]
+
       - name: Run connectivity tests
         run: |
           set -o pipefail
