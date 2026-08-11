@@ -380,6 +380,70 @@ jobs:
           done
           [ "$fails" -eq 0 ]
 
+      - name: CDN toggle — off then on, same server (ENABLE_CDN)
+        run: |
+          # The flip both ways on one server, which the static truth table cannot
+          # prove: CDN used to be implied by CDN_SUBDOMAIN being non-empty, so a
+          # fresh install generated CDN links whether or not Cloudflare was set
+          # up. The disabled->ENABLED direction matters as much as the reverse --
+          # an over-eager gate would pass a test that only checks "absent".
+          set -u
+          fails=0
+          cp .env /tmp/e2e-cdn-env.bak
+          trap 'cp /tmp/e2e-cdn-env.bak .env' EXIT
+          own() { sudo chown -R "$USER" configs state outputs 2>/dev/null || true; }
+
+          setflag() {  # <true|false>
+            if grep -q '^ENABLE_CDN=' .env; then
+              sed -i "s/^ENABLE_CDN=.*/ENABLE_CDN=$1/" .env
+            else
+              echo "ENABLE_CDN=$1" >> .env
+            fi
+          }
+
+          # --- OFF: no CDN artifacts, and nothing else lost --------------------
+          setflag false
+          ./moav.sh user add cdn-off; own
+          for f in cdn-vless.txt cdn-vless-qr.png; do
+            if [ -e "outputs/bundles/cdn-off/$f" ]; then
+              echo "::error::cdn-off: $f present with ENABLE_CDN=false"; fails=$((fails+1))
+            fi
+          done
+          if base64 -d outputs/bundles/cdn-off/subscription.txt 2>/dev/null | grep -q 'type=ws'; then
+            echo "::error::cdn-off: subscription still carries the CDN entry"; fails=$((fails+1))
+          fi
+          # The gate must not take anything else with it.
+          for f in reality.txt subscription.txt README.html; do
+            [ -s "outputs/bundles/cdn-off/$f" ] || { echo "::error::cdn-off: $f missing — the CDN gate broke an unrelated protocol"; fails=$((fails+1)); }
+          done
+          # The guide must hide the CDN section rather than show an empty one.
+          if grep -q 'id="cdn-en" style=""' outputs/bundles/cdn-off/README.html; then
+            echo "::error::cdn-off: guide shows the CDN section with no CDN config"; fails=$((fails+1))
+          fi
+
+          # --- ON: the same server now produces them ---------------------------
+          setflag true
+          ./moav.sh user add cdn-on; own
+          for f in cdn-vless.txt; do
+            [ -s "outputs/bundles/cdn-on/$f" ] || { echo "::error::cdn-on: $f missing with ENABLE_CDN=true"; fails=$((fails+1)); }
+          done
+          grep -q '^vless://' outputs/bundles/cdn-on/cdn-vless.txt \
+            || { echo "::error::cdn-on: cdn-vless.txt is not a vless link"; fails=$((fails+1)); }
+          if ! grep -q 'id="cdn-en" style=""' outputs/bundles/cdn-on/README.html; then
+            echo "::error::cdn-on: guide hides the CDN section although the config is present"; fails=$((fails+1))
+          fi
+
+          # --- doctor must follow the flag, not the subdomain -------------------
+          setflag false
+          ./moav.sh doctor dns 2>&1 | grep -q 'CDN check skipped' \
+            || { echo "::error::doctor still checks CDN with ENABLE_CDN=false"; fails=$((fails+1)); }
+
+          for u in cdn-off cdn-on; do
+            ./moav.sh user revoke "$u" >/dev/null 2>&1 || true
+            rm -rf "outputs/bundles/$u" "state/users/$u"
+          done
+          [ "$fails" -eq 0 ]
+
       - name: Run connectivity tests
         run: |
           set -o pipefail
