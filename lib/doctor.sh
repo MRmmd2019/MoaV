@@ -649,9 +649,15 @@ doctor_check_dns() {
                 warn "CDN endpoint ${cdn_host} resolves but did not answer over HTTPS — cannot confirm it is proxied"
                 echo "        If this is a fresh record, give Cloudflare a minute and re-run 'moav doctor dns'."
             else
+                local cdn_port
+                cdn_port=$(get_env_val "PORT_CDN" "$env_file" "2082")
                 warn "CDN endpoint ${cdn_host} resolves but is NOT proxied through Cloudflare (no cf-ray header)"
-                echo "        Turn the proxy on (orange cloud) for the '${cdn_subdomain:-cdn}' record in your Cloudflare DNS."
-                echo "        Grey-cloud points straight at the origin, so the CDN link gives no CDN and no extra resistance."
+                echo "        1. Turn the proxy on (orange cloud) for the '${cdn_subdomain:-cdn}' record in your Cloudflare DNS."
+                echo "           Grey-cloud points straight at the origin, so the CDN link gives no CDN and no extra resistance."
+                echo "        2. Send ${cdn_host} to port ${cdn_port}: Cloudflare only proxies its standard ports, so"
+                echo "           without an Origin Rule rewriting the destination port to ${cdn_port} the WebSocket never"
+                echo "           reaches sing-box and the client fails with no useful error."
+                echo "        See https://moav.sh/docs/TROUBLESHOOTING/#cdn-vlessws-not-working"
                 failures=$((failures + 1))
             fi
         fi
