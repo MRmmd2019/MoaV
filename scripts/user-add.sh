@@ -168,29 +168,11 @@ if [[ -f .env && -r .env ]]; then
     rm -f "$_ENV_TMP"
 fi
 
-# DONATE_ONLY_PROTOCOLS: lightweight user creation for config donation
-# When set, only provision the listed protocols (skip WireGuard, AmneziaWG, etc.)
+# Donate mode (docs/devdocs/DONATE-MODE.md). Applied after .env is sourced, and
+# again inside each sub-script, since they re-source .env themselves.
 DONATE_ONLY="${DONATE_ONLY_PROTOCOLS:-}"
-if [[ -n "$DONATE_ONLY" ]]; then
-    log_info "Donate mode: only provisioning protocols: $DONATE_ONLY"
-    # Disable heavy services unconditionally
-    ENABLE_WIREGUARD=false
-    ENABLE_AMNEZIAWG=false
-    ENABLE_DNSTT=false
-    ENABLE_SLIPSTREAM=false
-    ENABLE_TRUSTTUNNEL=false
-    # Enable/disable based on donate list
-    echo " $DONATE_ONLY " | grep -q " reality "   && ENABLE_REALITY=true   || ENABLE_REALITY=false
-    echo " $DONATE_ONLY " | grep -q " trojan "    && ENABLE_TROJAN=true    || ENABLE_TROJAN=false
-    echo " $DONATE_ONLY " | grep -q " anytls "    && ENABLE_ANYTLS=true    || ENABLE_ANYTLS=false
-    echo " $DONATE_ONLY " | grep -q " hysteria2 " && ENABLE_HYSTERIA2=true || ENABLE_HYSTERIA2=false
-    echo " $DONATE_ONLY " | grep -q " telegram "  && ENABLE_TELEMT=true    || ENABLE_TELEMT=false
-    echo " $DONATE_ONLY " | grep -q " xhttp "     && ENABLE_XHTTP=true    || ENABLE_XHTTP=false
-    # CDN: clear CDN_DOMAIN if not in donate list
-    if ! echo " $DONATE_ONLY " | grep -q " cdn "; then
-        CDN_SUBDOMAIN=""
-    fi
-fi
+[[ -n "$DONATE_ONLY" ]] && log_info "Donate mode: only provisioning protocols: $DONATE_ONLY"
+apply_donate_mode
 
 # Display batch info
 if [[ "$BATCH_MODE" == "true" ]]; then

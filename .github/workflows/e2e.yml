@@ -313,6 +313,73 @@ jobs:
           done
           [ "$bad" -eq 0 ]
 
+      - name: Protocol gating — normal add, disabled protocols, donate mode (CLI + dashboard)
+        run: |
+          # Two user reports live here: bundles carrying protocols the operator
+          # disabled, and donate mode handing recipients the operator's full
+          # protocol set. Donate mode was silently a no-op for everything the
+          # sub-scripts generate, so this asserts the DASHBOARD path too --
+          # admin/main.py runs the same script with DONATE_ONLY_PROTOCOLS in the
+          # environment, and that is the path the MahsaNet donation actually uses.
+          set -u
+          fails=0
+          have() { [ -e "outputs/bundles/$1/$2" ]; }
+          # want <user> <file>...  — every file must be present
+          want() { u=$1; shift; for f in "$@"; do have "$u" "$f" || { echo "::error::$u: $f missing (should be present)"; fails=$((fails+1)); }; done; }
+          # deny <user> <file>...  — none may be present
+          deny() { u=$1; shift; for f in "$@"; do ! have "$u" "$f" || { echo "::error::$u: $f present (should be absent)"; fails=$((fails+1)); }; done; }
+          own() { sudo chown -R "$USER" configs state outputs 2>/dev/null || true; }
+
+          cp .env /tmp/e2e-env.bak
+          trap 'cp /tmp/e2e-env.bak .env' EXIT
+
+          # --- 1. normal add: everything enabled must be there -----------------
+          ./moav.sh user add gate-normal; own
+          want gate-normal reality.txt trojan.txt hysteria2.txt shadowsocks.txt \
+                           xhttp-vless.txt trusttunnel.toml telegram-proxy-link.txt
+
+          # --- 2. disabled protocols must not reach the bundle -----------------
+          sed -i 's/^ENABLE_TROJAN=.*/ENABLE_TROJAN=false/;s/^ENABLE_HYSTERIA2=.*/ENABLE_HYSTERIA2=false/' .env
+          grep -q '^ENABLE_TROJAN='    .env || echo 'ENABLE_TROJAN=false'    >> .env
+          grep -q '^ENABLE_HYSTERIA2=' .env || echo 'ENABLE_HYSTERIA2=false' >> .env
+          ./moav.sh user add gate-off; own
+          deny gate-off trojan.txt trojan-qr.png hysteria2.txt hysteria2-qr.png
+          want gate-off reality.txt          # converse: a gate that hid everything must fail
+          if base64 -d outputs/bundles/gate-off/subscription.txt 2>/dev/null | grep -qE '^(trojan|hysteria2)://'; then
+            echo "::error::subscription.txt advertises a disabled protocol"; fails=$((fails+1))
+          fi
+          cp /tmp/e2e-env.bak .env
+
+          # --- 3. donate mode via the CLI --------------------------------------
+          DONATE_ONLY_PROTOCOLS="reality hysteria2" ./moav.sh user add gate-donate; own
+          want gate-donate reality.txt hysteria2.txt
+          deny gate-donate trojan.txt shadowsocks.txt xhttp-vless.txt cdn-vless.txt \
+                           trusttunnel.toml trusttunnel.json masterdns-client_config.toml \
+                           xdns-config.json slipstream-client.conf telegram-proxy-link.txt
+          for w in moav-*-wg.conf moav-*-awg.conf; do
+            if compgen -G "outputs/bundles/gate-donate/$w" >/dev/null; then
+              echo "::error::gate-donate: $w present (WireGuard family is never donated)"; fails=$((fails+1))
+            fi
+          done
+          n=$(base64 -d outputs/bundles/gate-donate/subscription.txt 2>/dev/null | grep -c '://' || true)
+          [ "$n" -eq 2 ] || { echo "::error::donated subscription has $n entries, expected 2"; fails=$((fails+1)); }
+
+          # --- 4. donate mode via the DASHBOARD path ---------------------------
+          # admin/main.py: subprocess.run(["bash", user-add.sh, ...], cwd=/project,
+          # env={... DONATE_ONLY_PROTOCOLS}). Same shape, inside the container.
+          docker compose exec -T -w /project \
+            -e DONATE_ONLY_PROTOCOLS="reality hysteria2" \
+            admin bash scripts/user-add.sh gate-dash; own
+          want gate-dash reality.txt hysteria2.txt
+          deny gate-dash trojan.txt shadowsocks.txt xhttp-vless.txt trusttunnel.toml \
+                         masterdns-client_config.toml xdns-config.json
+
+          for u in gate-normal gate-off gate-donate gate-dash; do
+            ./moav.sh user revoke "$u" >/dev/null 2>&1 || true
+            rm -rf "outputs/bundles/$u" "state/users/$u"
+          done
+          [ "$fails" -eq 0 ]
+
       - name: Run connectivity tests
         run: |
           set -o pipefail
