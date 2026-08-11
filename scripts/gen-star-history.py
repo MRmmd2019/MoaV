@@ -28,8 +28,12 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
-REPO = os.environ.get("STAR_REPO", "MotherofallVPNs/MoaV")
+# Comma-separated. A repo we cannot read is skipped with a warning rather than
+# failing the run -- see fetch_stars().
+REPOS = [r.strip() for r in os.environ.get(
+    "STAR_REPOS", "MotherofallVPNs/MoaV,MotherofallVPNs/moav-client").split(",") if r.strip()]
 OUT = os.environ.get("STAR_OUT", "assets/star-history.svg")
+LOGO = os.environ.get("STAR_LOGO", "branding/favicon-56.png")
 
 W, H = 800, 533
 PAD_L, PAD_R, PAD_T, PAD_B = 84, 28, 58, 74
@@ -37,28 +41,37 @@ BG = "#ffffff"
 INK = "#1f2328"      # axes + title, on white
 MUTED = "#57606a"    # tick labels
 GRID = "#d0d7de"
-LINE = "#d29922"     # MoaV accent orange
+# From the logo's own gradient (#00e8fe cyan -> #0097f9 blue), so the chart and
+# the watermark belong to each other.
+SERIES = ["#00d8fb", "#0969da"]
 # Hand-drawn feel without embedding a webfont. Resolves per viewer, so the last
 # entry matters: layout stays right even where none of the others exist.
 FONT = ("'Comic Sans MS','Chalkboard SE','Marker Felt','Segoe Print',"
         "'Bradley Hand',cursive,sans-serif")
 
 
-def fetch_stars():
-    """Every starred_at, oldest first. Uses gh so auth matches the Actions token."""
+def fetch_stars(repo):
+    """Every starred_at for one repo, oldest first. None if we cannot read it.
+
+    A repo-scoped GITHUB_TOKEN is admin only on its OWN repo, so a second repo
+    needs a token with access to both. Rather than fail the whole run when that
+    secret is absent, skip the unreadable repo and chart the rest -- a chart
+    missing one line beats no chart at all.
+    """
     stamps, page = [], 1
     while True:
         out = subprocess.run(
             ["gh", "api", "-H", "Accept: application/vnd.github.star+json",
-             f"repos/{REPO}/stargazers?per_page=100&page={page}"],
+             f"repos/{repo}/stargazers?per_page=100&page={page}"],
             capture_output=True, text=True,
         )
         if out.returncode != 0:
-            sys.stderr.write(out.stderr.strip()[:400] + "\n")
-            raise SystemExit(
-                "could not read stargazers — since 2026-06-30 this endpoint needs "
-                "admin/collaborator access, so run this in the repo's own Actions"
-            )
+            err = out.stderr.strip()[:300]
+            sys.stderr.write(f"skipping {repo}: {err}\n")
+            sys.stderr.write(
+                "  (since 2026-06-30 stargazers needs admin/collaborator access; "
+                "set STAR_TOKEN to a token that can read every repo listed)\n")
+            return None
         batch = json.loads(out.stdout or "[]")
         if not batch:
             break
@@ -67,6 +80,16 @@ def fetch_stars():
             break
         page += 1
     return sorted(stamps)
+
+
+def logo_data_uri():
+    """The watermark, inlined so the SVG stays self-contained."""
+    try:
+        import base64
+        with open(LOGO, "rb") as f:
+            return "data:image/png;base64," + base64.b64encode(f.read()).decode("ascii")
+    except OSError:
+        return ""
 
 
 def build_series(stamps, max_points=110):
@@ -104,24 +127,22 @@ def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def render(series):
-    if len(series) < 2:
-        raise SystemExit("not enough stars to plot yet")
-    t0, t1 = series[0][0], series[-1][0]
+def render(datasets):
+    """datasets: list of (repo, [(datetime, cumulative_count), ...]) in draw order."""
+    datasets = [(r, pts) for r, pts in datasets if len(pts) >= 2]
+    if not datasets:
+        raise SystemExit("no repo had enough stars to plot")
+
+    t0 = min(p[0][0] for _, p in datasets)
+    t1 = max(p[-1][0] for _, p in datasets)
     span = max((t1 - t0).total_seconds(), 1.0)
-    ymax = nice_ceil(series[-1][1])
-    total = series[-1][1]
+    ymax = nice_ceil(max(p[-1][1] for _, p in datasets))
 
     def x(dt):
         return PAD_L + (W - PAD_L - PAD_R) * ((dt - t0).total_seconds() / span)
 
     def y(v):
         return H - PAD_B - (H - PAD_T - PAD_B) * (v / ymax)
-
-    pts = [(x(d), y(v)) for d, v in series]
-    line = " ".join(f"{'M' if i == 0 else 'L'}{px:.1f},{py:.1f}"
-                    for i, (px, py) in enumerate(pts))
-    area = line + f" L{pts[-1][0]:.1f},{y(0):.1f} L{pts[0][0]:.1f},{y(0):.1f} Z"
 
     # Y gridlines + abbreviated counts, like theirs.
     grid = []
@@ -133,18 +154,17 @@ def render(series):
         grid.append(f'<text x="{PAD_L - 12}" y="{gy + 5:.1f}" text-anchor="end" '
                     f'font-size="14" fill="{MUTED}">{kfmt(v)}</text>')
 
-    # X ticks: years for a long history, month+year for a short one — the same
+    # X ticks: years for a long history, month+year for a short one -- the same
     # judgement star-history makes (their sample spans a decade and shows years).
     years = span / (365.25 * 86400)
     fmt = "%Y" if years >= 2.5 else "%b %Y"
     nticks = 6 if years >= 2.5 else 5
-    xt = []
-    seen = set()
+    xt, seen = [], set()
     for i in range(nticks):
-        frac = i / float(nticks - 1)
-        dt = datetime.fromtimestamp(t0.timestamp() + span * frac, tz=timezone.utc)
+        dt = datetime.fromtimestamp(t0.timestamp() + span * (i / float(nticks - 1)),
+                                    tz=timezone.utc)
         lab = dt.strftime(fmt)
-        if lab in seen:                    # avoid repeating "Aug 2026" twice
+        if lab in seen:
             continue
         seen.add(lab)
         tx = x(dt)
@@ -153,31 +173,52 @@ def render(series):
         xt.append(f'<text x="{tx:.1f}" y="{y(0) + 26:.1f}" text-anchor="middle" '
                   f'font-size="14" fill="{MUTED}">{lab}</text>')
 
-    legend_y = PAD_T + 14
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-label="Star history for {esc(REPO)}: {total} stars">
-  <title>Star History — {esc(REPO)}, {total} stars as of {t1.strftime('%Y-%m-%d')}</title>
-  <defs>
-    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="{LINE}" stop-opacity="0.22"/>
-      <stop offset="100%" stop-color="{LINE}" stop-opacity="0.02"/>
-    </linearGradient>
-  </defs>
+    # One line + fade per repo, drawn largest-first so a small series stays visible.
+    defs, paths, legend = [], [], []
+    for idx, (repo, pts) in enumerate(datasets):
+        colour = SERIES[idx % len(SERIES)]
+        xy = [(x(d), y(v)) for d, v in pts]
+        line = " ".join(f"{'M' if i == 0 else 'L'}{px:.1f},{py:.1f}"
+                        for i, (px, py) in enumerate(xy))
+        area = line + f" L{xy[-1][0]:.1f},{y(0):.1f} L{xy[0][0]:.1f},{y(0):.1f} Z"
+        defs.append(f'<linearGradient id="fade{idx}" x1="0" y1="0" x2="0" y2="1">'
+                    f'<stop offset="0%" stop-color="{colour}" stop-opacity="0.22"/>'
+                    f'<stop offset="100%" stop-color="{colour}" stop-opacity="0.02"/></linearGradient>')
+        paths.append(f'<path d="{area}" fill="url(#fade{idx})"/>')
+        paths.append(f'<path d="{line}" fill="none" stroke="{colour}" stroke-width="3" '
+                     f'stroke-linejoin="round" stroke-linecap="round"/>')
+        paths.append(f'<circle cx="{xy[-1][0]:.1f}" cy="{xy[-1][1]:.1f}" r="4.5" fill="{colour}"/>')
+        ly = PAD_T + 14 + idx * 22
+        legend.append(f'<circle cx="{PAD_L + 14}" cy="{ly - 4}" r="5" fill="{colour}"/>'
+                      f'<text x="{PAD_L + 26}" y="{ly}" font-size="15" fill="{INK}">'
+                      f'{esc(repo)} <tspan fill="{MUTED}">({pts[-1][1]})</tspan></text>')
+
+    # Watermark: bottom-right INSIDE the card but clear of the plot frame, so it
+    # never sits on an axis or over the data.
+    logo = logo_data_uri()
+    mark = ""
+    if logo:
+        size = 30
+        mark = (f'<image href="{logo}" x="{W - PAD_R - size}" y="{H - 46}" '
+                f'width="{size}" height="{size}" opacity="0.85"/>')
+
+    summary = ", ".join(f"{r} {p[-1][1]}" for r, p in datasets)
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}" role="img" aria-label="Star history: {esc(summary)}">
+  <title>Star History — {esc(summary)} as of {t1.strftime('%Y-%m-%d')}</title>
+  <defs>{"".join(defs)}</defs>
   <rect width="{W}" height="{H}" rx="8" fill="{BG}"/>
   <g font-family="{FONT}">
     <text x="{W / 2:.0f}" y="34" text-anchor="middle" font-size="22" fill="{INK}">Star History</text>
     {"".join(grid)}
-    <path d="{area}" fill="url(#fade)"/>
-    <path d="{line}" fill="none" stroke="{LINE}" stroke-width="3"
-          stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="{pts[-1][0]:.1f}" cy="{pts[-1][1]:.1f}" r="4.5" fill="{LINE}"/>
+    {"".join(paths)}
     <line x1="{PAD_L}" y1="{PAD_T}" x2="{PAD_L}" y2="{y(0):.1f}" stroke="{INK}" stroke-width="2"/>
     <line x1="{PAD_L}" y1="{y(0):.1f}" x2="{W - PAD_R}" y2="{y(0):.1f}" stroke="{INK}" stroke-width="2"/>
     {"".join(xt)}
     <text x="{W / 2:.0f}" y="{H - 18}" text-anchor="middle" font-size="15" fill="{INK}">Date</text>
     <text transform="translate(26,{H / 2:.0f}) rotate(-90)" text-anchor="middle"
           font-size="15" fill="{INK}">GitHub Stars</text>
-    <circle cx="{PAD_L + 14}" cy="{legend_y - 4}" r="5" fill="{LINE}"/>
-    <text x="{PAD_L + 26}" y="{legend_y}" font-size="15" fill="{INK}">{esc(REPO)}</text>
+    {"".join(legend)}
+    {mark}
   </g>
 </svg>
 '''
@@ -195,7 +236,16 @@ def main():
         print(f"gen-star-history: {OUT} present and well-formed")
         return
 
-    svg = render(build_series(fetch_stars()))
+    datasets = []
+    for repo in REPOS:
+        stamps = fetch_stars(repo)
+        if stamps:
+            datasets.append((repo, build_series(stamps)))
+    if not datasets:
+        raise SystemExit("no readable repo in STAR_REPOS")
+    # Largest total first: its fade is drawn under the smaller one's line.
+    datasets.sort(key=lambda d: d[1][-1][1], reverse=True)
+    svg = render(datasets)
     os.makedirs(os.path.dirname(OUT) or ".", exist_ok=True)
     old = open(OUT, encoding="utf-8").read() if os.path.isfile(OUT) else ""
     if old == svg:
