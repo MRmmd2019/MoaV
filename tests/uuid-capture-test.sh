@@ -85,10 +85,27 @@ for s in user-add.sh singbox-user-add.sh wg-user-add.sh user-revoke.sh user-pack
     fi
 done
 
-# compose must hand the admin container the full .env via env_file instead
-awk '/^  admin:$/{f=1; next} f && /^  [a-z0-9_-]+:$/{f=0} f && /env_file:/{found=1} END{exit !found}' "$compose" \
-    && ok "compose injects .env into the admin container via env_file" \
-    || bad "admin service has no env_file — web-admin adds lose the ENABLE_*/PORT_* toggles"
+# The admin container must still get the full .env, so web-admin adds keep the
+# ENABLE_*/PORT_* toggles. It is no longer compose's env_file: that baked every
+# value into Config.Env where `docker inspect` printed ADMIN_PASSWORD,
+# REALITY_PRIVATE_KEY and MAHSANET_API_KEY. The root entrypoint loads it instead.
+# Assert the invariant, not the mechanism -- either route is acceptable.
+if awk '/^  admin:$/{f=1; next} f && /^  [a-z0-9_-]+:$/{f=0} f && /env_file:/{found=1} END{exit !found}' "$compose"; then
+    ok "compose injects .env into the admin container via env_file"
+elif grep -q '/project/.env' "$ROOT/scripts/admin-entrypoint.sh"; then
+    ok "admin-entrypoint loads .env as root (no secrets in Config.Env)"
+else
+    bad "nothing hands .env to the admin container — web-admin adds lose the ENABLE_*/PORT_* toggles"
+fi
+
+# And compose must not put secrets back into the container config.
+for secret in ADMIN_PASSWORD MAHSANET_API_KEY REALITY_PRIVATE_KEY; do
+    if awk -v s="$secret" '/^  admin:$/{f=1; next} f && /^  [a-z0-9_-]+:$/{f=0} f && $0 ~ ("- " s "=") {found=1} END{exit !found}' "$compose"; then
+        bad "compose puts $secret in the admin environment — docker inspect exposes it"
+    else
+        ok "$secret is not in the admin container config"
+    fi
+done
 
 echo
 echo "  $pass passed, $fail failed"
