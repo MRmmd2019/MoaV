@@ -44,7 +44,7 @@ coins = {
 # ETH is one address across every EVM chain; Tron is NOT -- TRX/TRC-20 use a
 # base58 address and anything sent to the 0x one is unrecoverable.
 notes_en = {
-    "ETH": "same address on every EVM chain (Arbitrum, Optimism, Base, Polygon, Gnosis…) and any ERC-20",
+    "ETH": "same address on every EVM chain (Arbitrum, Optimism, Base, Gnosis…) and any ERC20 (USDC, USDT, DAI…)",
     "TRON": "TRX and TRC-20 only — not interchangeable with the EVM address",
 }
 notes_fa = {
@@ -77,7 +77,7 @@ for line in open(funding, encoding="utf-8"):
             # Superscript numerals, not asterisks: a line starting with "*"
             # renders as a bullet and "**" as broken bold.
             sup = "¹²³⁴⁵⁶⁷⁸⁹"[len(footnotes)]
-            marker = sup
+            marker = " " + sup
             footnotes.append(f"{sup} **{label}** — {note}")
         crypto.append(f"| **{label}**{marker} | `{val}` |")
 
@@ -89,7 +89,8 @@ if crypto:
     # Notes live under the table: inline they wrap inside a narrow first column
     # and blow the row height up to a dozen lines on GitHub.
     if footnotes:
-        out += [""] + footnotes
+        for fn in footnotes:
+            out += ["", fn]
 print("\n".join(out).rstrip())
 PY
 }
@@ -121,7 +122,7 @@ PY
             echo "render-funding: $f up to date"
         fi
     else
-        printf '%s' "$new" > "$path"
+        printf '%s\n' "$new" > "$path"
         echo "render-funding: refreshed the donation block in $f"
     fi
 done
