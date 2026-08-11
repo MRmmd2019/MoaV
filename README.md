@@ -462,7 +462,13 @@ MIT
 ## Changelog
 See [CHANGELOG.md](CHANGELOG.md) for release notes and version history.
 
+## Stars over time
 
+<a href="https://github.com/MotherofallVPNs/MoaV/stargazers">
+  <img src="assets/star-history.svg" alt="MoaV star history" width="800">
+</a>
+
+Every star helps someone else find a way through. Thank you.
 
 ---
 ## Disclaimer
