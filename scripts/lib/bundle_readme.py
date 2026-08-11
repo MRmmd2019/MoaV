@@ -141,6 +141,12 @@ cdn = link("cdn-vless.txt")
 # guide lives in this README, not a separate instructions .txt).
 md = instr("masterdns-client_config.toml")
 gr = instr("gooserelay-client_config.json")
+# TrustTunnel ships .toml (client config) + .json (credentials); either proves it.
+tt_present = any(os.path.isfile(os.path.join(OUT, n))
+                 for n in ("trusttunnel.toml", "trusttunnel.json"))
+# dnstt is server-wide: there is no per-user artifact, so presence is the server
+# pubkey this guide embeds.
+dnstt_present = bool(os.environ.get("RB_DNSTT_PUBKEY", "").strip())
 
 repl = {
     "USERNAME": os.environ.get("RB_USERNAME", ""),
@@ -191,8 +197,10 @@ repl = {
     "XHTTP_DISPLAY":       _hide("xhttp-vless.txt"),
     "AMNEZIAWG_DISPLAY":   _hide("amneziawg.conf"),
     "WIREGUARD_DISPLAY":   _hide("wireguard.conf"),
-    "TRUSTTUNNEL_DISPLAY": _hide("trusttunnel.txt"),
-    "DNSTT_DISPLAY":       _hide("dnstt-instructions.txt"),
+    # Keyed on artifacts that are actually written. trusttunnel.txt and
+    # dnstt-instructions.txt never existed, so both sections were always hidden.
+    "TRUSTTUNNEL_DISPLAY": "" if tt_present else "display:none",
+    "DNSTT_DISPLAY":       "" if dnstt_present else "display:none",
     "TELEMT_DISPLAY":      _hide("telegram-proxy-link.txt"),
 
     "TRUSTTUNNEL_PASSWORD": val_or(os.environ.get("RB_USER_PASSWORD", ""), "See trusttunnel.json"),

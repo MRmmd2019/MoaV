@@ -565,11 +565,15 @@ cmd_migrate_ip() {
                     rm -f "$user_dir/cdn-vless.txt.bak"
                 fi
 
-                # Update TrustTunnel config
-                if [[ -f "$user_dir/trusttunnel.txt" ]]; then
-                    sed -i.bak "s/$old_ip/$new_ip/g" "$user_dir/trusttunnel.txt"
-                    rm -f "$user_dir/trusttunnel.txt.bak"
-                fi
+                # Update TrustTunnel config. .toml and .json are the files that
+                # actually ship and that carry the IP; trusttunnel.txt never
+                # existed, so a move used to strand TrustTunnel on the old server.
+                for _tt in trusttunnel.toml trusttunnel.json trusttunnel.txt; do
+                    if [[ -f "$user_dir/$_tt" ]]; then
+                        sed -i.bak "s/$old_ip/$new_ip/g" "$user_dir/$_tt"
+                        rm -f "$user_dir/$_tt.bak"
+                    fi
+                done
 
                 # Update XDNS configs
                 if [[ -f "$user_dir/xdns-direct-config.json" ]]; then
