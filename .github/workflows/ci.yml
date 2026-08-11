@@ -73,6 +73,8 @@ jobs:
         run: bash tests/singbox-user-metrics-test.sh
       - name: CLI surface consistency (help/links/table/pins)
         run: bash tests/cli-surface-test.sh
+      - name: DNS-tunnel bundle completeness
+        run: bash tests/dns-tunnel-bundle-test.sh
       - name: admin TLS enforcement
         run: bash tests/admin-tls-test.sh
       - name: admin IP whitelist (CIDR) unit test

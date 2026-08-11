@@ -263,6 +263,23 @@ STATE_DIR="${STATE_DIR:-state}"
 AWG_CONFIG_DIR="configs/amneziawg"
 GOOSERELAY_CONFIG_DIR="configs/gooserelay"
 
+# $STATE_DIR/keys exists in the containers but not on the host, so hydrate it
+# from the client-facing copies bootstrap publishes; keeps the shared generators
+# in scripts/lib/*.sh reading one location on both paths.
+publish_to_state_keys() {   # <published-host-file> <state-key-filename>
+    local src="$1" dst="$STATE_DIR/keys/$2"
+    [[ -s "$dst" ]] && return 0        # already there (container-style layout)
+    [[ -s "$src" ]] || return 1
+    mkdir -p "$STATE_DIR/keys" 2>/dev/null || return 1
+    cp "$src" "$dst" 2>/dev/null || return 1
+}
+_hydrated=0
+publish_to_state_keys "outputs/slipstream/cert.pem"       "slipstream-cert.pem"   && _hydrated=1
+publish_to_state_keys "outputs/masterdns/encrypt_key.txt" "masterdns-encrypt.key" && _hydrated=1
+# a root cp leaves 640 root:root; uid 2000 must be able to read these
+[[ "$_hydrated" == "1" ]] && secure_state_keys "$STATE_DIR/keys"
+unset _hydrated
+
 for USERNAME in "${USERNAMES[@]}"; do
     OUTPUT_DIR="outputs/bundles/$USERNAME"
     mkdir -p "$OUTPUT_DIR"
@@ -402,15 +419,25 @@ echo ""
 # is enabled and its key/config is present. ($STATE_DIR + the host lib config
 # dirs are set above, before the per-user loop.)
 
-if [[ "${ENABLE_SLIPSTREAM:-true}" == "true" ]] && [[ -f "$STATE_DIR/keys/slipstream-cert.pem" ]]; then
-    if slipstream_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
-        log_info "✓ Slipstream instructions generated"
+if [[ "${ENABLE_SLIPSTREAM:-true}" == "true" ]]; then
+    if [[ -f "$STATE_DIR/keys/slipstream-cert.pem" ]]; then
+        if slipstream_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
+            log_info "✓ Slipstream instructions generated"
+        fi
+    else
+        log_warn "Slipstream is enabled but its certificate was not found — bundle will not include it"
+        log_warn "  looked in $STATE_DIR/keys/slipstream-cert.pem and outputs/slipstream/cert.pem; run 'moav bootstrap' to publish it"
     fi
 fi
 
-if [[ "${ENABLE_MASTERDNS:-true}" == "true" ]] && [[ -s "$STATE_DIR/keys/masterdns-encrypt.key" ]]; then
-    if masterdns_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
-        log_info "✓ MasterDNS instructions generated"
+if [[ "${ENABLE_MASTERDNS:-true}" == "true" ]]; then
+    if [[ -s "$STATE_DIR/keys/masterdns-encrypt.key" ]]; then
+        if masterdns_generate_client_instructions "$USERNAME" "$OUTPUT_DIR"; then
+            log_info "✓ MasterDNS instructions generated"
+        fi
+    else
+        log_warn "MasterDNS is enabled but its encryption key was not found — bundle will not include it"
+        log_warn "  looked in $STATE_DIR/keys/masterdns-encrypt.key and outputs/masterdns/encrypt_key.txt; run 'moav bootstrap' to publish it"
     fi
 fi
 
