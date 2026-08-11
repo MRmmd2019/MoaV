@@ -93,16 +93,21 @@ run_case "gooserelay"  gooserelay   gooserelay-client_config.json
 # The reported bug: .toml and .json are what actually ship.
 run_case "trusttunnel" trusttunnel  trusttunnel.toml trusttunnel.json
 
-# dnstt has no per-user artifact — presence is the server pubkey.
-d="$tmp/dnstt"; mkdir -p "$d"
+# dnstt now ships the server pubkey per user, written only when dnstt is enabled
+# for that user. It used to key on RB_DNSTT_PUBKEY, which is server-wide and set
+# regardless of ENABLE_DNSTT -- so the section appeared in DONATED bundles, whose
+# users have no dnstt at all.
+run_case "dnstt" dns-tunnel dnstt-server.pub
+
+# The old signal must not resurrect it: a bundle with no dnstt artifact stays
+# hidden even on a server whose pubkey is in the environment.
+d="$tmp/dnstt-env"; mkdir -p "$d"
+printf 'vless://x\n' > "$d/reality.txt"
 RB_DNSTT_PUBKEY="deadbeefdeadbeefdeadbeefdeadbeef" render "$d"
 st=$(section_style "$d/README.html" "dns-tunnel")
-[ -z "$st" ] && ok "dnstt: visible when the server pubkey is set" \
-             || bad "dnstt: HIDDEN with a pubkey set ($st)"
-( unset RB_DNSTT_PUBKEY; render "$d" )
-st=$(section_style "$d/README.html" "dns-tunnel")
-[ "$st" = "display:none" ] && ok "dnstt: hidden with no pubkey" \
-                           || bad "dnstt: shown with no pubkey (style='$st')"
+[ "$st" = "display:none" ] \
+    && ok "dnstt: hidden when only the SERVER pubkey is set (donated-bundle case)" \
+    || bad "dnstt: shown from the server pubkey alone (style='$st') — donated bundles regress"
 
 # --- no section may key on a file nothing writes -----------------------------
 # The root cause. Any _hide()/isfile() target must be a name some generator
@@ -119,6 +124,29 @@ for name in $(grep -oE '_hide\("[^"]+"\)|isfile\(os\.path\.join\(OUT, "[^"]+"\)'
         bad "$name is referenced by the guide but NO script writes it — section hides silently"
     fi
 done
+
+# --- the dashboard and the guide must read the SAME per-user signal ----------
+# The reported bug was a disagreement: the dashboard listed dnstt for a donated
+# user while the bundle had no dnstt file. Both sides now key on the per-user
+# artifact, and neither may go back to a server-wide path.
+if grep -q 'has_dnstt = (user_dir / "dnstt-server.pub").exists()' "$ROOT/admin/main.py"; then
+    ok "dashboard detects dnstt from the user's own bundle"
+else
+    bad "dashboard does not key dnstt on the per-user file — it would claim dnstt for every user"
+fi
+if grep -qE 'has_dnstt.*bundle_path\.parent' "$ROOT/admin/main.py"; then
+    bad "dashboard reads the SERVER dnstt pubkey again — donated users would show dnstt"
+else
+    ok "dashboard no longer reads the server-wide dnstt path"
+fi
+# RB_DNSTT_PUBKEY legitimately stays as the value the guide DISPLAYS; what must
+# not come back is deriving visibility from it.
+if grep -qE '^dnstt_present\s*=.*RB_DNSTT_PUBKEY' "$ROOT/scripts/lib/bundle_readme.py"; then
+    bad "the guide keys dnstt VISIBILITY on RB_DNSTT_PUBKEY again (server-wide, ignores ENABLE_DNSTT)"
+else
+    ok "dnstt visibility is not derived from the server-wide pubkey"
+fi
+
 
 echo ""
 echo "  passed: $pass   failed: $fail"

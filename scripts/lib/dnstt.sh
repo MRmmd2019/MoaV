@@ -130,3 +130,17 @@ EOF
     log_info "Public key (hex): $dnstt_pubkey"
 }
 
+
+# Ship the server pubkey into a user's bundle when dnstt is enabled for them.
+#
+# dnstt is server-shared, and having no per-user artifact made it the odd one
+# out: the guide keyed its section on the server pubkey and the dashboard on the
+# server file, so BOTH claimed dnstt for every user -- including donated users,
+# who are provisioned with dnstt off. A per-user file makes dnstt behave like
+# every other protocol, and users need this key for their client anyway.
+# Slipstream already does exactly this with its server cert.
+dnstt_write_client_pubkey() {   # <output-dir> <pubkey>
+    local output_dir="$1" pubkey="$2"
+    [[ -n "$output_dir" && -n "$pubkey" ]] || return 1
+    printf '%s\n' "$pubkey" > "$output_dir/dnstt-server.pub" || return 1
+}

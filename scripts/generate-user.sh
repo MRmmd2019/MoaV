@@ -640,6 +640,11 @@ if [[ -f "$OUTPUT_HTML" ]] && [[ "$BUNDLE_CHANGED" == "false" ]] && [[ "$FORCE_R
 else
     # DNSTT public key source is context-specific (state volume in the container).
     DNSTT_PUBKEY=$(cat "$STATE_DIR/keys/dnstt-server.pub.hex" 2>/dev/null || echo "")
+    if [[ "${ENABLE_DNSTT:-true}" == "true" && -n "$DNSTT_PUBKEY" ]]; then
+        dnstt_write_client_pubkey "$OUTPUT_DIR" "$DNSTT_PUBKEY" || true
+    else
+        DNSTT_PUBKEY=""
+    fi
     render_bundle_readme "$USER_ID" "$OUTPUT_DIR" "$TEMPLATE_FILE" "container"
 fi
 

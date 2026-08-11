@@ -144,9 +144,11 @@ gr = instr("gooserelay-client_config.json")
 # TrustTunnel ships .toml (client config) + .json (credentials); either proves it.
 tt_present = any(os.path.isfile(os.path.join(OUT, n))
                  for n in ("trusttunnel.toml", "trusttunnel.json"))
-# dnstt is server-wide: there is no per-user artifact, so presence is the server
-# pubkey this guide embeds.
-dnstt_present = bool(os.environ.get("RB_DNSTT_PUBKEY", "").strip())
+# dnstt now ships the server pubkey per user (dnstt-server.pub), written only
+# when dnstt is enabled for that user. Keying on the pubkey ENV instead made the
+# section appear for donated users, whose bundles have no dnstt at all: the env
+# value is server-wide and set regardless of ENABLE_DNSTT.
+dnstt_present = os.path.isfile(os.path.join(OUT, "dnstt-server.pub"))
 
 repl = {
     "USERNAME": os.environ.get("RB_USERNAME", ""),
