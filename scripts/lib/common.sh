@@ -330,3 +330,24 @@ donate_allows() {
     [[ -z "${DONATE_ONLY_PROTOCOLS:-}" ]] && return 0
     [[ " ${DONATE_ONLY_PROTOCOLS} " == *" $1 "* ]]
 }
+
+# Is the Cloudflare-fronted CDN inbound in use?
+#
+# ENABLE_CDN is the flag; .env.example ships it false, because a CDN link only
+# works once the subdomain is proxied through Cloudflare, and an unconfigured
+# one hands users a config that cannot connect.
+#
+# When the flag is ABSENT the legacy rule applies -- CDN is on if CDN_SUBDOMAIN
+# is set. Servers built before the flag existed keep their working CDN instead
+# of silently losing it on upgrade.
+cdn_enabled() {
+    local flag="${ENABLE_CDN:-}"
+    [[ -z "$flag" && -f .env ]] && flag="$(get_env_val "ENABLE_CDN" ".env" "")"
+    if [[ -n "$flag" ]]; then
+        [[ "$flag" == "true" ]]
+        return
+    fi
+    local sub="${CDN_SUBDOMAIN:-}"
+    [[ -z "$sub" && -f .env ]] && sub="$(get_env_val "CDN_SUBDOMAIN" ".env" "")"
+    [[ -n "$sub" || -n "${CDN_DOMAIN:-}" ]]
+}

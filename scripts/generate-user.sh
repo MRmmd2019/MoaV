@@ -405,7 +405,9 @@ fi
 # Generate CDN VLESS+WS client config (if CDN_DOMAIN is set)
 # -----------------------------------------------------------------------------
 # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
-if [[ -z "${CDN_DOMAIN:-}" ]]; then
+if ! cdn_enabled; then
+    CDN_DOMAIN=""
+elif [[ -z "${CDN_DOMAIN:-}" ]]; then
     if [[ -n "${CDN_SUBDOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
         CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN}"
     fi
