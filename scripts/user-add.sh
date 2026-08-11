@@ -446,7 +446,9 @@ if [[ -f "$TEMPLATE_FILE" ]]; then
     SERVER_IP="${SERVER_IP:-$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || echo "YOUR_SERVER_IP")}"
     # Context-specific inputs the shared renderer reads from the environment.
     DNSTT_PUBKEY=$(cat "outputs/dnstt/server.pub" 2>/dev/null || echo "")
-    if [[ -z "${CDN_DOMAIN:-}" && -n "${CDN_SUBDOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
+    if ! cdn_enabled; then
+        CDN_DOMAIN=""
+    elif [[ -z "${CDN_DOMAIN:-}" && -n "${CDN_SUBDOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
         CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN}"
     fi
     if [[ -f "$OUTPUT_DIR/trusttunnel.json" ]]; then

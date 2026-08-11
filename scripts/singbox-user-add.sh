@@ -303,7 +303,7 @@ fi
 # Generate CDN VLESS+WS link (if CDN configured and, in donate mode, requested)
 # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
 CDN_DOMAIN=""
-if donate_allows cdn; then
+if donate_allows cdn && cdn_enabled; then
     CDN_DOMAIN="${CDN_DOMAIN:-$(get_env_val "CDN_DOMAIN" ".env" "")}"
     if [[ -z "$CDN_DOMAIN" ]]; then
         CDN_SUBDOMAIN="${CDN_SUBDOMAIN:-$(get_env_val "CDN_SUBDOMAIN" ".env" "")}"

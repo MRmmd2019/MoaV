@@ -608,6 +608,8 @@ doctor_check_dns() {
         info "DNS tunnel checks skipped: dnstt, Slipstream, MasterDNS, and XDNS are all disabled."
     fi
 
+    local cdn_flag
+    cdn_flag=$(get_env_val "ENABLE_CDN" "$env_file" "")
     cdn_subdomain=$(get_env_val "CDN_SUBDOMAIN" "$env_file" "")
     cdn_domain=$(get_env_val "CDN_DOMAIN" "$env_file" "")
     if [[ -n "$cdn_subdomain" ]]; then
@@ -616,12 +618,43 @@ doctor_check_dns() {
         cdn_host="$cdn_domain"
     fi
 
-    if [[ -n "$cdn_host" ]]; then
+    # Absent flag = the pre-ENABLE_CDN rule (on if a subdomain is set), matching
+    # cdn_enabled() in scripts/lib/common.sh.
+    local cdn_on=false
+    if [[ -n "$cdn_flag" ]]; then
+        [[ "$cdn_flag" == "true" ]] && cdn_on=true
+    elif [[ -n "$cdn_host" ]]; then
+        cdn_on=true
+    fi
+
+    if [[ "$cdn_on" != "true" ]]; then
+        info "CDN check skipped: ENABLE_CDN is not true."
+    elif [[ -z "$cdn_host" ]]; then
+        warn "ENABLE_CDN=true but neither CDN_SUBDOMAIN nor CDN_DOMAIN is set — no CDN links will be generated."
+        failures=$((failures + 1))
+    else
         if ! doctor_check_resolves "CDN endpoint" "$cdn_host" "create or fix the CDN DNS entry for ${cdn_host}"; then
             failures=$((failures + 1))
+        else
+            # Resolving is not enough: the record must be PROXIED (orange cloud).
+            # A grey-cloud record resolves to the origin and the CDN link then
+            # behaves like plain VLESS+WS on a second hostname -- no CDN in front,
+            # and none of the censorship resistance the CDN path exists for.
+            # cf-ray is served by Cloudflare's edge and by nothing else.
+            local cdn_hdrs
+            cdn_hdrs=$(curl -sS -I --max-time 10 "https://${cdn_host}" 2>/dev/null | tr 'A-Z' 'a-z' || true)
+            if printf '%s' "$cdn_hdrs" | grep -qE '^(cf-ray|server: *cloudflare)'; then
+                success "CDN endpoint ${cdn_host} is proxied through Cloudflare"
+            elif [[ -z "$cdn_hdrs" ]]; then
+                warn "CDN endpoint ${cdn_host} resolves but did not answer over HTTPS — cannot confirm it is proxied"
+                echo "        If this is a fresh record, give Cloudflare a minute and re-run 'moav doctor dns'."
+            else
+                warn "CDN endpoint ${cdn_host} resolves but is NOT proxied through Cloudflare (no cf-ray header)"
+                echo "        Turn the proxy on (orange cloud) for the '${cdn_subdomain:-cdn}' record in your Cloudflare DNS."
+                echo "        Grey-cloud points straight at the origin, so the CDN link gives no CDN and no extra resistance."
+                failures=$((failures + 1))
+            fi
         fi
-    else
-        info "CDN check skipped: CDN_SUBDOMAIN/CDN_DOMAIN is not configured."
     fi
 
     if [[ $failures -gt 0 ]]; then
