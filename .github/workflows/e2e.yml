@@ -313,6 +313,45 @@ jobs:
           done
           [ "$bad" -eq 0 ]
 
+      - name: A disabled protocol must not reach the bundle
+        run: |
+          # A user reported bundles containing protocols they never enabled. The
+          # host add path (singbox-user-add.sh) gated only SS/AnyTLS/XHTTP, so
+          # Reality, Trojan, Hysteria2 and TrustTunnel shipped regardless of
+          # their ENABLE_* flags. Static gating is covered by
+          # tests/enable-flag-gating-test.sh; this is the live both-directions
+          # check, on a real bootstrapped server.
+          cp .env /tmp/e2e-env.bak
+          trap 'cp /tmp/e2e-env.bak .env' EXIT
+          sed -i 's/^ENABLE_TROJAN=.*/ENABLE_TROJAN=false/;s/^ENABLE_HYSTERIA2=.*/ENABLE_HYSTERIA2=false/' .env
+          grep -q '^ENABLE_TROJAN='    .env || echo 'ENABLE_TROJAN=false'    >> .env
+          grep -q '^ENABLE_HYSTERIA2=' .env || echo 'ENABLE_HYSTERIA2=false' >> .env
+
+          ./moav.sh user add gatecheck            # must not die under set -u
+          sudo chown -R "$USER" configs state outputs 2>/dev/null || true
+
+          bad=0
+          for f in trojan.txt trojan-qr.png hysteria2.txt hysteria2-qr.png; do
+            if [ -e "outputs/bundles/gatecheck/$f" ]; then
+              echo "::error::$f is in the bundle although its protocol is disabled"; bad=1
+            fi
+          done
+          # ...and the converse: a still-enabled protocol must be present, or a
+          # gate that hides everything would pass the check above.
+          for f in reality.txt; do
+            if [ ! -s "outputs/bundles/gatecheck/$f" ]; then
+              echo "::error::$f missing although its protocol is enabled"; bad=1
+            fi
+          done
+          # The subscription is built from those links, so it must agree.
+          if base64 -d outputs/bundles/gatecheck/subscription.txt 2>/dev/null | grep -qE '^(trojan|hysteria2)://'; then
+            echo "::error::subscription.txt advertises a disabled protocol"; bad=1
+          fi
+
+          ./moav.sh user revoke gatecheck >/dev/null 2>&1 || true
+          rm -rf outputs/bundles/gatecheck state/users/gatecheck
+          [ "$bad" -eq 0 ]
+
       - name: Run connectivity tests
         run: |
           set -o pipefail
