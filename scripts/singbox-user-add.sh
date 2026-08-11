@@ -58,6 +58,10 @@ if [[ -f .env && -r .env ]]; then
     set +a
 fi
 
+# Donate mode must be re-applied: the source above just reset every ENABLE_*
+# to the operator's .env values. See docs/devdocs/DONATE-MODE.md
+apply_donate_mode
+
 CONFIG_FILE="configs/sing-box/config.json"
 STATE_DIR="${STATE_DIR:-./state}"
 OUTPUT_DIR="outputs/bundles/$USERNAME"
@@ -296,14 +300,17 @@ if command -v qrencode &>/dev/null; then
     fi
 fi
 
-# Generate CDN VLESS+WS link (if CDN configured)
+# Generate CDN VLESS+WS link (if CDN configured and, in donate mode, requested)
 # Construct CDN_DOMAIN from CDN_SUBDOMAIN + DOMAIN if not explicitly set
-CDN_DOMAIN="${CDN_DOMAIN:-$(get_env_val "CDN_DOMAIN" ".env" "")}"
-if [[ -z "$CDN_DOMAIN" ]]; then
-    CDN_SUBDOMAIN="${CDN_SUBDOMAIN:-$(get_env_val "CDN_SUBDOMAIN" ".env" "")}"
-    DOMAIN_FROM_ENV="${DOMAIN:-$(get_env_val "DOMAIN" ".env" "")}"
-    if [[ -n "$CDN_SUBDOMAIN" && -n "$DOMAIN_FROM_ENV" ]]; then
-        CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN_FROM_ENV}"
+CDN_DOMAIN=""
+if donate_allows cdn; then
+    CDN_DOMAIN="${CDN_DOMAIN:-$(get_env_val "CDN_DOMAIN" ".env" "")}"
+    if [[ -z "$CDN_DOMAIN" ]]; then
+        CDN_SUBDOMAIN="${CDN_SUBDOMAIN:-$(get_env_val "CDN_SUBDOMAIN" ".env" "")}"
+        DOMAIN_FROM_ENV="${DOMAIN:-$(get_env_val "DOMAIN" ".env" "")}"
+        if [[ -n "$CDN_SUBDOMAIN" && -n "$DOMAIN_FROM_ENV" ]]; then
+            CDN_DOMAIN="${CDN_SUBDOMAIN}.${DOMAIN_FROM_ENV}"
+        fi
     fi
 fi
 # Load CDN WS path: .env → state file (bootstrap-generated) → fallback

@@ -96,6 +96,70 @@ else
     bad "TrustTunnel gated on credentials.toml alone — that file survives disabling it"
 fi
 
+# --- donate mode ------------------------------------------------------------
+# Donate mode hands configs to another network (MahsaNet); recipients paste a
+# share link into a phone app. Anything needing a client daemon, a tunnel device
+# or a DNS delegation cannot be donated. Reference: docs/devdocs/DONATE-MODE.md
+#
+# The overrides used to live inline in user-add.sh, un-exported, and every
+# sub-script then re-sourced .env -- so they never reached singbox-user-add.sh
+# or wg-user-add.sh and donated users got the operator's full protocol set.
+common="$ROOT/scripts/lib/common.sh"
+
+grep -q '^apply_donate_mode()' "$common" \
+    && ok "apply_donate_mode is shared in lib/common.sh" \
+    || bad "apply_donate_mode is not in lib/common.sh — each path would drift"
+
+for s in user-add.sh singbox-user-add.sh wg-user-add.sh; do
+    if grep -q '^apply_donate_mode' "$ROOT/scripts/$s"; then
+        ok "$s applies donate mode"
+    else
+        bad "$s never applies donate mode — it re-sources .env and loses the overrides"
+    fi
+done
+
+# Every override must be EXPORTED, or the sub-scripts cannot see it. Checked by
+# running the function and reading the environment it leaves behind -- a textual
+# check misreads a multi-line `export a=1 \\\n b=2` as unexported continuations.
+donate_env=$(
+    set +u
+    # shellcheck disable=SC1090
+    source "$common" >/dev/null 2>&1
+    DONATE_ONLY_PROTOCOLS="reality hysteria2"
+    apply_donate_mode
+    env | grep -E '^(ENABLE_|CDN_SUBDOMAIN)' | sort
+)
+for want in ENABLE_WIREGUARD=false ENABLE_AMNEZIAWG=false ENABLE_TRUSTTUNNEL=false \
+            ENABLE_GOOSERELAY=false ENABLE_DNSTT=false ENABLE_SLIPSTREAM=false \
+            ENABLE_MASTERDNS=false ENABLE_XDNS=false \
+            ENABLE_REALITY=true ENABLE_HYSTERIA2=true \
+            ENABLE_TROJAN=false ENABLE_SS=false ENABLE_XHTTP=false ENABLE_TELEMT=false; do
+    if printf '%s\n' "$donate_env" | grep -qx "$want"; then
+        ok "donate mode exports $want"
+    else
+        got=$(printf '%s\n' "$donate_env" | grep "^${want%%=*}=" || echo "<unset>")
+        bad "donate mode: expected $want, got $got"
+    fi
+done
+
+# The non-donatable set must stay forced off.
+for p in WIREGUARD AMNEZIAWG TRUSTTUNNEL GOOSERELAY DNSTT SLIPSTREAM MASTERDNS XDNS; do
+    if awk '/^apply_donate_mode\(\)/,/^}/' "$common" | grep -q "ENABLE_$p=false"; then
+        ok "donate mode forces ENABLE_$p off"
+    else
+        bad "donate mode does not disable $p — not donatable, needs a daemon/tunnel/DNS"
+    fi
+done
+
+# CDN has no ENABLE_ flag; clearing CDN_SUBDOMAIN does not stick because the
+# generator re-reads .env when it is empty, so it needs the predicate.
+grep -q '^donate_allows()' "$common" \
+    && ok "donate_allows() exists for flagless protocols" \
+    || bad "no donate_allows() — CDN cannot be excluded from a donation"
+grep -q 'donate_allows cdn' "$ROOT/scripts/singbox-user-add.sh" \
+    && ok "CDN generation is gated by donate_allows" \
+    || bad "CDN is not gated — donated users get a CDN link they did not ask for"
+
 echo ""
 echo "  passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1

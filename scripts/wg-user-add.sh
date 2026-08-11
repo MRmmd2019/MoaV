@@ -56,6 +56,10 @@ if [[ -f .env && -r .env ]]; then
     set +a
 fi
 
+# Donate mode must be re-applied: the source above just reset every ENABLE_*
+# to the operator's .env values. See docs/devdocs/DONATE-MODE.md
+apply_donate_mode
+
 WG_CONFIG_DIR="configs/wireguard"
 STATE_DIR="${STATE_DIR:-./state}"
 OUTPUT_DIR="outputs/bundles/$USERNAME"
