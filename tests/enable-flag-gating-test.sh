@@ -160,6 +160,19 @@ grep -q 'donate_allows cdn' "$ROOT/scripts/singbox-user-add.sh" \
     && ok "CDN generation is gated by donate_allows" \
     || bad "CDN is not gated — donated users get a CDN link they did not ask for"
 
+# The shipped donation default must be a subset of what donate mode can actually
+# grant. A typo ("shadowsock") or a tunnel protocol here would silently donate
+# nothing for that entry, since apply_donate_mode only matches known tokens.
+donatable="reality trojan anytls hysteria2 shadowsocks telegram xhttp cdn"
+defaults=$(grep -E '^MAHSANET_PROTOCOLS=' "$ROOT/.env.example" | cut -d= -f2- | tr -d '"')
+for tok in $defaults; do
+    case " $donatable " in
+        *" $tok "*) ok "MAHSANET_PROTOCOLS default '$tok' is donatable" ;;
+        *)          bad "MAHSANET_PROTOCOLS default '$tok' is not in the donatable set — it would donate nothing" ;;
+    esac
+done
+
+
 echo ""
 echo "  passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
