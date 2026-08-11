@@ -425,11 +425,12 @@ Raspberry Pi کافی است.
 | ارز | نشانی |
 |---|---|
 | **Bitcoin (BTC)** | `bc1qkfq3hg5kpzgy7muc8m3pmh6zemhv820a0ndqgg` |
-| **Ethereum (ETH)**¹ | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
+| **Ethereum (ETH)** ¹ | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
 | **Zcash (ZEC)** | `u1pclheucppc87qlffh9m8wjfw87w2nka40w9nxjuqnyppj0kx9xp7z9rg6wx556662y5f8dtfyeynmm2lnz5aqvaqzmnpajlq0mnmkntdqzqqegk8lwv09cnudf3ttzm3878p3030j3lwupj257rmmv9p3ea32hgwsuf3jdh8ycv7q587` |
-| **Tron**² | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
+| **Tron** ² | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
 
 ¹ **Ethereum (ETH)** — همین نشانی روی همهٔ زنجیره‌های EVM کار می‌کند و برای هر توکن ERC-20
+
 ² **Tron** — فقط TRX و TRC-20 — با نشانی EVM بالا یکی نیست
 <!-- FUNDING:END -->
 
