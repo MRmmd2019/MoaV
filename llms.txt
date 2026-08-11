@@ -21,12 +21,12 @@ Enough to deploy and find your way around. Everything else is linked below.
 
 ## For agents working in this repo
 
-- [AGENTS.md](AGENTS.md): the deep guide — repo layout, build/run, testing, the conventions that bite (strict mode, get_env_val, bash 3.2, host-vs-container paths, uid 2000, secrets in state)
-- [CONTRIBUTING.md](CONTRIBUTING.md): contributor workflow
-- [CHANGELOG.md](CHANGELOG.md): behavior changes per version
-- [docs/devdocs/E2E-TESTING.md](docs/devdocs/E2E-TESTING.md): the end-to-end harness and what a passing run must prove
-- [docs/devdocs/PROTOCOL-INTEGRATION-CHECKLIST.md](docs/devdocs/PROTOCOL-INTEGRATION-CHECKLIST.md): adding a new protocol
-- [docs/devdocs/VERSION-BUMP-CHECKLIST.md](docs/devdocs/VERSION-BUMP-CHECKLIST.md): bumping a component version
+- [AGENTS.md](https://raw.githubusercontent.com/MotherofallVPNs/MoaV/main/AGENTS.md): the deep guide — repo layout, build/run, testing, the conventions that bite (strict mode, get_env_val, bash 3.2, host-vs-container paths, uid 2000, secrets in state)
+- [CONTRIBUTING.md](https://raw.githubusercontent.com/MotherofallVPNs/MoaV/main/CONTRIBUTING.md): contributor workflow
+- [CHANGELOG.md](https://raw.githubusercontent.com/MotherofallVPNs/MoaV/main/CHANGELOG.md): behavior changes per version
+- [docs/devdocs/E2E-TESTING.md](https://raw.githubusercontent.com/MotherofallVPNs/MoaV/main/docs/devdocs/E2E-TESTING.md): the end-to-end harness and what a passing run must prove
+- [docs/devdocs/PROTOCOL-INTEGRATION-CHECKLIST.md](https://raw.githubusercontent.com/MotherofallVPNs/MoaV/main/docs/devdocs/PROTOCOL-INTEGRATION-CHECKLIST.md): adding a new protocol
+- [docs/devdocs/VERSION-BUMP-CHECKLIST.md](https://raw.githubusercontent.com/MotherofallVPNs/MoaV/main/docs/devdocs/VERSION-BUMP-CHECKLIST.md): bumping a component version
 
 ## Why MoaV exists
 

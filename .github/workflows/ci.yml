@@ -81,6 +81,8 @@ jobs:
         run: bash tests/bundle-guide-sections-test.sh
       - name: ENABLE_* gating in the user-add paths
         run: bash tests/enable-flag-gating-test.sh
+      - name: llms.txt link hygiene (structure)
+        run: bash tests/llms-links-test.sh
       - name: admin TLS enforcement
         run: bash tests/admin-tls-test.sh
       - name: admin IP whitelist (CIDR) unit test
@@ -95,6 +97,8 @@ jobs:
         run: bash tests/release-footer-test.sh
       - name: release footer links resolve (network)
         run: bash scripts/render-release-footer.sh --check
+      - name: llms.txt links resolve (network)
+        run: LLMS_CHECK_URLS=1 bash tests/llms-links-test.sh
 
   go-test:
     name: go test dns-router
