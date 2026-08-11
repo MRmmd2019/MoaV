@@ -389,6 +389,14 @@ jobs:
           # an over-eager gate would pass a test that only checks "absent".
           set -u
           fails=0
+          # CDN derives its host from CDN_SUBDOMAIN + DOMAIN, so the ON half cannot
+          # produce a link without a domain. Skip rather than assert: the OFF half
+          # alone would pass for the wrong reason (no domain, not the gate).
+          if ! grep -qE '^DOMAIN=.+' .env; then
+            echo "no DOMAIN in .env (domainless run) — CDN toggle check not applicable"
+            exit 0
+          fi
+
           cp .env /tmp/e2e-cdn-env.bak
           trap 'cp /tmp/e2e-cdn-env.bak .env' EXIT
           own() { sudo chown -R "$USER" configs state outputs 2>/dev/null || true; }
@@ -468,25 +476,32 @@ jobs:
           cp .env /tmp/e2e-flip-env.bak
           trap 'cp /tmp/e2e-flip-env.bak .env' EXIT
 
-          # --- all three OFF ----------------------------------------------------
-          for p in XHTTP MASTERDNS WIREGUARD; do setflag "$p" false; done
+          # MasterDNS derives its host from $DOMAIN, and the domainless prep
+          # disables it, so a domainless run must not assert it comes back --
+          # that would fail for want of a domain and read as a regression.
+          FLIP="XHTTP WIREGUARD"
+          [ -n "$(grep -E '^DOMAIN=.+' .env || true)" ] && FLIP="$FLIP MASTERDNS"
+          echo "flipping: $FLIP"
+
+          # --- all OFF ----------------------------------------------------------
+          for p in $FLIP; do setflag "$p" false; done
           ./moav.sh user add flip-off; own
           absent flip-off 'xhttp-vless.txt'
           absent flip-off 'xhttp-qr.png'
-          absent flip-off 'masterdns-client_config.toml'
           absent flip-off 'moav-*-wg.conf'
           absent flip-off 'wireguard-qr.png'
+          case " $FLIP " in *" MASTERDNS "*) absent flip-off 'masterdns-client_config.toml' ;; esac
           # An over-broad gate must not take the rest of the bundle with it.
           present flip-off 'reality.txt'
           present flip-off 'README.html'
           present flip-off 'subscription.txt'
 
-          # --- all three ON, same server ---------------------------------------
-          for p in XHTTP MASTERDNS WIREGUARD; do setflag "$p" true; done
+          # --- all ON, same server ---------------------------------------------
+          for p in $FLIP; do setflag "$p" true; done
           ./moav.sh user add flip-on; own
           present flip-on 'xhttp-vless.txt'
-          present flip-on 'masterdns-client_config.toml'
           present flip-on 'moav-*-wg.conf'
+          case " $FLIP " in *" MASTERDNS "*) present flip-on 'masterdns-client_config.toml' ;; esac
           # The guide must follow the artifacts in both directions.
           for pair in "xhttp:flip-on::flip-off" "wireguard:flip-on::flip-off"; do
             sec="${pair%%:*}"
