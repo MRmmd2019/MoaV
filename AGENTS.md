@@ -61,7 +61,8 @@ with none they act on the whole stack.
 | `moav user add <name> [--package]` | Create a user (keys, configs, QR). `--package` also builds the downloadable zip |
 | `moav user add --batch N [--prefix NAME] [--package]` | Bulk-create N users |
 | `moav user package <name>` | (Re)build one user's downloadable **zip bundle** in `outputs/` |
-| `moav user base64 <name>` | Print that user's base64 **subscription** string |
+| `moav user sub <name>` | Print that user's base64 **subscription** — the blob phone apps (Streisand, v2rayNG, NekoBox, Hiddify) import |
+| `moav user base64 <name>` | Print that user's text-only bundle **zipped, then base64** — input for moav-client's e2e `bundle_b64`. **Not** a subscription; client apps reject it |
 | `moav user revoke <name>` | **Destructive** — remove a user and their access. Confirm with the owner first |
 | `moav regenerate-users` | Rebuild every bundle from stored state (keys unchanged); users just re-download |
 | `moav logs [svc]` | Tail container logs — **first stop for debugging** |
