@@ -395,11 +395,12 @@ capacity. Not salaries.
 | Coin | Address |
 |---|---|
 | **Bitcoin (BTC)** | `bc1qkfq3hg5kpzgy7muc8m3pmh6zemhv820a0ndqgg` |
-| **Ethereum (ETH)**¹ | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
+| **Ethereum (ETH)** ¹ | `0xB4D06BDb0C2f1D81E0b0b805Ed813F4ffe960aE2` |
 | **Zcash (ZEC)** | `u1pclheucppc87qlffh9m8wjfw87w2nka40w9nxjuqnyppj0kx9xp7z9rg6wx556662y5f8dtfyeynmm2lnz5aqvaqzmnpajlq0mnmkntdqzqqegk8lwv09cnudf3ttzm3878p3030j3lwupj257rmmv9p3ea32hgwsuf3jdh8ycv7q587` |
-| **Tron**² | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
+| **Tron** ² | `TBSCbnTZCELrMnioobZMkah5r9qS6B1tC6` |
 
-¹ **Ethereum (ETH)** — same address on every EVM chain (Arbitrum, Optimism, Base, Polygon, Gnosis…) and any ERC-20
+¹ **Ethereum (ETH)** — same address on every EVM chain (Arbitrum, Optimism, Base, Gnosis…) and any ERC20 (USDC, USDT, DAI…)
+
 ² **Tron** — TRX and TRC-20 only — not interchangeable with the EVM address
 <!-- FUNDING:END -->
 
