@@ -40,16 +40,24 @@ coins = {
     "BTC": "Bitcoin", "ETH": "Ethereum", "ZEC": "Zcash", "XMR": "Monero",
     "LTC": "Litecoin", "TRON": "Tron", "SOL": "Solana",
     "LN": "Lightning", "LIGHTNING": "Lightning",
+    "LN_ADDRESS": "Lightning Address",
 }
+# Keys whose pretty name already says everything -- no "(KEY)" suffix, which
+# would render as the useless "Lightning Address (LN_ADDRESS)".
+NO_SUFFIX = {"LN", "LIGHTNING", "LN_ADDRESS"}
 # ETH is one address across every EVM chain; Tron is NOT -- TRX/TRC-20 use a
 # base58 address and anything sent to the 0x one is unrecoverable.
 notes_en = {
     "ETH": "same address on every EVM chain (Arbitrum, Optimism, Base, Gnosis…) and any ERC20 (USDC, USDT, DAI…)",
     "TRON": "TRX and TRC-20 only — not interchangeable with the EVM address",
+    "LN": "BOLT12 offer — reusable, paste into a wallet that supports offers",
+    "LN_ADDRESS": "easier option: works like an email address in most Lightning wallets",
 }
 notes_fa = {
     "ETH": "همین نشانی روی همهٔ زنجیره‌های EVM کار می‌کند و برای هر توکن ERC-20",
     "TRON": "فقط TRX و TRC-20 — با نشانی EVM بالا یکی نیست",
+    "LN": "پیشنهاد BOLT12 — قابل استفادهٔ چندباره، در کیف‌پولی که offer را پشتیبانی می‌کند",
+    "LN_ADDRESS": "گزینهٔ ساده‌تر: در بیشتر کیف‌پول‌های لایتنینگ مثل نشانی ایمیل کار می‌کند",
 }
 head = {"en": ("Platform", "Link", "Coin", "Address"),
         "fa": ("پلتفرم", "لینک", "ارز", "نشانی")}[lang]
@@ -70,7 +78,8 @@ for line in open(funding, encoding="utf-8"):
         plat.append(f"| **{name}** | [{full.split('//')[1]}]({full}) |")
     else:
         nice = coins.get(key.upper(), key)
-        label = f"{nice} ({key.upper()})" if nice.upper() != key.upper() else nice
+        label = nice if key.upper() in NO_SUFFIX or nice.upper() == key.upper() \
+                else f"{nice} ({key.upper()})"
         note = notes.get(key.upper())
         marker = ""
         if note:
