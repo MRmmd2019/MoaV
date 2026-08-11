@@ -516,7 +516,6 @@ if [[ "${ENABLE_WIREGUARD:-true}" == "true" ]]; then
         BUNDLE_CHANGED=true
         wireguard_generate_client_config "$USER_ID" "$OUTPUT_DIR"
         qrencode -o "$OUTPUT_DIR/wireguard-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg).conf" 2>/dev/null || true
-        qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wgws).conf" 2>/dev/null || true
         if [[ -n "${SERVER_IPV6:-}" ]] && [[ -f "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" ]]; then
             qrencode -o "$OUTPUT_DIR/wireguard-ipv6-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wg6).conf" 2>/dev/null || true
         fi

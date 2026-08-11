@@ -162,6 +162,26 @@ grep -q 'rc -eq 127' "$ROOT/tests/cli-smoke-test.sh" \
     && ok "cli-smoke-test treats command-not-found as a failure, not 'ok'" \
     || bad "cli-smoke-test still reports 'ok' for exit 127"
 
+# No wstunnel QR. Its config points at 127.0.0.1, so scanning it into a WireGuard
+# app produces a tunnel that connects and carries nothing -- the shape of a bug
+# report we chased for a release. The .conf still ships; only the QR is gone.
+# Match generation/embedding only -- the cleanup `rm -f` below names the same
+# file, so a bare grep for the filename flags our own removal code.
+# -I skips binaries: a stale __pycache__/*.pyc compiled from the previous
+# bundle_readme.py still contains the old key and false-fails this otherwise.
+if grep -rnI 'wireguard-wstunnel-qr\|QR_WIREGUARD_WSTUNNEL' "$ROOT/scripts" "$ROOT/templates" 2>/dev/null \
+     | grep -vE 'rm -f' | grep -q .; then
+    bad "the wstunnel QR is being generated or embedded again"
+else
+    ok "no wstunnel QR is generated or embedded"
+fi
+grep -q 'rm -f "$output_dir/wireguard-wstunnel-qr.png"' "$ROOT/scripts/lib/wireguard.sh" \
+    && ok "stale wstunnel QRs are cleaned from regenerated bundles" \
+    || bad "regenerated bundles keep a stale wstunnel QR"
+grep -q 'moav_wg_basename wgws' "$ROOT/scripts/lib/wireguard.sh" \
+    && ok "the wstunnel .conf itself still ships" \
+    || bad "the wstunnel config was removed along with its QR"
+
 echo
 echo "  $pass passed, $fail failed"
 [[ $fail -eq 0 ]]
