@@ -213,9 +213,6 @@ if command -v qrencode &>/dev/null; then
             log_info "IPv6 QR image saved to: $OUTPUT_DIR/wireguard-ipv6-qr.png"
     fi
 
-    # wstunnel QR code
-    qrencode -o "$OUTPUT_DIR/wireguard-wstunnel-qr.png" -s 6 -r "$OUTPUT_DIR/$(moav_wg_basename wgws).conf" 2>/dev/null && \
-        log_info "wstunnel QR image saved to: $OUTPUT_DIR/wireguard-wstunnel-qr.png"
 fi
 
 echo ""

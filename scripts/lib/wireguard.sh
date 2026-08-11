@@ -233,5 +233,9 @@ EOF
     rm -f "$output_dir/wireguard.conf" "$output_dir/wireguard-wstunnel.conf" \
           "$output_dir/wireguard-ipv6.conf" 2>/dev/null || true
 
+    # The wstunnel QR is no longer generated: it points at localhost, so scanning
+    # it into a WireGuard app connects and carries nothing.
+    rm -f "$output_dir/wireguard-wstunnel-qr.png" 2>/dev/null || true
+
     log_info "Generated WireGuard client config for $user_id"
 }

@@ -208,7 +208,6 @@ repl = {
     "QR_ANYTLS": qr("anytls-qr.png"),
     "QR_CDN": qr("cdn-vless-qr.png"),
     "QR_WIREGUARD": qr("wireguard-qr.png"),
-    "QR_WIREGUARD_WSTUNNEL": qr("wireguard-wstunnel-qr.png"),
     "QR_AMNEZIAWG": qr("amneziawg-qr.png"),
     "QR_SHADOWSOCKS": qr("shadowsocks-qr.png"),
     "QR_XHTTP": qr("xhttp-qr.png"),

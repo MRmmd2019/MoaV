@@ -61,52 +61,16 @@ jobs:
       - name: Build release body
         id: body
         run: |
-          # Define the install guide section
+          # Footer is generated, not written here: it drifted twice while it was a
+          # heredoc, and the community URLs must agree with lib/common.sh.
           # A prerelease page must not imply the one-liner installs it: install.sh
           # serves the latest STABLE release, so on an rc that command gives the
           # reader something other than what they are reading about.
-          #
-          # NOTE ON INDENTATION: this is inside a YAML literal block (`run: |`)
-          # whose base indent is 10. Heredoc bodies and terminators must sit at
-          # exactly that indent so the shell receives them at column 0 -- at any
-          # other indent the terminator never matches, and a line at column 0
-          # ends the YAML block early (a bare `---` there is read as a YAML
-          # document separator, which invalidates the whole workflow file).
-          : > install_guide.txt
           if echo "${GITHUB_REF#refs/tags/}" | grep -qE "(alpha|beta|rc)"; then
-          cat >> install_guide.txt << 'PREGUIDE_EOF'
-
-          ---
-
-          > **Note:** the install command below fetches the latest **stable** release, not
-          > this candidate. To try this build specifically, use the `git checkout` steps in
-          > the notes above.
-          PREGUIDE_EOF
+            bash scripts/render-release-footer.sh --pre > install_guide.txt
+          else
+            bash scripts/render-release-footer.sh > install_guide.txt
           fi
-
-          cat >> install_guide.txt << 'GUIDE_EOF'
-
-          ---
-
-          ## Quick Install
-
-          ```bash
-          curl -fsSL moav.sh/install.sh | bash
-          ```
-
-          This will install MoaV to `/opt/moav` and guide you through setup.
-
-          ## Documentation
-
-          **[moav.sh/docs](https://moav.sh/docs)** — Full documentation
-
-          - [Setup Guide](https://moav.sh/docs/SETUP) — Complete installation instructions
-          - [Client Setup](https://moav.sh/docs/CLIENTS) — How to connect from devices
-          - [DNS Configuration](https://moav.sh/docs/DNS) — DNS records setup
-          - [CLI Reference](https://moav.sh/docs/CLI) — All commands and options
-          - [Monitoring](https://moav.sh/docs/MONITORING) — Grafana dashboards and metrics
-          - [Troubleshooting](https://moav.sh/docs/TROUBLESHOOTING) — Common issues and solutions
-          GUIDE_EOF
 
           if [ "${{ steps.existing.outputs.exists }}" = "true" ]; then
             # Check if install guide already present in existing body

@@ -87,6 +87,10 @@ jobs:
         run: python3 scripts/gen-protocol-docs.py --check
       - name: funding block drift gate (README from FUNDING.yml)
         run: bash scripts/render-funding.sh --check
+      - name: release footer generator
+        run: bash tests/release-footer-test.sh
+      - name: release footer links resolve (network)
+        run: bash scripts/render-release-footer.sh --check
 
   go-test:
     name: go test dns-router
