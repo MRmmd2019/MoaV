@@ -105,6 +105,8 @@ jobs:
         run: bash tests/peers-repair-test.sh
       - name: net tuning stale-file + template drift
         run: bash tests/nettune-template-test.sh
+      - name: PID-1 reaper on orphan-inheriting containers
+        run: bash tests/zombie-reaper-test.sh
       - name: release footer generator
         run: bash tests/release-footer-test.sh
       - name: release footer links resolve (network)
