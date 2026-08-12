@@ -103,6 +103,8 @@ jobs:
         run: bash tests/funding-yaml-test.sh
       - name: doctor peers --fix (SIGPIPE + volume state)
         run: bash tests/peers-repair-test.sh
+      - name: net tuning stale-file + template drift
+        run: bash tests/nettune-template-test.sh
       - name: release footer generator
         run: bash tests/release-footer-test.sh
       - name: release footer links resolve (network)
