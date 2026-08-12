@@ -83,6 +83,8 @@ jobs:
         run: bash tests/enable-flag-gating-test.sh
       - name: ENABLE_CDN opt-in flag
         run: bash tests/cdn-flag-test.sh
+      - name: CDN survives an upgrade (flag inference + path rotation)
+        run: bash tests/cdn-upgrade-test.sh
       - name: llms.txt link hygiene (structure)
         run: bash tests/llms-links-test.sh
       - name: moav update rebuild prompts (baked-in changes)
