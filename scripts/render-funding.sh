@@ -40,7 +40,11 @@ coins = {
     "BTC": "Bitcoin", "ETH": "Ethereum", "ZEC": "Zcash", "XMR": "Monero",
     "LTC": "Litecoin", "TRON": "Tron", "SOL": "Solana",
     "LN": "Lightning", "LIGHTNING": "Lightning",
+    "LN_ADDRESS": "Lightning Address",
 }
+# Keys whose pretty name already says everything -- no "(KEY)" suffix, which
+# would render as the useless "Lightning Address (LN_ADDRESS)".
+NO_SUFFIX = {"LN", "LIGHTNING", "LN_ADDRESS"}
 # ETH is one address across every EVM chain; Tron is NOT -- TRX/TRC-20 use a
 # base58 address and anything sent to the 0x one is unrecoverable.
 notes_en = {
@@ -70,7 +74,8 @@ for line in open(funding, encoding="utf-8"):
         plat.append(f"| **{name}** | [{full.split('//')[1]}]({full}) |")
     else:
         nice = coins.get(key.upper(), key)
-        label = f"{nice} ({key.upper()})" if nice.upper() != key.upper() else nice
+        label = nice if key.upper() in NO_SUFFIX or nice.upper() == key.upper() \
+                else f"{nice} ({key.upper()})"
         note = notes.get(key.upper())
         marker = ""
         if note:

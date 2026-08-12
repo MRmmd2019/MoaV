@@ -95,6 +95,8 @@ jobs:
         run: bash tests/refactor-verify.sh
       - name: protocol-roster drift gate
         run: python3 scripts/gen-protocol-docs.py --check
+      - name: star-history chart present (offline check)
+        run: python3 scripts/gen-star-history.py --check
       - name: funding block drift gate (README from FUNDING.yml)
         run: bash scripts/render-funding.sh --check
       - name: release footer generator
