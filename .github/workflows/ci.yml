@@ -81,6 +81,8 @@ jobs:
         run: bash tests/bundle-guide-sections-test.sh
       - name: ENABLE_* gating in the user-add paths
         run: bash tests/enable-flag-gating-test.sh
+      - name: donate-mode regenerate (missing per-user protocol)
+        run: bash tests/donate-regenerate-test.sh
       - name: ENABLE_CDN opt-in flag
         run: bash tests/cdn-flag-test.sh
       - name: CDN survives an upgrade (flag inference + path rotation)
@@ -97,8 +99,10 @@ jobs:
         run: bash tests/refactor-verify.sh
       - name: protocol-roster drift gate
         run: python3 scripts/gen-protocol-docs.py --check
-      - name: star-history chart present (offline check)
+      - name: star-history README link + renderer (offline)
         run: python3 scripts/gen-star-history.py --check
+      - name: star-history API version + timestamp guard
+        run: bash tests/star-history-test.sh
       - name: funding block drift gate (README from FUNDING.yml)
         run: bash scripts/render-funding.sh --check
       - name: FUNDING.yml address values stay quoted
