@@ -107,6 +107,14 @@ show_status() {
     # Track which services we've displayed
     declare -A displayed_services
 
+    # One-shot jobs that populate a volume and exit. They are plumbing, not
+    # services: showing them as "exited" in a health table reads as a fault.
+    local status_hide=" geoip-updater tor-geoip-updater bootstrap "
+    # Shown, but last: certbot legitimately exits after issuing, so it sorts
+    # below the things that are supposed to be running.
+    local status_defer=" certbot "
+    local -a deferred_rows=()
+
     # Handle both JSON array format and NDJSON (one object per line)
     if [[ -n "$raw_status" ]] && [[ "$raw_status" != "[]" ]]; then
         if [[ "$raw_status" == "["* ]]; then
@@ -207,10 +215,21 @@ show_status() {
                 name_color="${DIM}"
             fi
 
+            [[ "$status_hide" == *" $short_name "* ]] && continue
+
             # Note: %-14s for status to account for 3-byte Unicode symbols (●○◐) displaying as 1 char
-            printf "  ${CYAN}│${NC} ${name_color}%-20s${NC} ${CYAN}│${NC} ${status_color}%-14s${NC} ${CYAN}│${NC} %-19s ${CYAN}│${NC} %-12s ${CYAN}│${NC} %-15s ${CYAN}│${NC}\n" \
+            local row
+            printf -v row "  ${CYAN}│${NC} ${name_color}%-20s${NC} ${CYAN}│${NC} ${status_color}%-14s${NC} ${CYAN}│${NC} %-19s ${CYAN}│${NC} %-12s ${CYAN}│${NC} %-15s ${CYAN}│${NC}" \
                 "$display_name" "$status_display" "$last_run" "$uptime" "$ports"
+            if [[ "$status_defer" == *" $short_name "* ]]; then
+                deferred_rows+=("$row")
+            else
+                printf '%s\n' "$row"
+            fi
         done <<< "$json_lines"
+
+        local drow
+        for drow in ${deferred_rows+"${deferred_rows[@]}"}; do printf '%s\n' "$drow"; done
     fi
 
     # Show services that have never been started (not in docker ps -a)
@@ -1061,11 +1080,24 @@ restart_services() {
 # is exactly when you need to tell them apart. compose now emits plain text and
 # we colour the prefix from a 256-colour palette.
 #
-# Assigned in first-seen order rather than by hashing the name: hashing keeps a
-# colour stable between runs but collides (conduit and xray landed on the same
-# one), and distinctness is the whole point.
+# Colours are assigned by the service's position in the SORTED compose service
+# list, which is both stable between runs and collision-free -- unlike hashing
+# (conduit and xray landed on the same colour) and unlike first-seen order, which
+# is distinct within a run but reshuffles every time containers attach in a
+# different order. First-seen remains the fallback for a name compose did not
+# list (a stray container, a renamed service).
 format_log_timestamps() {
-    awk '
+    # name=index pairs from the sorted service list; awk turns the index into a
+    # palette slot. Computed once per invocation, not per line.
+    local svc_index=""
+    local _i=0 _svc
+    while IFS= read -r _svc; do
+        [[ -z "$_svc" ]] && continue
+        svc_index+="${_svc}=${_i} "
+        _i=$((_i + 1))
+    done < <(docker compose --profile all config --services 2>/dev/null | sort)
+
+    awk -v svc_index="$svc_index" '
     BEGIN {
         # 36 entries, all readable on a dark terminal. `moav start all` runs 30
         # containers, so a smaller palette wraps and collides -- a 24-entry one
@@ -1074,9 +1106,21 @@ format_log_timestamps() {
                   "82,165,178,123,197,120,171,228,209,80,105,191,168,75,186,135," \
                   "115,216,99,156", pal, ",")
         next_c = 0
+        # "name=index name=index ..." -> fixed[name] = index
+        split(svc_index, pairs, " ")
+        for (p in pairs) {
+            if (pairs[p] == "") continue
+            eq = index(pairs[p], "=")
+            if (eq > 0) fixed[substr(pairs[p], 1, eq - 1)] = substr(pairs[p], eq + 1)
+        }
     }
-    function svc_color(name) {
-        if (!(name in col)) { col[name] = pal[(next_c % n) + 1]; next_c++ }
+    function svc_color(name,   base) {
+        if (name in col) return col[name]
+        # compose appends -1/-2 for replicas; the service name is what we mapped.
+        base = name; sub(/-[0-9]+$/, "", base)
+        if (base in fixed)      col[name] = pal[(fixed[base] % n) + 1]
+        else if (name in fixed) col[name] = pal[(fixed[name] % n) + 1]
+        else { col[name] = pal[(next_c % n) + 1]; next_c++ }   # unlisted: fall back
         return col[name]
     }
     {

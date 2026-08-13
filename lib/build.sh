@@ -242,14 +242,39 @@ cmd_build() {
 # keep the most-recently-used ~4 GB and evict the older overflow. So a normal
 # rebuild keeps its warm cache; only unbounded accumulation is trimmed.
 # Cache only, never images (they back the running stack and any rollback).
-MOAV_BUILD_CACHE_KEEP="${MOAV_BUILD_CACHE_KEEP:-4GB}"
+MOAV_BUILD_CACHE_KEEP="${MOAV_BUILD_CACHE_KEEP:-}"
+
+# Sized to hold the whole stack's layers: MoaV's in-use images total ~1.9 GB on a
+# full install and their cache is the same order, so 4 GB keeps every rebuild
+# warm. It only shrinks when the disk is genuinely tight -- never more than half
+# of the space the cache could occupy -- so a small VPS gives ground instead of
+# filling up. Measured case: 24 GB box at 82%, 4.3 GB free plus 4.0 GB cache, so
+# the cap stays 4 GB; the same box with 1 GB free would drop to 2.5 GB.
+default_cache_keep() {
+    local free_mb cache_mb keep
+    free_mb=$(df -Pm / 2>/dev/null | awk 'NR==2 {print $4}')
+    [[ "$free_mb" =~ ^[0-9]+$ ]] || { echo 4096; return; }
+    # Count the existing cache as available: it is what we are about to reclaim,
+    # so without it the cap would ratchet down every run.
+    cache_mb=$(docker system df 2>/dev/null | awk '/^Build Cache/ {
+        v = $(NF-1); u = $(NF-1);
+        sub(/[A-Za-z]+$/, "", v);
+        if (u ~ /GB/) printf "%d", v * 1024; else if (u ~ /MB/) printf "%d", v; else print 0 }')
+    [[ "$cache_mb" =~ ^[0-9]+$ ]] || cache_mb=0
+    keep=$(( (free_mb + cache_mb) / 2 ))
+    (( keep > 4096 )) && keep=4096
+    (( keep < 1024 )) && keep=1024
+    echo "$keep"
+}
+
 prune_build_cache() {
     command -v docker >/dev/null 2>&1 || return 0
+    [[ -n "$MOAV_BUILD_CACHE_KEEP" ]] || MOAV_BUILD_CACHE_KEEP="$(default_cache_keep)MB"
     # --keep-storage caps retained cache (Docker 18.09+; a deprecation alias for
     # --reserved-space on 27+, still honored). Fall back to an age filter on the
     # rare daemon that rejects it, still preserving recent layers.
     if docker builder prune -f --keep-storage "$MOAV_BUILD_CACHE_KEEP" >/dev/null 2>&1; then
-        info "Capped build cache at ~${MOAV_BUILD_CACHE_KEEP} (recent layers kept for fast rebuilds)"
+        info "Capped build cache at ~${MOAV_BUILD_CACHE_KEEP} (least-recently-used layers evicted first)"
     elif docker builder prune -f --filter until=336h >/dev/null 2>&1; then
         info "Pruned build cache older than 14 days (recent layers kept)"
     fi
