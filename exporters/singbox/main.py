@@ -14,7 +14,12 @@ import time
 import threading
 import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
+
+try:
+    import sitestats
+except ImportError:
+    sitestats = None
 from geoip import GeoIPLookup
 
 try:
@@ -31,6 +36,9 @@ active_users = set()  # users seen in last 5 minutes
 protocol_connections = defaultdict(int)  # protocol -> total connections
 country_connections = defaultdict(int)  # country -> total connections
 user_country = {}  # user -> last seen country code
+# connection id -> client IP, from the log line that carries no username.
+conn_source_ip = OrderedDict()
+CONN_IP_CACHE_MAX = 4096
 
 # Clash reports byte counters per OPEN connection, so accumulate deltas per
 # connection id -- summing raw values would re-count everything still open.
@@ -40,6 +48,8 @@ conn_bytes_seen = {}  # connection id -> (upload, download) already accounted fo
 
 # Lock for thread safety
 metrics_lock = threading.Lock()
+active_connections = 0      # current, from the last poll
+singbox_version = ""        # from the Clash API /version
 
 # GeoIP lookup
 geoip = GeoIPLookup()
@@ -48,9 +58,18 @@ geoip = GeoIPLookup()
 CLASH_API = os.environ.get("CLASH_API", "http://moav-sing-box:9090")
 CLASH_SECRET = ""
 
+site_stats = sitestats.SiteStats(
+    resolver=sitestats.make_resolver(CLASH_API, lambda: CLASH_SECRET, geoip.lookup)
+) if sitestats else None
+
 # Regex to parse connection lines with usernames
 # Example: [newaidin] inbound connection to vas.samsungapps.com:443
 USER_PATTERN = re.compile(r'\[([^\]]+)\]\s*inbound connection')
+
+# "[3883633974 0ms] inbound/vless[in]: inbound connection from 89.196.4.82:20159"
+CONN_FROM_PATTERN = re.compile(r'\[(\d{4,})\s[^\]]*\].*inbound connection from ([0-9a-fA-F.:]+):\d+')
+# The same id reappears on the line that names the user.
+CONN_ID_PATTERN = re.compile(r'\[(\d{4,})\s[^\]]*\]')
 
 # Regex to extract protocol from inbound name
 # Example: inbound/hysteria2[hysteria2-in]: [user]
@@ -106,6 +125,14 @@ def parse_log_line(line: str) -> bool:
     Does not touch protocol_connections: the Clash poller owns that series with a
     richer label, and counting both would double-count the same events.
     """
+    from_match = CONN_FROM_PATTERN.search(line)
+    if from_match:
+        conn_id, ip = from_match.group(1), from_match.group(2)
+        conn_source_ip[conn_id] = ip
+        while len(conn_source_ip) > CONN_IP_CACHE_MAX:
+            conn_source_ip.popitem(last=False)
+        return False
+
     user_match = USER_PATTERN.search(line)
     if not user_match:
         return False
@@ -113,9 +140,15 @@ def parse_log_line(line: str) -> bool:
     username = user_match.group(1)
     now = time.time()
 
+    id_match = CONN_ID_PATTERN.search(line)
+    ip = conn_source_ip.get(id_match.group(1), "") if id_match else ""
+    country = geoip.lookup(ip) if ip else ""
+
     with metrics_lock:
         user_connections[username] += 1
         user_last_seen[username] = now
+        if country:
+            user_country[username] = country
 
     return True
 
@@ -190,6 +223,20 @@ def update_active_users():
         }
 
 
+def fetch_singbox_version():
+    """Clash API /version. Replaces clash_info from the removed exporter."""
+    global singbox_version
+    if urlopen is None:
+        return
+    try:
+        req = Request(f"{CLASH_API}/version")
+        if CLASH_SECRET:
+            req.add_header("Authorization", "Bearer " + CLASH_SECRET)
+        singbox_version = json.loads(urlopen(req, timeout=5).read().decode()).get("version", "")
+    except Exception:
+        pass
+
+
 def poll_clash_connections():
     """Poll Clash API /connections for source IPs and update country metrics."""
     if urlopen is None:
@@ -201,6 +248,8 @@ def poll_clash_connections():
     while True:
         poll_count += 1
         try:
+            if poll_count == 1 or poll_count % 720 == 0:
+                fetch_singbox_version()
             url = f"{CLASH_API}/connections"
             req = Request(url)
             if CLASH_SECRET:
@@ -225,11 +274,9 @@ def poll_clash_connections():
                 user = meta.get("inboundUser", "")
                 conn_id = conn.get("id", "")
 
-                if source_ip:
-                    country = geoip.lookup(source_ip)
-                    seen_countries[country] += 1
-                    if user:
-                        seen_user_country[user] = country
+                conn_country = geoip.lookup(source_ip) if source_ip else ""
+                if conn_country and user:
+                    seen_user_country[user] = conn_country
 
                 proto_label = (meta.get("inboundName") or meta.get("type")
                                or meta.get("network") or "unknown")
@@ -246,6 +293,20 @@ def poll_clash_connections():
                         new_bytes_down[proto_label] += d_down
                     conn_bytes_seen[conn_id] = (up, down)
 
+                    # Aggregate destination stats. site_stats never returns a
+                    # client identifier; see exporters/lib/sitestats.py. #297
+                    if site_stats is not None and source_ip and (d_up or d_down):
+                        dest_ip = meta.get("destinationIP", "")
+                        site_stats.record(
+                            source_ip,
+                            meta.get("host", "") or dest_ip,
+                            d_up, d_down,
+                            dest_country=geoip.lookup(dest_ip) if dest_ip else "",
+                            port=meta.get("destinationPort", ""),
+                            network=meta.get("network", ""),
+                            new_conn=conn_id not in counted_connection_ids,
+                        )
+
                 # Count each connection ONCE, the first time we see it. The old
                 # log tailer counted "inbound connection" events; a polled
                 # snapshot would otherwise re-count every still-open connection
@@ -254,9 +315,14 @@ def poll_clash_connections():
                     current_ids.add(conn_id)
                     if conn_id not in counted_connection_ids:
                         counted_connection_ids.add(conn_id)
+                        if conn_country:
+                            seen_countries[conn_country] += 1
                         if user:
                             new_user_hits[user] += 1
                         new_proto_hits[proto_label] += 1
+
+            global active_connections
+            active_connections = len(connections)
 
             # Forget IDs that are gone so neither map grows without bound.
             counted_connection_ids.intersection_update(current_ids)
@@ -287,6 +353,9 @@ def poll_clash_connections():
         except Exception as e:
             if poll_count <= 5 or poll_count % 100 == 0:
                 print(f"GeoIP poll #{poll_count} error: {e}")
+
+        if site_stats is not None:
+            site_stats.maybe_roll()
 
         time.sleep(GEOIP_POLL_INTERVAL)
 
@@ -377,6 +446,18 @@ class MetricsHandler(BaseHTTPRequestHandler):
                     active_country_counts[c] += 1
                 for country, count in sorted(active_country_counts.items()):
                     output.append(f'singbox_active_users_by_country{{country="{country}"}} {count}')
+
+            output.append('# HELP singbox_active_connections Connections open right now')
+            output.append('# TYPE singbox_active_connections gauge')
+            output.append(f'singbox_active_connections {active_connections}')
+
+            if singbox_version:
+                output.append('# HELP singbox_version_info sing-box version')
+                output.append('# TYPE singbox_version_info gauge')
+                output.append(f'singbox_version_info{{version="{singbox_version}"}} 1')
+
+            if site_stats is not None:
+                output.extend(site_stats.render())
 
             self.wfile.write('\n'.join(output).encode())
 

@@ -81,9 +81,61 @@ sed -i 's|/state/sing-box-cache.db|/var/log/sing-box/sing-box-cache.db|g' "$RUNT
 ACCESS_LOG="/var/log/sing-box/sing-box.log"
 ACCESS_LOG_MAX_BYTES="${SINGBOX_LOG_MAX_BYTES:-33554432}"   # 32 MiB
 
+# sing-box logs the username and the destination on the same line, and every
+# line carries a connection id that ties the username to the client IP on
+# another. Scrubbing only the obvious line would leave the link reconstructable,
+# so destinations are stripped from every shape before anything is written to
+# disk. sing-box writes into a FIFO on tmpfs; only the scrubbed stream is
+# persisted. See MotherofallVPNs/MoaV#297.
+RAW_LOG="/tmp/sing-box-raw.fifo"
+LOG_SINK="$ACCESS_LOG"
+
+if [ -d /var/log/sing-box ] && mkfifo -m 600 "$RAW_LOG" 2>/dev/null; then
+    chown moav:moav "$RAW_LOG" 2>/dev/null || true
+
+    # Hold the FIFO open read+write for the life of the container. Opening it
+    # read-write never blocks, so sing-box's open() returns at once, and a
+    # scrubber restart can never hand it EOF or a missing reader.
+    ( while true; do sleep 3600; done ) <> "$RAW_LOG" 2>/dev/null &
+
+    # The scrubber. Restarted if it ever dies: sing-box blocks on a full pipe,
+    # so something must always be draining.
+    ( while true; do
+          awk '{
+              sub(/ connection to .*$/, " connection to -")
+              # Everything after a dns verb is a name. Keep the verb only, so a
+              # verb we have not seen cannot leak by default.
+              if (match($0, /dns: /)) {
+                  head = substr($0, 1, RSTART + RLENGTH - 1)
+                  rest = substr($0, RSTART + RLENGTH)
+                  split(rest, w, " ")
+                  if (w[1] == "lookup" && w[2] == "failed") {
+                      i = index(rest, ": ")     # keep the reason, drop the name
+                      $0 = head "lookup failed for -" (i ? substr(rest, i) : "")
+                  } else {
+                      $0 = head w[1] " -"
+                  }
+              }
+              print; fflush()
+          }' < "$RAW_LOG" >> "$ACCESS_LOG" 2>/dev/null
+          sleep 1
+      done ) &
+
+    # Everything already in the file predates scrubbing, so it still pairs
+    # usernames with destinations. Upgrades would otherwise keep it until the
+    # 32 MiB truncation happens to come round.
+    if [ -s "$ACCESS_LOG" ]; then
+        : > "$ACCESS_LOG" 2>/dev/null \
+            && echo "[sing-box] Cleared the pre-scrub log (it still held destinations)"
+    fi
+
+    LOG_SINK="$RAW_LOG"
+    echo "[sing-box] Destinations are scrubbed from the log before it is written"
+fi
+
 if [ -d /var/log/sing-box ] && ! grep -q '"output"' "$RUNTIME_CONFIG"; then
     _cand="/tmp/sing-box-config.withlog.json"
-    sed 's|"log"[[:space:]]*:[[:space:]]*{|"log": {"output": "'"$ACCESS_LOG"'",|' \
+    sed 's|"log"[[:space:]]*:[[:space:]]*{|"log": {"output": "'"$LOG_SINK"'",|' \
         "$RUNTIME_CONFIG" > "$_cand" 2>/dev/null || true
     # A bad injection must cost metrics, never boot.
     if [ -s "$_cand" ] && sing-box check -c "$_cand" >/dev/null 2>&1; then

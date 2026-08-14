@@ -36,7 +36,8 @@
                 "value": 1000
               }
             ]
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -68,19 +69,19 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(tor_snowflake_proxy_connections_total)",
+          "expr": "sum(max_over_time(tor_snowflake_proxy_connections_total[$__range]))",
           "refId": "A"
         }
       ],
       "title": "People Served",
       "type": "stat",
-      "description": "Cumulative since the proxy last started \u2014 this stat does not follow the time picker. Counters reset when the container restarts."
+      "description": "Connections completed in the selected time range. Counted with max_over_time, not increase: these tick once per completed connection and then sit flat, and increase() can only see growth from a previous sample, so every country's FIRST connection was invisible. Measured on a live proxy, increase saw 2 countries where max_over_time saw 7. Trade-off: if the container restarts mid-window this shows the larger run rather than the sum. snowflake counts a connection only when it ENDS, so a long-lived client relaying right now contributes nothing here until it disconnects \u2014 this can read 0 while Relay Throughput is busy."
     },
     {
       "id": 14,
       "type": "stat",
       "title": "Countries Reached",
-      "description": "Distinct countries with at least one completed connection since the proxy started. '??' counts as one: the client IP was not in the geoip database.",
+      "description": "Countries with at least one completed connection in the selected time range. '??' counts as one: the client IP was not in the geoip database. Counted with max_over_time, not increase: these tick once per completed connection and then sit flat, and increase() can only see growth from a previous sample, so every country's FIRST connection was invisible. Measured on a live proxy, increase saw 2 countries where max_over_time saw 7. Trade-off: if the container restarts mid-window this shows the larger run rather than the sum.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -91,7 +92,8 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "purple"
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -109,9 +111,13 @@
       },
       "targets": [
         {
-          "expr": "count(count by (country) (tor_snowflake_proxy_connections_total))",
+          "expr": "count(sum by (country) (max_over_time(tor_snowflake_proxy_connections_total[$__range])) > 0)",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "gridPos": {
@@ -125,7 +131,7 @@
       "id": 15,
       "type": "gauge",
       "title": "Rendezvous Success Rate",
-      "description": "Completed connections as a share of all rendezvous attempts. A large failure share is normal and mostly outside this proxy's control \u2014 the client's NAT and censorship decide it, per the upstream metric's own help text. Watch the trend, not the absolute number.",
+      "description": "Share of rendezvous attempts in the selected time range that produced a connection. A low number is normal: most attempts are clients that never come back, not failures on this proxy. Counted with max_over_time, not increase: these tick once per completed connection and then sit flat, and increase() can only see growth from a previous sample, so every country's FIRST connection was invisible. Measured on a live proxy, increase saw 2 countries where max_over_time saw 7. Trade-off: if the container restarts mid-window this shows the larger run rather than the sum.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -147,7 +153,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -164,9 +171,13 @@
       },
       "targets": [
         {
-          "expr": "100 * sum(tor_snowflake_proxy_connections_total) / (sum(tor_snowflake_proxy_connections_total) + sum(tor_snowflake_proxy_connection_timeouts_total))",
+          "expr": "100 * sum(max_over_time(tor_snowflake_proxy_connections_total[$__range])) / (sum(max_over_time(tor_snowflake_proxy_connections_total[$__range])) + sum(max_over_time(tor_snowflake_proxy_connection_timeouts_total[$__range])))",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "gridPos": {
@@ -211,7 +222,11 @@
         {
           "expr": "time() - process_start_time_seconds{job=\"snowflake-proxy\"}",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "gridPos": {
@@ -241,7 +256,8 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "bytes",
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -273,19 +289,19 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "tor_snowflake_proxy_traffic_inbound_bytes_total * 1024",
+          "expr": "sum(increase(tor_snowflake_proxy_traffic_inbound_bytes_total[14d])) * 1024",
           "refId": "A"
         }
       ],
-      "title": "Total Downloaded",
-      "description": "Cumulative since the proxy last started \u2014 this stat does not follow the time picker. Counters reset when the container restarts.",
+      "title": "Downloaded (14 days)",
+      "description": "Relayed to clients over the last 14 days, which is how long Prometheus keeps data. Fixed window: it ignores the time picker. snowflake's counters restart with the container, so this is an increase() over the window rather than the raw counter, which would drop to zero on every restart.",
       "type": "stat"
     },
     {
       "id": 12,
       "type": "stat",
       "title": "Downloaded",
-      "description": "Follows the dashboard's time picker, unlike the Total beside it. increase() spans counter resets, so a proxy restart inside the window does not lose the traffic.",
+      "description": "Relayed to clients in the selected time range.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -296,7 +312,8 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "super-light-blue"
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -314,9 +331,13 @@
       },
       "targets": [
         {
-          "expr": "increase(tor_snowflake_proxy_traffic_inbound_bytes_total[$__range]) * 1024",
+          "expr": "sum(increase(tor_snowflake_proxy_traffic_inbound_bytes_total[$__range])) * 1024",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "gridPos": {
@@ -346,7 +367,8 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "bytes",
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -378,19 +400,19 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "tor_snowflake_proxy_traffic_outbound_bytes_total * 1024",
+          "expr": "sum(increase(tor_snowflake_proxy_traffic_outbound_bytes_total[14d])) * 1024",
           "refId": "A"
         }
       ],
-      "title": "Total Uploaded",
-      "description": "Cumulative since the proxy last started \u2014 this stat does not follow the time picker. Counters reset when the container restarts.",
+      "title": "Uploaded (14 days)",
+      "description": "Relayed from clients over the last 14 days. Fixed window: it ignores the time picker. snowflake's counters restart with the container, so this is an increase() over the window rather than the raw counter, which would drop to zero on every restart.",
       "type": "stat"
     },
     {
       "id": 13,
       "type": "stat",
       "title": "Uploaded",
-      "description": "Follows the dashboard's time picker, unlike the Total beside it. Relayed from clients within the selected time range.",
+      "description": "Relayed from clients in the selected time range.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -401,7 +423,8 @@
           "color": {
             "mode": "fixed",
             "fixedColor": "super-light-green"
-          }
+          },
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -419,9 +442,13 @@
       },
       "targets": [
         {
-          "expr": "increase(tor_snowflake_proxy_traffic_outbound_bytes_total[$__range]) * 1024",
+          "expr": "sum(increase(tor_snowflake_proxy_traffic_outbound_bytes_total[$__range])) * 1024",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ],
       "gridPos": {
@@ -649,20 +676,20 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(tor_snowflake_proxy_connections_total[1h]))",
+          "expr": "sum(max_over_time(tor_snowflake_proxy_connections_total[$__rate_interval]))",
           "legendFormat": "connections/hour",
           "refId": "A"
         }
       ],
-      "title": "Connections Served (per hour)",
+      "title": "Connections Served",
       "type": "timeseries",
-      "description": "Completed connections per hour. The proxy reports every 90s but completes only a handful an hour, so shorter windows read as zero."
+      "description": "Running total of completed connections across the selected range. Counted with max_over_time, not increase: these tick once per completed connection and then sit flat, and increase() can only see growth from a previous sample, so every country's FIRST connection was invisible. Measured on a live proxy, increase saw 2 countries where max_over_time saw 7. Trade-off: if the container restarts mid-window this shows the larger run rather than the sum. snowflake counts a connection only when it ENDS, so a long-lived client relaying right now contributes nothing here until it disconnects \u2014 this can read 0 while Relay Throughput is busy."
     },
     {
       "id": 10,
       "type": "piechart",
       "title": "Share of Users by Country",
-      "description": "Completed connections since the proxy last started, by the country of the client IP. '??' means the address was not in the geoip database.",
+      "description": "Connections completed in the selected time range, by the country of the client IP. Matches the chart beside it. Counted with max_over_time, not increase: these tick once per completed connection and then sit flat, and increase() can only see growth from a previous sample, so every country's FIRST connection was invisible. Measured on a live proxy, increase saw 2 countries where max_over_time saw 7. Trade-off: if the container restarts mid-window this shows the larger run rather than the sum. snowflake counts a connection only when it ENDS, so a long-lived client relaying right now contributes nothing here until it disconnects \u2014 this can read 0 while Relay Throughput is busy.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -682,6 +709,9 @@
               "tooltip": false,
               "viz": false
             }
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
@@ -714,10 +744,14 @@
       },
       "targets": [
         {
-          "expr": "sum by (country) (tor_snowflake_proxy_connections_total)",
+          "expr": "sum by (country) (max_over_time(tor_snowflake_proxy_connections_total[$__range])) > 0",
           "legendFormat": "{{country}}",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ]
     },
@@ -725,7 +759,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Users Served by Country over Time",
-      "description": "Completed connections per hour, stacked by country.",
+      "description": "Running total per country across the selected range, so the right-hand edge matches the pie beside it. Sampled over $__rate_interval, which Grafana keeps at or above the scrape interval \u2014 a shorter window would fall between scrapes and draw gaps.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -748,6 +782,9 @@
               "mode": "normal",
               "group": "A"
             }
+          },
+          "color": {
+            "mode": "palette-classic-by-name"
           }
         },
         "overrides": []
@@ -765,9 +802,13 @@
       },
       "targets": [
         {
-          "expr": "sum by (country) (increase(tor_snowflake_proxy_connections_total[1h]))",
+          "expr": "sum by (country) (max_over_time(tor_snowflake_proxy_connections_total[$__rate_interval]))",
           "legendFormat": "{{country}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ]
     },
@@ -801,7 +842,11 @@
         {
           "expr": "increase(tor_snowflake_proxy_connection_timeouts_total[1h])",
           "legendFormat": "failed/hour",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
         }
       ]
     },
@@ -856,7 +901,8 @@
             ]
           },
           "unit": "bytes",
-          "min": 0
+          "min": 0,
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -870,6 +916,8 @@
       "options": {
         "legend": {
           "calcs": [
+            "mean",
+            "max",
             "lastNotNull"
           ],
           "displayMode": "table",
@@ -888,13 +936,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(tor_snowflake_proxy_traffic_inbound_bytes_total + tor_snowflake_proxy_traffic_outbound_bytes_total) * 1024",
+          "expr": "sum(increase(tor_snowflake_proxy_traffic_inbound_bytes_total[1h])) * 1024 + sum(increase(tor_snowflake_proxy_traffic_outbound_bytes_total[1h])) * 1024",
           "legendFormat": "donated",
           "refId": "A"
         }
       ],
-      "title": "Total Bandwidth Donated",
-      "type": "timeseries"
+      "title": "Bandwidth Donated (per hour)",
+      "type": "timeseries",
+      "description": "Relayed each hour, both directions. Was a running total, which fell off a cliff every time the container restarted."
     }
   ],
   "refresh": "30s",

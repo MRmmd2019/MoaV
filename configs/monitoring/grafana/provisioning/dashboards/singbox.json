@@ -60,7 +60,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clash_active_connections",
+          "expr": "singbox_active_connections",
           "refId": "A"
         }
       ],
@@ -235,7 +235,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clash_upload_bytes_total",
+          "expr": "sum(singbox_protocol_bytes_up)",
           "refId": "A"
         }
       ],
@@ -294,7 +294,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clash_download_bytes_total",
+          "expr": "sum(singbox_protocol_bytes_down)",
           "refId": "A"
         }
       ],
@@ -352,7 +352,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clash_info",
+          "expr": "singbox_version_info",
           "legendFormat": "{{version}}",
           "refId": "A"
         }
@@ -442,7 +442,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clash_active_connections",
+          "expr": "singbox_active_connections",
           "legendFormat": "Connections",
           "refId": "A"
         },
@@ -574,7 +574,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(clash_upload_bytes_total[5m])",
+          "expr": "sum(rate(singbox_protocol_bytes_up[5m]))",
           "legendFormat": "Upload",
           "refId": "A"
         },
@@ -583,7 +583,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(clash_download_bytes_total[5m])",
+          "expr": "sum(rate(singbox_protocol_bytes_down[5m]))",
           "legendFormat": "Download",
           "refId": "B"
         }
@@ -786,7 +786,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "singbox_user_connections",
+          "expr": "last_over_time((singbox_user_connections)[5m:])",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -796,7 +796,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "singbox_user_active",
+          "expr": "last_over_time((singbox_user_active)[5m:])",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -925,7 +925,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clash_upload_bytes_total",
+          "expr": "sum(singbox_protocol_bytes_up)",
           "legendFormat": "Upload Total",
           "refId": "A"
         },
@@ -934,7 +934,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clash_download_bytes_total",
+          "expr": "sum(singbox_protocol_bytes_down)",
           "legendFormat": "Download Total",
           "refId": "B"
         }
@@ -950,7 +950,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "axisCenteredZero": false,
@@ -1038,7 +1038,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "palette-classic-by-name"
           },
           "custom": {
             "lineWidth": 2,
@@ -1104,7 +1104,10 @@
       },
       "id": 110,
       "title": "Geographic Distribution",
-      "type": "row"
+      "type": "row",
+      "fieldConfig": {
+        "defaults": {}
+      }
     },
     {
       "datasource": {
@@ -1164,11 +1167,13 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "singbox_connections_by_country",
+          "expr": "round(sum by (country) (increase(singbox_connections_by_country[$__range])))",
           "legendFormat": "{{country}}",
-          "refId": "A"
+          "refId": "A",
+          "instant": true
         }
-      ]
+      ],
+      "description": "Connections opened in the selected time range, by the country of the client IP. Counts connections, not people: a chatty client outweighs a quiet one."
     },
     {
       "datasource": {
@@ -1254,10 +1259,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "singbox_connections_by_country",
+          "expr": "max_over_time(singbox_active_users_by_country[$__range])",
           "format": "table",
           "instant": true,
-          "legendFormat": "",
+          "legendFormat": "{{country}}",
           "refId": "A"
         }
       ],
@@ -1288,7 +1293,474 @@
             ]
           }
         }
-      ]
+      ],
+      "description": "Peak simultaneous users in the selected time range, by the country of the client IP. Counts people, not connections, so it will not track the pie beside it."
+    },
+    {
+      "id": 122,
+      "type": "row",
+      "collapsed": true,
+      "title": "Site analytics (opt-in \u2014 ENABLE_SITE_ANALYTICS)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "panels": [
+        {
+          "id": 123,
+          "type": "piechart",
+          "title": "Share of Traffic by Site",
+          "description": "Destination sites, aggregated across all users. A site is named only after at least SITE_ANALYTICS_MIN_CLIENTS distinct clients reached it; the rest is counted under 'other'.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 11,
+            "w": 8,
+            "x": 0,
+            "y": 41
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "pieType": "donut",
+            "displayLabels": [
+              "percent"
+            ],
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "values": [
+                "value",
+                "percent"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "last_over_time((sum by (site) (moav_site_traffic_bytes_total))[5m:])",
+              "legendFormat": "{{site}}",
+              "refId": "A",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 126,
+          "type": "table",
+          "title": "Site Usage",
+          "description": "Totals per site since collection began; they survive an exporter restart. Clients is distinct people in the last full hour, and is also the gate \u2014 a site is named only once at least SITE_ANALYTICS_MIN_CLIENTS reached it, so 'other' has bytes and connections but no client count. Use the chart above for a window.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 11,
+            "w": 16,
+            "x": 8,
+            "y": 41
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "last_over_time((sum by (site) (moav_site_clients))[5m:])",
+              "instant": true,
+              "format": "table",
+              "legendFormat": "{{site}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "last_over_time((sum by (site) (moav_site_connections_total))[5m:])",
+              "instant": true,
+              "format": "table",
+              "legendFormat": "{{site}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "last_over_time((sum by (site) (moav_site_traffic_bytes_total{direction=\"down\"}))[5m:])",
+              "instant": true,
+              "format": "table",
+              "legendFormat": "{{site}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "D",
+              "expr": "last_over_time((sum by (site) (moav_site_traffic_bytes_total{direction=\"up\"}))[5m:])",
+              "instant": true,
+              "format": "table",
+              "legendFormat": "{{site}}",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ],
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "site",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Time 1": true,
+                  "Time 2": true,
+                  "Time 3": true,
+                  "Time 4": true,
+                  "__name__": true,
+                  "instance": true,
+                  "job": true,
+                  "__name__ 1": true,
+                  "instance 1": true,
+                  "job 1": true
+                },
+                "renameByName": {
+                  "site": "Site",
+                  "Value #A": "Clients",
+                  "Value #B": "Connections",
+                  "Value #C": "Downloaded",
+                  "Value #D": "Uploaded"
+                },
+                "indexByName": {}
+              }
+            },
+            {
+              "id": "sortBy",
+              "options": {
+                "sort": [
+                  {
+                    "field": "Downloaded",
+                    "desc": true
+                  }
+                ]
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "align": "auto",
+                "cellOptions": {
+                  "type": "auto"
+                }
+              },
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Downloaded"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "gradient"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Uploaded"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "bytes"
+                  },
+                  {
+                    "id": "custom.cellOptions",
+                    "value": {
+                      "type": "gauge",
+                      "mode": "gradient"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Clients"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 130
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Connections"
+                },
+                "properties": [
+                  {
+                    "id": "unit",
+                    "value": "short"
+                  },
+                  {
+                    "id": "custom.width",
+                    "value": 130
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "showHeader": true,
+            "footer": {
+              "show": true,
+              "reducer": [
+                "sum"
+              ],
+              "fields": [
+                "Connections",
+                "Downloaded",
+                "Uploaded"
+              ]
+            }
+          }
+        },
+        {
+          "id": 124,
+          "type": "timeseries",
+          "title": "Site Traffic (per hour)",
+          "description": "Bytes per site over the preceding hour, sampled continuously. The counters step exactly on the hour, so this is a staircase that changes once per bucket -- not a smooth rate. Sampling it at exactly 1h would land every window between two steps and read zero.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 52
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "min": 0,
+              "custom": {
+                "fillOpacity": 25,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "normal",
+                  "group": "A"
+                }
+              },
+              "color": {
+                "mode": "palette-classic-by-name"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum by (site) (increase(moav_site_traffic_bytes_total[1h]))",
+              "legendFormat": "{{site}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 125,
+          "type": "piechart",
+          "title": "Traffic by Destination Country",
+          "description": "Where the traffic goes, from the local GeoIP database. Only sites past the k-anonymity threshold are located, so everything under 'other' shows as 'unknown' -- that slice is the honest coverage gap, not missing data. CDN traffic resolves to the nearest edge, not the service's home country.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 60
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "color": {
+                "mode": "palette-classic"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "pieType": "pie",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "legend": {
+              "displayMode": "table",
+              "placement": "right",
+              "showLegend": true,
+              "values": [
+                "value",
+                "percent"
+              ]
+            }
+          },
+          "targets": [
+            {
+              "expr": "last_over_time((sum by (country) (moav_site_destination_country_bytes_total))[5m:])",
+              "legendFormat": "{{country}}",
+              "refId": "A",
+              "instant": true,
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        },
+        {
+          "id": 127,
+          "type": "stat",
+          "title": "Threshold Cost",
+          "description": "How much the k-anonymity threshold folded into 'other' in the last full hour. Closest miss is the largest client count among the folded sites. If it sits just under SITE_ANALYTICS_MIN_CLIENTS, the fix is to widen SITE_ANALYTICS_BUCKET_SECONDS, not to lower the threshold: a longer bucket gathers more distinct clients per site, so more sites clear the same bar and every named site is still backed by at least that many people. Neither number names a site.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 24,
+            "x": 0,
+            "y": 68
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "textMode": "auto",
+            "colorMode": "none",
+            "graphMode": "none",
+            "orientation": "horizontal"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "last_over_time((moav_site_folded_sites)[5m:])",
+              "instant": true,
+              "legendFormat": "Sites folded into 'other'",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "B",
+              "expr": "last_over_time((moav_site_folded_clients_max)[5m:])",
+              "instant": true,
+              "legendFormat": "Closest miss (clients)",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            },
+            {
+              "refId": "C",
+              "expr": "last_over_time((count(moav_site_clients))[5m:])",
+              "instant": true,
+              "legendFormat": "Sites named",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              }
+            }
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {}
+      }
     }
   ],
   "refresh": "30s",

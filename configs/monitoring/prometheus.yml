@@ -28,11 +28,6 @@ scrape_configs:
     static_configs:
       - targets: ['cadvisor:8080']
 
-  # sing-box via Clash Exporter (traffic metrics)
-  - job_name: 'clash'
-    static_configs:
-      - targets: ['clash-exporter:2112']
-
   # sing-box User Exporter (user connection metrics from logs)
   - job_name: 'singbox-users'
     static_configs:
