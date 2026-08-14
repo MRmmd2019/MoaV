@@ -8,10 +8,17 @@ name: e2e
 # domain). Setup + manual-run instructions: docs/devdocs/E2E-TESTING.md
 #
 # Tiers (workflow_dispatch `tier`; push/release use the default):
-#   default — domain mode only (fast)
+#   default — domain mode only (fast). Teardown KEEPS the cert volume, so certbot
+#             finds the existing cert and never calls Let's Encrypt. Free to repeat.
 #   full    — domain + domainless
 #   mega    — domain + domainless + build --local (monitoring from source) + remove images
 # `domainless_only: true` overrides the domain portion for a Let's-Encrypt-free run.
+#
+# COST: full and mega tear down with `uninstall --wipe`, which destroys the cert
+# volume, so each spends a Let's Encrypt issuance. LE allows 5 per 168h for the
+# same exact domain. Iterate on the default tier or `domainless_only`, and save
+# full/mega for the run that matters. The budget check below stops early rather
+# than failing at the certbot step twenty minutes in.
 # TODO: a future tier (or full+) will also drive a real moav-client connection test.
 on:
   push:
@@ -91,6 +98,27 @@ jobs:
           # how WireGuard "passed" on a DNS resolve for months) — so hard-fail.
           test -c /dev/net/tun \
             || { echo "::error::/dev/net/tun missing on the runner — WG/AWG live tests need it"; exit 1; }
+
+      - name: Let's Encrypt budget check
+        # full/mega wipe the cert volume, so this run WILL request a certificate.
+        # LE allows 5 per 168h per exact identifier set, and without this the
+        # failure surfaces ~20 minutes in at the certbot step. crt.sh is a public
+        # certificate-transparency log: no credentials, and it discloses nothing
+        # that is not already public by design.
+        if: (inputs.tier == 'full' || inputs.tier == 'mega') && inputs.domainless_only != true
+        run: |
+          set -uo pipefail
+          if [ -z "${MOAV_DOMAIN:-}" ]; then echo "no DOMAIN configured; skipping"; exit 0; fi
+                    issued=$(curl -sf --max-time 20 "https://crt.sh/?identity=${MOAV_DOMAIN}&exclude=expired&output=json" | python3 -c 'import json,sys,datetime as d; rows=json.load(sys.stdin); cut=d.datetime.now(d.UTC)-d.timedelta(hours=168); print(sum(1 for r in rows if "Encrypt" in (r.get("issuer_name") or "") and d.datetime.fromisoformat(r["entry_timestamp"]).replace(tzinfo=d.UTC)>cut))' 2>/dev/null) || issued=""
+          if [ -z "$issued" ]; then echo "::notice::crt.sh unreadable — proceeding without a budget check"; exit 0; fi
+          echo "Let's Encrypt certificates for this domain in the last 168h: $issued of 5"
+          if [ "$issued" -ge 5 ]; then
+            echo "::error::Let's Encrypt budget is spent ($issued/5 in the last 168h)."
+            echo "::error::This run would fail at the certbot step. Use the default tier,"
+            echo "::error::which reuses the existing cert and costs nothing, or domainless_only."
+            exit 1
+          fi
+          if [ "$issued" -ge 4 ]; then echo "::warning::only $((5 - issued)) issuance(s) left this week"; fi
 
       - name: Prepare .env
         run: |
