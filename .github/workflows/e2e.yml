@@ -41,6 +41,10 @@ on:
         description: 'Domainless-only: skip DOMAIN/cert entirely (no Let''s Encrypt, no LE rate-limit hit). Validates IP-only protocols. Overrides the tier''s domain portion.'
         type: boolean
         default: false
+      fresh_cert:
+        description: 'Force a real Let''s Encrypt issuance: wipe the preserved cert first, then keep the new one. Spends one of the 5/168h. Run when the preserved cert is missing or near expiry.'
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -159,14 +163,24 @@ jobs:
       - name: Clean slate (domainless / full / mega — start fresh, ignore prior state)
         if: inputs.domainless_only || inputs.tier == 'full' || inputs.tier == 'mega'
         run: |
-          # The run-to-run coupling lives in the docker VOLUMES (moav_state
-          # keeps .bootstrapped + keys, so re-bootstrap skips regenerating the
-          # host configs). Drop the volumes so bootstrap runs first-time and
-          # rebuilds configs from the (checkout-restored) templates. Do NOT rm
-          # configs/ — it holds repo-tracked *.template files bootstrap needs;
-          # checkout already cleans the generated host artifacts. (Domain runs
-          # deliberately keep the cert volume — see Teardown — so are excluded.)
-          docker compose --profile all down -v --remove-orphans 2>/dev/null || true
+          # Run-to-run coupling lives in the VOLUMES (moav_state keeps .bootstrapped
+          # + keys, so re-bootstrap skips regenerating host configs). Drop them so
+          # bootstrap runs first-time and rebuilds configs from the checkout-restored
+          # templates. Do NOT rm configs/ — it holds repo-tracked *.template files.
+          #
+          # The cert volume is the exception: Let's Encrypt allows only 5 issuances
+          # per 168h for the same domain, and wiping it every full/mega run burned
+          # through that. It is PRESERVED and the cert reused, unless fresh_cert is
+          # set (forces a real issuance) or this is a domainless run (no cert exists).
+          if [ "${{ inputs.fresh_cert }}" = "true" ] || [ "${{ inputs.domainless_only }}" = "true" ]; then
+            docker compose --profile all down -v --remove-orphans 2>/dev/null || true
+          else
+            docker compose --profile all down --remove-orphans 2>/dev/null || true
+            proj="$(grep -E '^COMPOSE_PROJECT_NAME=' .env | cut -d= -f2)"; proj="${proj:-moav}"
+            docker volume ls -q --filter "name=^${proj}_" | grep -v '_certs$' \
+              | xargs -r docker volume rm 2>/dev/null || true
+            echo "cert volume preserved (${proj}_*_certs); state and other volumes dropped"
+          fi
 
       - name: Bootstrap (keys, certs, first user)
         # --yes: non-interactive; also proceeds if a previous run left state
@@ -759,20 +773,21 @@ jobs:
         if: always()
         run: |
           ./moav.sh stop 2>/dev/null || true
-          # A DOMAIN run keeps the moav_certs volume so the next run reuses the
-          # Let's Encrypt cert instead of re-issuing (LE allows only 5/week per
-          # domain). A DOMAINLESS run has no trusted cert to preserve, and a FULL
-          # run is deliberately destructive — both --wipe for a clean slate, so
-          # the next run bootstraps fresh instead of inheriting stale state
-          # (persisted state couples runs: re-bootstrap can skip regenerating
-          # host configs, leaving `user add` with nothing). timeout guards a hang.
+          # The cert volume is ALWAYS preserved across runs — Let's Encrypt allows
+          # only 5 issuances per 168h per domain, so the cert is reused, not
+          # reissued. fresh_cert refreshes it at Clean slate and we keep the new
+          # one here. Exercise `moav uninstall` for the container/network teardown,
+          # then wipe state and other volumes on the destructive tiers so the next
+          # run bootstraps clean (Clean slate repeats this at the START). timeout
+          # guards a hang.
+          IMG=""; [ "$E2E_TIER" = "mega" ] && IMG="--remove-images"
+          echo "== moav uninstall --yes $IMG (cert volume kept) =="
+          timeout 300 ./moav.sh uninstall --yes $IMG 2>&1 | tail -25 || echo "::warning::moav uninstall returned non-zero / timed out"
           if [ "$E2E_DOMAINLESS_ONLY" = "true" ] || [ "$E2E_TIER" = "full" ] || [ "$E2E_TIER" = "mega" ]; then
-            IMG=""; [ "$E2E_TIER" = "mega" ] && IMG="--remove-images"
-            echo "== moav uninstall --wipe --yes $IMG (fresh slate next run) =="
-            timeout 300 ./moav.sh uninstall --wipe --yes $IMG 2>&1 | tail -25 || echo "::warning::moav uninstall --wipe returned non-zero / timed out"
-          else
-            echo "== moav uninstall --yes (keeps cert volume for cert reuse) =="
-            timeout 300 ./moav.sh uninstall --yes 2>&1 | tail -25 || echo "::warning::moav uninstall returned non-zero / timed out"
+            proj="$(grep -E '^COMPOSE_PROJECT_NAME=' .env | cut -d= -f2)"; proj="${proj:-moav}"
+            docker volume ls -q --filter "name=^${proj}_" | grep -v '_certs$' \
+              | xargs -r docker volume rm 2>/dev/null || true
+            echo "state and other volumes dropped; cert volume kept for reuse"
           fi
 
       - name: Final cleanup — reclaim workspace
