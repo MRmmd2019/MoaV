@@ -390,10 +390,13 @@ check_source_rebuilds() {
     changed=$(git -C "$SCRIPT_DIR" diff --name-only "$old_commit" HEAD 2>/dev/null) || return 0
     [[ -z "$changed" ]] && return 0
 
-    # Operator-facing services built from source. Monitoring/infra images
-    # (exporters, grafana, prometheus, the bootstrap image) are intentionally
-    # excluded — low impact, and their entrypoints are bind-mounted anyway.
-    local valid=" dns-router dnstt slipstream gooserelay masterdns sing-box xray telemt trusttunnel wireguard amneziawg wstunnel snowflake psiphon-conduit client admin "
+    # Services built from source. Exporters are included: their code is COPYed
+    # into the image (exporters/*/Dockerfile), so a fix to one never reaches a
+    # running container without a rebuild -- the comment here used to claim they
+    # were bind-mounted, which is true of the grafana entrypoint and of nothing
+    # in exporters/. Grafana, prometheus and the bootstrap image stay out: those
+    # are upstream images or bind-mounted config.
+    local valid=" dns-router dnstt slipstream gooserelay masterdns sing-box xray telemt trusttunnel wireguard amneziawg wstunnel snowflake psiphon-conduit client admin snowflake-exporter singbox-exporter telemt-exporter xray-exporter wireguard-exporter amneziawg-exporter "
 
     local queued="" f svc
     while IFS= read -r f; do
@@ -402,6 +405,7 @@ check_source_rebuilds() {
         case "$f" in
             dns-router/*)                   svc="dns-router" ;;
             admin/*)                        svc="admin" ;;
+            exporters/*/*)                  svc="${f#exporters/}"; svc="${svc%%/*}-exporter" ;;
             scripts/conduit-entrypoint.sh)  svc="psiphon-conduit" ;;   # name mismatch
             dockerfiles/Dockerfile.psiphon) svc="psiphon-conduit" ;;   # name mismatch
             scripts/client-*.sh)            svc="client" ;;
@@ -410,10 +414,43 @@ check_source_rebuilds() {
         esac
         [[ -z "$svc" ]] && continue
         # Drop anything not in the allowlist: bind-mounted entrypoints (grafana),
-        # monitoring exporters, infra images, unknown name mappings.
+        # infra images, unknown name mappings.
         [[ "$valid" == *" $svc "* ]] || continue
+        # Drop services no longer in compose: a deleted one still shows in the diff.
+        grep -qE "^  ${svc}:" "$SCRIPT_DIR/docker-compose.yml" 2>/dev/null || continue
         [[ " $queued " == *" $svc "* ]] || queued="${queued:+$queued }$svc"
     done <<< "$changed"
+
+    # Setup-profile one-shots never run on upgrade, so a new volume stays empty.
+    if grep -q '^  tor-geoip-updater:' "$SCRIPT_DIR/docker-compose.yml" 2>/dev/null \
+       && docker volume ls --format '{{.Name}}' 2>/dev/null | grep -q 'moav_tor_geoip'; then
+        if ! docker run --rm -v moav_moav_tor_geoip:/geoip alpine \
+                 test -s /geoip/geoip 2>/dev/null; then
+            POST_UPDATE_SETUP_JOBS="tor-geoip-updater"
+        fi
+    fi
+
+    # A single-file bind mount follows the inode; git replaces the file, so the
+    # container reads the old copy until recreated.
+    local compose_changed=""
+    while IFS= read -r f; do
+        case "$f" in
+            docker-compose.yml|docker-compose.*.yml|compose.yml|compose.*.yml)
+                compose_changed=1 ;;
+        esac
+    done <<< "$changed"
+    [[ -n "$compose_changed" ]] && POST_UPDATE_COMPOSE_CHANGED=1
+
+    local recreate=""
+    while IFS= read -r f; do
+        case "$f" in
+            configs/monitoring/prometheus.yml)
+                [[ " $recreate " == *" prometheus "* ]] || recreate="${recreate:+$recreate }prometheus" ;;
+            configs/monitoring/grafana/*)
+                [[ " $recreate " == *" grafana "* ]] || recreate="${recreate:+$recreate }grafana" ;;
+        esac
+    done <<< "$changed"
+    [[ -n "$recreate" ]] && POST_UPDATE_CONFIG_RECREATE="$recreate"
 
     [[ -z "$queued" ]] && return 0
 
@@ -437,8 +474,12 @@ print_post_update_apply_steps() {
     local rebuild="${POST_UPDATE_REBUILD_SERVICES:-}"
     local templates="${POST_UPDATE_BOOTSTRAP_TEMPLATES:-}"
     local regen_bundles="${POST_UPDATE_REGEN_BUNDLES:-}"
+    local recreate="${POST_UPDATE_CONFIG_RECREATE:-}"
+    local setup_jobs="${POST_UPDATE_SETUP_JOBS:-}"
+    local compose_changed="${POST_UPDATE_COMPOSE_CHANGED:-}"
 
-    [[ -z "$rebuild" && -z "$templates" && -z "$regen_bundles" ]] && return 0
+    [[ -z "$rebuild" && -z "$templates" && -z "$regen_bundles" && -z "$recreate" \
+       && -z "$setup_jobs" && -z "$compose_changed" ]] && return 0
 
     echo ""
     if [[ -n "$templates" ]]; then
@@ -471,8 +512,24 @@ print_post_update_apply_steps() {
         echo -e "  ${WHITE}${n}.${NC} moav regenerate-users           ${DIM}# refresh user bundles (guide layout changed)${NC}"
         n=$((n+1))
     fi
-    echo -e "  ${WHITE}${n}.${NC} moav start                      ${DIM}# recreate containers on the new images${NC}"
+    # Every step is numbered: an unnumbered command reads as a footnote.
+    if [[ -n "$setup_jobs" ]]; then
+        echo -e "  ${WHITE}${n}.${NC} cd ${SCRIPT_DIR} && docker compose --profile setup run --rm ${setup_jobs}"
+        echo -e "     ${DIM}# fills a volume this release added; it has never run here${NC}"
+        n=$((n+1))
+    fi
+    if [[ -z "$rebuild" && -n "$compose_changed" ]]; then
+        echo -e "  ${WHITE}${n}.${NC} moav start                      ${DIM}# docker-compose.yml changed; recreates the services it touched${NC}"
+    else
+        echo -e "  ${WHITE}${n}.${NC} moav start                      ${DIM}# recreate containers on the new images${NC}"
+    fi
+    n=$((n+1))
+    if [[ -n "$recreate" ]]; then
+        echo -e "  ${WHITE}${n}.${NC} cd ${SCRIPT_DIR} && docker compose up -d --force-recreate ${recreate}"
+        echo -e "     ${DIM}# a mounted config file changed; only a recreate picks it up${NC}"
+    fi
     echo ""
+
     echo -e "${DIM}Note: 'moav restart' reuses the old image — use 'moav start' (docker compose up -d) to pick up rebuilt images.${NC}"
 }
 
@@ -610,6 +667,17 @@ check_env_additions() {
                     break
                 fi
             done
+        fi
+
+        # A new opt-in flag must not switch off a feature the server is already
+        # running. ENABLE_CDN's absence means "on if CDN_SUBDOMAIN is set" (see
+        # cdn_enabled), so appending the example's `false` would leave a working
+        # CDN alive until the next bootstrap and then silently drop the inbound.
+        if [[ "$var" == "ENABLE_CDN" ]]; then
+            if [[ -n "$(get_env_val "CDN_SUBDOMAIN" "$env_file" "")" \
+               || -n "$(get_env_val "CDN_DOMAIN"    "$env_file" "")" ]]; then
+                value_line="ENABLE_CDN=true"
+            fi
         fi
 
         # Display: variable name with its default value

@@ -242,14 +242,33 @@ cmd_build() {
 # keep the most-recently-used ~4 GB and evict the older overflow. So a normal
 # rebuild keeps its warm cache; only unbounded accumulation is trimmed.
 # Cache only, never images (they back the running stack and any rollback).
-MOAV_BUILD_CACHE_KEEP="${MOAV_BUILD_CACHE_KEEP:-4GB}"
+MOAV_BUILD_CACHE_KEEP="${MOAV_BUILD_CACHE_KEEP:-}"
+
+# 4 GB holds a full stack's layers; halves down on a tight disk, floor 1 GB.
+default_cache_keep() {
+    local free_mb cache_mb keep
+    free_mb=$(df -Pm / 2>/dev/null | awk 'NR==2 {print $4}')
+    [[ "$free_mb" =~ ^[0-9]+$ ]] || { echo 4096; return; }
+    # Existing cache counts as available, or the cap ratchets down each run.
+    cache_mb=$(docker system df 2>/dev/null | awk '/^Build Cache/ {
+        v = $(NF-1); u = $(NF-1);
+        sub(/[A-Za-z]+$/, "", v);
+        if (u ~ /GB/) printf "%d", v * 1024; else if (u ~ /MB/) printf "%d", v; else print 0 }')
+    [[ "$cache_mb" =~ ^[0-9]+$ ]] || cache_mb=0
+    keep=$(( (free_mb + cache_mb) / 2 ))
+    (( keep > 4096 )) && keep=4096
+    (( keep < 1024 )) && keep=1024
+    echo "$keep"
+}
+
 prune_build_cache() {
     command -v docker >/dev/null 2>&1 || return 0
+    [[ -n "$MOAV_BUILD_CACHE_KEEP" ]] || MOAV_BUILD_CACHE_KEEP="$(default_cache_keep)MB"
     # --keep-storage caps retained cache (Docker 18.09+; a deprecation alias for
     # --reserved-space on 27+, still honored). Fall back to an age filter on the
     # rare daemon that rejects it, still preserving recent layers.
     if docker builder prune -f --keep-storage "$MOAV_BUILD_CACHE_KEEP" >/dev/null 2>&1; then
-        info "Capped build cache at ~${MOAV_BUILD_CACHE_KEEP} (recent layers kept for fast rebuilds)"
+        info "Capped build cache at ~${MOAV_BUILD_CACHE_KEEP} (least-recently-used layers evicted first)"
     elif docker builder prune -f --filter until=336h >/dev/null 2>&1; then
         info "Pruned build cache older than 14 days (recent layers kept)"
     fi
@@ -257,12 +276,11 @@ prune_build_cache() {
 
 # Map of services that can be built locally
 # Format: "dockerfile|image_tag|image_env_var|version_env_var|version_arg|description"
-ALL_LOCAL_BUILD_SERVICES="cadvisor clash-exporter prometheus grafana node-exporter nginx certbot"
+ALL_LOCAL_BUILD_SERVICES="cadvisor prometheus grafana node-exporter nginx certbot"
 
 _local_build_info() {
     case "$1" in
         cadvisor)       echo "dockerfiles/Dockerfile.cadvisor|moav-cadvisor:local|IMAGE_CADVISOR|CADVISOR_VERSION|CADVISOR_VERSION|cAdvisor container metrics (gcr.io)" ;;
-        clash-exporter) echo "dockerfiles/Dockerfile.clash-exporter|moav-clash-exporter:local|IMAGE_CLASH_EXPORTER|CLASH_EXPORTER_VERSION|CLASH_EXPORTER_VERSION|Clash API exporter (ghcr.io)" ;;
         prometheus)     echo "dockerfiles/Dockerfile.prometheus|moav-prometheus:local|IMAGE_PROMETHEUS|PROMETHEUS_VERSION|PROMETHEUS_VERSION|Prometheus time-series DB" ;;
         grafana)        echo "dockerfiles/Dockerfile.grafana|moav-grafana:local|IMAGE_GRAFANA|GRAFANA_VERSION|GRAFANA_VERSION|Grafana dashboards" ;;
         node-exporter)  echo "dockerfiles/Dockerfile.node-exporter|moav-node-exporter:local|IMAGE_NODE_EXPORTER|NODE_EXPORTER_VERSION|NODE_EXPORTER_VERSION|Node system metrics" ;;
@@ -273,7 +291,7 @@ _local_build_info() {
 }
 
 # Default services to build with --local (commonly blocked registries)
-DEFAULT_LOCAL_BUILDS="cadvisor clash-exporter"
+DEFAULT_LOCAL_BUILDS="cadvisor"
 
 # Build images locally for regions with blocked registries
 build_local_images() {

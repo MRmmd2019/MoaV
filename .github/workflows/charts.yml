@@ -1,0 +1,109 @@
+name: charts
+
+# Refresh every generated chart and publish them to the `chart` branch, which the
+# README and the docs embed by raw URL.
+#
+# ONE job on purpose: two workflows force-pushing the same branch would clobber
+# each other's charts. Nothing is committed to main and no PR is opened: the
+# chart is generated, changes daily, and would otherwise be permanent noise in
+# main's history.
+#
+# STAR_TOKEN is NOT required. The chart is built from star-history.json on the
+# chart branch, appended to using the repo object's stargazers_count -- public,
+# unauthenticated, unaffected by the 2026-06-30 restriction that limits
+# /stargazers to a repo's admins and collaborators.
+#
+# A token only buys BACKFILL of history from before that file existed, and a
+# fine-grained PAT cannot do it at any permission level -- the endpoint wants an
+# admin or collaborator, which means a classic PAT or a user login. Not worth a
+# broad credential in CI for a cosmetic chart; backfill once from a laptop
+# instead:  python3 scripts/gen-star-history.py --seed
+on:
+  schedule:
+    # Daily. The job exits before publishing when no chart changed, so a quiet
+    # day costs one short run -- cheaper than reasoning about a skip schedule,
+    # and cron's day-of-month */2 is uneven across month boundaries anyway.
+    - cron: '20 4 * * *'      # 04:20 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: charts
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Public repo, read-only, no credential: the translation chart counts files.
+      - uses: actions/checkout@v4
+        with:
+          repository: MotherofallVPNs/moav-site
+          path: .moav-site
+
+      - name: Carry the accumulated history forward
+        run: |
+          mkdir -p .chart
+          if git fetch -q origin chart 2>/dev/null; then
+            git show origin/chart:star-history.json > .chart/star-history.json 2>/dev/null || true
+            git show origin/chart:star-history.svg  > .chart/previous.svg      2>/dev/null || true
+          fi
+          # The JSON is the state: it is what makes this a history rather than a
+          # single data point, and /stargazers cannot rebuild it from CI.
+          if [ -s .chart/star-history.json ]; then
+            python3 -c "import json; d=json.load(open('.chart/star-history.json')); print('carried forward', sum(len(e['points']) for e in d.values()), 'points')"
+          else
+            echo "no history on the chart branch yet"
+          fi
+
+      - name: Render the star chart
+        env:
+          GH_TOKEN: ${{ secrets.STAR_TOKEN || secrets.GITHUB_TOKEN }}
+          STAR_DATA: .chart/star-history.json
+          STAR_OUT: .chart/star-history.svg
+        run: python3 scripts/gen-star-history.py
+
+      # No state and no credential: git tags and a file count. Regenerated from
+      # scratch every run, so these two can never go stale.
+      - name: Render the repo charts
+        env:
+          MOAV_SITE_DIR: .moav-site
+        run: python3 scripts/gen-charts.py --out .chart
+
+      - name: Publish to the chart branch
+        run: |
+          # Compare every chart, not just the star one: a new test suite moves
+          # test-suites.svg while the star count sits still.
+          changed=0
+          for f in .chart/*.svg; do
+            name=$(basename "$f")
+            if ! git show "origin/chart:$name" > /tmp/prev-"$name" 2>/dev/null \
+               || ! cmp -s /tmp/prev-"$name" "$f"; then
+              echo "changed: $name"; changed=1
+            fi
+          done
+          if [ "$changed" = "0" ]; then
+            echo "no chart changed — nothing to publish"
+            exit 0
+          fi
+
+          # One commit, force-pushed. The JSON carries the state forward, so this
+          # branch's own git history is disposable and it stays small forever.
+          pub=$(mktemp -d)
+          cp .chart/*.svg .chart/star-history.json "$pub/"
+          cp .github/chart-branch-README.md "$pub/README.md"
+
+          cd "$pub"
+          git init -q -b chart
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -qm "chore(chart): refresh charts $(date -u '+%Y-%m-%d')"
+          git push -q --force \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" \
+            chart
+          echo "published to the chart branch"

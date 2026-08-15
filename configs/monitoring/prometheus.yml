@@ -28,11 +28,6 @@ scrape_configs:
     static_configs:
       - targets: ['cadvisor:8080']
 
-  # sing-box via Clash Exporter (traffic metrics)
-  - job_name: 'clash'
-    static_configs:
-      - targets: ['clash-exporter:2112']
-
   # sing-box User Exporter (user connection metrics from logs)
   - job_name: 'singbox-users'
     static_configs:
@@ -69,9 +64,16 @@ scrape_configs:
 
   # Snowflake Exporter - parses snowflake proxy logs for metrics
   # NOTE: Only available when running with --profile snowflake
-  - job_name: 'snowflake'
+  # The proxy's own Prometheus endpoint. This replaced a 213-line log-parsing
+  # exporter of ours: it carries the same connection and traffic counters, plus a
+  # per-country breakdown and a failure counter we never had.
+  - job_name: 'snowflake-proxy'
+    metrics_path: /internal/metrics
+    # snowflake runs with network_mode: host (it needs the host's NAT behaviour),
+    # so it is not on moav_net and has no service DNS name. prometheus already
+    # declares host.docker.internal:host-gateway for exactly this case.
     static_configs:
-      - targets: ['snowflake-exporter:8080']
+      - targets: ['host.docker.internal:9998']
     scrape_timeout: 10s
 
   # telemt - Telegram MTProxy native Prometheus metrics

@@ -81,12 +81,34 @@ jobs:
         run: bash tests/bundle-guide-sections-test.sh
       - name: ENABLE_* gating in the user-add paths
         run: bash tests/enable-flag-gating-test.sh
+      - name: donate-mode regenerate (missing per-user protocol)
+        run: bash tests/donate-regenerate-test.sh
       - name: ENABLE_CDN opt-in flag
         run: bash tests/cdn-flag-test.sh
+      - name: CDN survives an upgrade (flag inference + path rotation)
+        run: bash tests/cdn-upgrade-test.sh
       - name: llms.txt link hygiene (structure)
         run: bash tests/llms-links-test.sh
       - name: moav update rebuild prompts (baked-in changes)
         run: bash tests/update-rebuild-test.sh
+      - name: build cache cap (sizing reaches docker builder)
+        run: bash tests/build-cache-test.sh
+      - name: monitoring privacy (no user x destination) (#297)
+        run: bash tests/monitoring-privacy-test.sh
+      - name: site analytics aggregation (#297)
+        run: bash tests/sitestats-test.sh
+      - name: sing-box country metrics
+        run: bash tests/singbox-country-test.sh
+      - name: sing-box log scrubbing (#297)
+        run: bash tests/singbox-log-scrub-test.sh
+      - name: dashboard time-range scoping
+        run: bash tests/dashboard-timerange-test.sh
+      - name: doctor net drop counters
+        run: bash tests/net-drops-test.sh
+      - name: one-shot service classification
+        run: bash tests/oneshot-services-test.sh
+      - name: snowflake native metrics + dashboard (#183)
+        run: bash tests/snowflake-metrics-test.sh
       - name: admin TLS enforcement
         run: bash tests/admin-tls-test.sh
       - name: admin IP whitelist (CIDR) unit test
@@ -95,10 +117,24 @@ jobs:
         run: bash tests/refactor-verify.sh
       - name: protocol-roster drift gate
         run: python3 scripts/gen-protocol-docs.py --check
-      - name: star-history chart present (offline check)
+      - name: star-history README link + renderer (offline)
         run: python3 scripts/gen-star-history.py --check
+      - name: repo charts renderer + README link (offline)
+        run: python3 scripts/gen-charts.py --check
+      - name: star-history API version + timestamp guard
+        run: bash tests/star-history-test.sh
       - name: funding block drift gate (README from FUNDING.yml)
         run: bash scripts/render-funding.sh --check
+      - name: FUNDING.yml address values stay quoted
+        run: bash tests/funding-yaml-test.sh
+      - name: doctor peers --fix (SIGPIPE + volume state)
+        run: bash tests/peers-repair-test.sh
+      - name: net tuning stale-file + template drift
+        run: bash tests/nettune-template-test.sh
+      - name: PID-1 reaper on orphan-inheriting containers
+        run: bash tests/zombie-reaper-test.sh
+      - name: doctor host (load/swap/zombies) + check wiring
+        run: bash tests/hostload-test.sh
       - name: release footer generator
         run: bash tests/release-footer-test.sh
       - name: release footer links resolve (network)

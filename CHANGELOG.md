@@ -5,7 +5,253 @@ All notable changes to MoaV will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - 2026-08-14
+
+**Monitoring stopped recording which client visited which site.** Everything
+else here is secondary to that.
+
+The rest are fixes for problems that only appear on a **running, upgraded**
+server, found by testing 2.1.0 on live servers rather than in CI. Two of them
+were silent: they reported success and did nothing. Plus Snowflake monitoring
+that finally shows who is being served.
+
+Keys, users and certificates are untouched.
+
+### Upgrade Notes
+
+```bash
+moav update
+moav build snowflake    # 2.14.1, and the metrics endpoint is baked in
+moav start              # NOT `moav restart` -- see below
+moav doctor             # two new checks report on this box
+moav net apply          # if doctor says the tuning file is from an older MoaV
+```
+
+`moav start` is required rather than `moav restart`: the sing-box image and the
+sing-box exporter are both rebuilt, and a restart reuses the old image.
+
+**If you have ever run the monitoring profile, that data is on disk until it
+ages out.** Nothing new is recorded from this release on. To remove it now, see
+[Purging old monitoring data](https://moav.sh/docs/OPSEC#purging-old-monitoring-data).
+
+- **`moav start`, not `moav restart`.** This release changes
+  `docker-compose.yml`, and `moav restart` restarts containers with their
+  existing config. Only `moav start` (`docker compose up -d`) recreates them.
+- **`SNOWFLAKE_VERSION` in your `.env` wins over the new default.** The compose
+  default is `${SNOWFLAKE_VERSION:-2.14.1}`, so a server whose `.env` pins
+  `2.11.0` rebuilds 2.11.0 again. Update the pin, or let `moav update`'s version
+  check prompt you.
+- **The Snowflake dashboard's history does not carry over.** Its metrics are now
+  the proxy's own, under new names; existing panels keep their old series until
+  retention expires. Nothing to do, but the graphs will look empty at first.
+
+### Security
+
+- **Monitoring stored `client IP` x `destination hostname`, and kept it for the
+  full retention window** ([#297](https://github.com/MotherofallVPNs/MoaV/issues/297)).
+  `ghcr.io/zxh326/clash-exporter` was shipped with `-collectDest`, which emits
+  one time series per (client, destination) pair. Measured on one live server:
+  4,849 client IPs against 7,592 hostnames, 389,324 series, **83% of the entire
+  TSDB**, retained 15 days. It is a browsing log keyed by user, on servers whose
+  users are the people least able to afford one. No dashboard ever read it.
+
+  The exporter is removed rather than filtered, so re-adding a scrape job cannot
+  bring it back. The four aggregate metrics the dashboards actually used now
+  come from MoaV's own sing-box exporter, which gained `singbox_active_connections`
+  and `singbox_version_info` and corrected its per-user country attribution (the
+  client IP is read off the connection-`from` log line and joined to the username
+  by connection id, so users no longer all report `XX`).
+
+- **sing-box logged the same pairing to disk**, on every server, not only those
+  running monitoring: `[<username>] inbound connection to <host>:443` at the
+  default log level. Destinations are now stripped from every line shape before
+  anything is written — a 3,000-line sample had them in five — while the client
+  IP, username and connection id are kept, because the exporter needs those and
+  no consumer needs the hostname. The log written before the upgrade is cleared
+  once on start, since it still holds the pairing.
+
+- **Per-user volume and liveness are untouched.** The problem was linkage, not
+  visibility: operators still need username, bytes and country for quota and
+  abuse handling, and none of that says where anyone went.
+
+- **Optional site analytics**, off unless `ENABLE_SITE_ANALYTICS=true`. Answers
+  *what is this proxy used for* without touching who did it: domains folded to
+  the registrable name, a domain named only once at least
+  `SITE_ANALYTICS_MIN_CLIENTS` (5) distinct clients reached it in a bucket,
+  ranked by how many people used it rather than by bytes, and counters that
+  advance once per bucket so a timeline cannot be lined up against per-user
+  connection counts. Measured on a real server, that threshold discards 94% of
+  domains while still attributing about 89% of traffic — because the median
+  domain is visited by exactly one person, and that is the part that identifies
+  them. On a server with very few users even aggregates leak, which is why it is
+  opt-in. `ENABLE_SITE_ANALYTICS_RESEARCH` additionally records destination port
+  and protocol, and is a separate switch because a rare port identifies far more
+  than a popular domain.
+
+- **Prometheus retention is bounded by size as well as age**
+  (`PROMETHEUS_RETENTION_SIZE`, 2 GB). `retention.time` alone cannot stop
+  cardinality filling a disk, which is how the above went unnoticed.
+
+### Fixed
+
+- **`moav update` said nothing after changing `docker-compose.yml`.** A compose
+  change maps to no service, so the apply summary was skipped entirely and the
+  pull read as a no-op — even though `moav start` is exactly what applies it.
+  Every step in that summary is numbered now, too: the recreate line was an
+  unnumbered footnote and was being skipped.
+- **`moav update` suggested building a service that no longer exists.** Deleting
+  `exporters/snowflake` left its files in the diff, so the summary printed
+  `moav build snowflake snowflake-exporter` and the second half failed with
+  "no such service".
+- **A bind-mounted config file kept its old contents after an update.** This is
+  why the Snowflake dashboard showed *No Data* after a correct upgrade:
+  `prometheus.yml` is mounted as a single **file**, a file mount follows the
+  **inode**, and git replaces the file — so the container read the old copy
+  forever (measured: host inode 508739, container 523302). `moav restart` cannot
+  fix that; only a recreate can, and nothing said so.
+- **The GeoIP database was re-downloaded on every `moav start`.** `geoip-updater`
+  has no `profiles` key, so compose starts it on every `up` — 3.9 MB each time,
+  seven times in one evening on a test box. It now stamps the month (the db-ip
+  URL is monthly) and skips, writing through a temp file so an interrupted
+  download cannot leave a truncated database. The Tor geoip fetch uses a
+  conditional request instead, so an unchanged upstream transfers nothing.
+- **The build cache cap ignored the disk.** A fixed 4 GB on a 24 GB box left
+  4.9 GB of cache with 3.8 GB free — the largest single thing on a disk at 84%.
+  It now scales to a quarter of what the cache could grow into, floored at
+  512 MB and still capped at 4 GB.
+- **Log colours reshuffled between runs.** They were assigned in first-seen
+  order, which is distinct within a run but changes whenever containers attach in
+  a different order. They are now keyed to the service's position in the sorted
+  compose service list: stable across runs, and collision-free.
+- **`moav status` listed one-shot plumbing as failures.** `geoip-updater`,
+  `tor-geoip-updater` and `bootstrap` fill a volume and exit, so "exited" read as
+  a fault in a health table; they are hidden. `certbot` legitimately exits after
+  issuing, so it sorts last instead of sitting between running services.
+
+- **`moav doctor peers --fix` died silently on any busy server.** It printed the
+  duplicate list and returned to the prompt: no confirmation, no repair, no
+  error. The live-owner lookup piped `docker exec … wg show` into an `awk` that
+  exits on the first match; the early exit closes the pipe while `wg` is still
+  writing, so docker takes `SIGPIPE`, and `pipefail` plus `set -e` killed the run
+  with no output. It is a race, which is why a 19-peer server repaired fine and a
+  171-peer one failed every time.
+- **…and when it did run, the reset did not stick.** All 18 peers reported
+  `✓ reset`, `moav regenerate-users` ran clean, and the identical duplicates came
+  back. The reset cleared `./state/users/<u>/<proto>.env`, but
+  `regenerate-users` provisions in a container reading `/state` from the
+  `moav_state` volume — a different tree. Both copies are now cleared.
+- **`moav doctor net` reported a tuning file it never checked.** `✓ Tuning file
+  present` sat one line above `! tcp_max_syn_backlog = 256`, which reads as
+  something on the box overriding us. Nothing was: `net apply` skips a host that
+  already has the file, so a server tuned by **v1.8.4** kept that version's 13
+  keys forever. The installed keys are now diffed against the current template
+  and the missing ones named.
+- **CDN could be switched off by upgrading.** `ENABLE_CDN` arrived in 2.1.0
+  defaulting to `false`, and an absent flag means "on if `CDN_SUBDOMAIN` is set".
+  But `moav update` offers to append every new variable with its default and the
+  prompt defaults to yes, so one Enter wrote `ENABLE_CDN=false` and the CDN
+  vanished at the next bootstrap. It now writes `true` when a CDN subdomain is
+  already configured; an explicit `false` is still obeyed.
+- **A donated user could lose their whole bundle.** `regenerate-users` failed
+  with `No telemt secret found`, discarding every protocol that user *did* have.
+  Donate mode provisions a subset, but the check used the server-wide flag. Every
+  other generator was audited against the same case; telemt was the only one.
+- **The CDN WebSocket path rotated in silence.** Bootstrap replaces the old
+  `/ws` default with a random path, which is right — `/ws` is a guessable
+  active-probing target — but CDN is the only protocol whose link carries a path,
+  so every other protocol kept working while already-distributed CDN configs
+  started returning 404. It now warns and names the recovery.
+- **Zombie processes in the admin and grafana containers** (39 and 11 on two live
+  servers). Both entrypoints `exec` their app, so PID 1 is python / grafana and
+  neither reaps a process it did not spawn. Both now run with an init process.
+- **Exporter changes never reached a running container.** `exporters/*/Dockerfile`
+  COPYs the code into the image, but `moav update`'s rebuild check excluded
+  exporters, with a comment claiming their entrypoints are bind-mounted — true of
+  grafana, false of everything in `exporters/`.
+- **Snowflake panels plotted lifetime totals as trends** (#183). Prometheus had
+  2880 samples over 24h; the data was never missing. Every "over time" panel ran
+  `max(<cumulative gauge>)`, so the lines were flat by construction and
+  `Total Bandwidth Donated` auto-scaled its axis to the noise band above a large
+  number, producing the reported `150.07845 → 150.07848 GB`.
+
+### Added
+
+- **`moav doctor net` decides for itself whether packet drops are still
+  happening.** The kernel counters are since-boot and never reset, so after
+  `moav net apply` fixed the cause the warning could never clear — and it told
+  the operator to run `nstat` twice, ten seconds apart, and diff it by eye. It
+  now re-reads after a short pause and reports which counters are still
+  climbing, pausing only when something tripped. A failing sysctl check names
+  `moav net apply` as the fix.
+- **Site analytics panels** on the sing-box dashboard, in a collapsed row so
+  they add nothing when the flag is off: share of traffic by site, site traffic
+  per hour, destination countries, a Site Usage table (clients, connections,
+  bytes) and a **Threshold Cost** panel reporting how many sites the k-anonymity
+  gate folded away and how close the nearest miss came — so the threshold can be
+  tuned on evidence rather than guessed.
+- `PROMETHEUS_RETENTION_TIME` (now 90 days, was a hardcoded 15),
+  `PROMETHEUS_RETENTION_SIZE`, `LOG_MAX_SIZE` and `LOG_MAX_FILES`. A long window
+  is affordable because the per-user destination series are gone: roughly 7,000
+  active series against 389,000 before. The size cap remains the real guard.
+
+
+- **Snowflake dashboard, rebuilt on the proxy's own metrics.** Beyond the
+  per-country panels: rendezvous success rate, countries reached, proxy uptime,
+  failed connections per hour, and traffic stats that follow the time picker
+  alongside the cumulative totals. Laid out on an explicit grid — every row fills
+  the full width and starts where the previous one ended, asserted when the
+  dashboard is generated rather than eyeballed.
+
+- **`moav doctor host`** — CPU load against the core count, swap in use, zombie
+  processes and the busiest container. Working out why one server felt slow took
+  four rounds of `uptime`, `top`, `docker stats` and a `ps` pipeline; this is
+  that, in one command. It also names a bandwidth-donation container when it is
+  the one saturating a small host.
+- **Snowflake: per-country users served** (#183). The proxy has exposed
+  `tor_snowflake_proxy_connections_total{country}` since 2.11 and we were not
+  reading it. New panels for users by country and failed connections per hour.
+- **Snowflake proxy 2.14.1**, with Tor-format geoip fetched into its own volume
+  (385,622 IPv4 + 276,646 IPv6 ranges). Without it the proxy logs
+  `Error loading geoip db for country based metrics` on every start and every
+  connection is labelled `""`.
+- **Generated project charts** on a dedicated `chart` branch, embedded by raw URL
+  so nothing generated is committed to `main`: star history, test suites per
+  release, and documentation translation coverage. Refreshed daily, and the run
+  publishes only when a chart actually changed.
+
+### Changed
+
+- **Every dashboard panel that read a cumulative counter raw now wraps it.**
+  Those counters restart with their container, so a "total" silently fell to
+  zero: on one server `Total Downloaded` read 779 KiB while `Downloaded` over
+  the same data read 31.5 MiB, because only the second summed across the reset.
+  Audited across all ten dashboards and re-executed all 219 expressions against
+  a live Prometheus.
+- **Snowflake's connection counts use `max_over_time`, not `increase`.** Those
+  counters tick once when a connection completes and then sit flat, and
+  `increase()` can only see growth from a previous sample — so every country's
+  *first* connection was invisible. Measured at one instant: `increase` saw 2
+  countries where `max_over_time` saw 7.
+- Panels whose series are labelled (country, user, site, container) colour by
+  series name, so one country keeps one colour across time-series panels. Pie
+  charts are excluded: Grafana names fields differently for the instant queries
+  they use, and by-name paints every slice identically.
+- `clash-exporter` is gone, along with `CLASH_EXPORTER_VERSION`,
+  `IMAGE_CLASH_EXPORTER` and its `--local` build entry. `moav start` passes
+  `--remove-orphans`, so the container disappears on the next start.
+
+
+- **The Snowflake log-parsing exporter is deleted.** 213 lines of regex over log
+  lines, replaced by the proxy's own Prometheus endpoint, which carries the same
+  connection and traffic counters plus the per-country breakdown and a failure
+  counter we never had. One scrape job replaces an exporter, a Dockerfile, a
+  compose service and a scrape job.
+- **Packet-drop counters are labelled `since boot`**, with a pointer to `nstat`
+  for a rate. `SndbufErrors=633297` reads as an emergency; on both live servers
+  it turned out to be months of history with nothing happening now.
+- **`FUNDING.yml` addresses are quoted.** Unquoted, the ETH `0x…` value loads as
+  an integer under any YAML parser. Both generators regex-parse it and were
+  unaffected; the next tool to reach for `safe_load` would not have been.
 
 ## [2.1.0] - 2026-08-11
 
@@ -1628,7 +1874,8 @@ TrustTunnel config validity.
 - uTLS fingerprint spoofing (Chrome)
 - Automatic short ID generation for Reality
 
-[Unreleased]: https://github.com/MotherofallVPNs/moav/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/MotherofallVPNs/moav/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/MotherofallVPNs/moav/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/MotherofallVPNs/moav/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/MotherofallVPNs/moav/compare/v2.0.0...v2.0.1
 [1.9.1]: https://github.com/MotherofallVPNs/moav/compare/v1.9.0...v1.9.1

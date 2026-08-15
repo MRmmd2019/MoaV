@@ -8,8 +8,8 @@
 x-logging: &default-logging
   driver: json-file
   options:
-    max-size: "10m"
-    max-file: "3"
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILES:-3}"
 
 networks:
   moav_net:
@@ -38,6 +38,7 @@ volumes:
   # root-owned and unwritable by xray.
   moav_xray_metrics:
   moav_certs:
+  moav_tor_geoip:
   moav_state:
   moav_logs:
   moav_conduit:
@@ -46,6 +47,7 @@ volumes:
   moav_snowflake_logs:
   moav_webroot:
   moav_geoip:
+  moav_exporter_state:
 
 services:
   # ===========================================================================
@@ -531,7 +533,7 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile.snowflake
       args:
-        SNOWFLAKE_VERSION: ${SNOWFLAKE_VERSION:-2.11.0}
+        SNOWFLAKE_VERSION: ${SNOWFLAKE_VERSION:-2.14.1}
         # prebuilt (default) = pull the official thetorproject/snowflake-proxy
         # binary; source = compile from source (set SNOWFLAKE_BINARY=source if
         # Docker Hub is unreachable for the prebuilt image).
@@ -542,8 +544,13 @@ services:
     restart: unless-stopped
     logging: *default-logging
     network_mode: host
+    expose:
+      - "9998"   # /internal/metrics, scraped by prometheus
     volumes:
       - moav_snowflake_logs:/var/log/snowflake
+      # Tor-format geoip: the proxy reports client countries to the broker
+      # for Tor's aggregate metrics. Not readable locally -- see the entrypoint.
+      - moav_tor_geoip:/usr/share/tor:ro
     environment:
       - TZ=${TZ:-UTC}
       - SNOWFLAKE_BANDWIDTH=${SNOWFLAKE_BANDWIDTH:-50}
@@ -608,39 +615,6 @@ services:
   # Snowflake Prometheus Exporter - parses snowflake logs for metrics
   # Only runs with monitoring profile (requires Prometheus to scrape)
   # Snowflake Exporter (custom optimized) - parses snowflake proxy logs
-  snowflake-exporter:
-    build:
-      context: ./exporters/snowflake
-      dockerfile: Dockerfile
-    container_name: moav-snowflake-exporter
-    restart: unless-stopped
-    logging: *default-logging
-    networks:
-      - moav_net
-    volumes:
-      - moav_snowflake_logs:/var/log/snowflake:ro
-    environment:
-      - TZ=${TZ:-UTC}
-    expose:
-      - "8080"
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,size=10m
-    mem_limit: 64m
-    cpus: 0.25
-    # No depends_on; exporter handles retry. Follows the relay (issue #106).
-    profiles:
-      - snowflake
-      - all
-
-  # ===========================================================================
-  # AMNEZIAWG: DPI-resistant WireGuard fork
-  # Obfuscated WireGuard that defeats deep packet inspection
-  # ===========================================================================
   amneziawg:
     build:
       context: .
@@ -821,6 +795,10 @@ services:
       dockerfile: dockerfiles/Dockerfile.admin
     container_name: moav-admin
     restart: unless-stopped
+    # PID 1 here is python (the entrypoint execs it), which never reaps orphans.
+    # When a user-add script is killed on timeout its children reparent to PID 1
+    # and stay zombies -- 28 of them on a live server. tini reaps them.
+    init: true
     logging: *default-logging
     networks:
       - moav_net
@@ -894,7 +872,10 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-90d}'
+      # The real guard. retention.time alone cannot bound disk when cardinality
+      # grows, and whichever limit is reached first wins.
+      - '--storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-2GB}'
       - '--web.listen-address=:9091'
       - '--web.enable-lifecycle'
     environment:
@@ -918,6 +899,9 @@ services:
     image: ${IMAGE_GRAFANA:-grafana/grafana:latest}
     container_name: moav-grafana
     restart: unless-stopped
+    # Same reason as admin: the entrypoint execs grafana, so PID 1 does not reap.
+    # 11 zombies on both live servers.
+    init: true
     logging: *default-logging
     user: "0"
     entrypoint: ["/bin/sh", "/scripts/grafana-entrypoint.sh"]
@@ -1097,34 +1081,6 @@ services:
       - monitoring
       - all
 
-  clash-exporter:
-    # Use IMAGE_CLASH_EXPORTER env var, or build locally with: moav build --local
-    image: ${IMAGE_CLASH_EXPORTER:-ghcr.io/zxh326/clash-exporter:latest}
-    container_name: moav-clash-exporter
-    restart: unless-stopped
-    logging: *default-logging
-    networks:
-      - moav_net
-    expose:
-      - "2112"
-    environment:
-      - CLASH_HOST=moav-sing-box:9090
-      - CLASH_TOKEN=${CLASH_API_SECRET:-}
-      - TZ=${TZ:-UTC}
-    command: ["-collectDest"]
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:rw,noexec,size=10m
-    mem_limit: 64m
-    cpus: 0.25
-    profiles:
-      - monitoring
-      - all
-
   # Sing-box User Exporter - parses sing-box logs for user connection metrics
   singbox-exporter:
     build:
@@ -1141,9 +1097,16 @@ services:
       - moav_geoip:/geoip:ro
       - moav_state:/state:ro
       - moav_logs:/var/log/sing-box:ro
+      - moav_exporter_state:/var/lib/moav-exporter-state
     environment:
       - CLASH_TOKEN=${CLASH_API_SECRET:-}
       - TZ=${TZ:-UTC}
+      # #297: destination stats, aggregated and k-anonymous. Off by default.
+      - ENABLE_SITE_ANALYTICS=${ENABLE_SITE_ANALYTICS:-false}
+      - ENABLE_SITE_ANALYTICS_RESEARCH=${ENABLE_SITE_ANALYTICS_RESEARCH:-false}
+      - SITE_ANALYTICS_MIN_CLIENTS=${SITE_ANALYTICS_MIN_CLIENTS:-5}
+      - SITE_ANALYTICS_TOP_N=${SITE_ANALYTICS_TOP_N:-50}
+      - SITE_ANALYTICS_BUCKET_SECONDS=${SITE_ANALYTICS_BUCKET_SECONDS:-3600}
     expose:
       - "9102"
     cap_drop:
@@ -1289,11 +1252,44 @@ services:
     command: >
       -c '
         MONTH=$$(date +%Y-%m) &&
+        DB=/geoip/dbip-country-lite.mmdb &&
+        STAMP=/geoip/.dbip-month &&
+        if [ -s "$$DB" ] && [ "$$(cat $$STAMP 2>/dev/null)" = "$$MONTH" ]; then
+          echo "GeoIP database already current ($${MONTH}), skipping download"
+          exit 0
+        fi &&
         URL="https://download.db-ip.com/free/dbip-country-lite-$${MONTH}.mmdb.gz" &&
         echo "Downloading GeoIP database for $${MONTH}..." &&
-        curl -fSL "$$URL" | gunzip > /geoip/dbip-country-lite.mmdb &&
+        curl -fSL "$$URL" | gunzip > "$$DB.tmp" &&
+        mv "$$DB.tmp" "$$DB" &&
+        echo "$$MONTH" > "$$STAMP" &&
         echo "GeoIP database updated successfully ($${MONTH})"
       '
+
+  # Tor's own geoip files, in the plain-text format snowflake-proxy expects.
+  # NOT the same as the db-ip mmdb above: that one is binary MaxMind format for
+  # our Python exporters, and the two are not interchangeable.
+  tor-geoip-updater:
+    image: curlimages/curl:latest
+    container_name: moav-tor-geoip-updater
+    user: "0:0"  # same reason as geoip-updater: curlimages/curl is UID 100 and cannot write the volume
+    entrypoint: ["/bin/sh"]
+    command:
+      - -c
+      - |
+        set -e
+        B="https://gitlab.torproject.org/tpo/core/tor/-/raw/main/src/config"
+        echo "Checking Tor geoip files..."
+        # -z: conditional GET. Unchanged upstream means a 304 and no transfer,
+        # and curl leaves the existing file alone. These are 25 MB together.
+        curl -fsSL -z /geoip/geoip  -o /geoip/geoip.new  "$$B/geoip"  || true
+        curl -fsSL -z /geoip/geoip6 -o /geoip/geoip6.new "$$B/geoip6" || true
+        [ -s /geoip/geoip.new  ] && mv /geoip/geoip.new  /geoip/geoip  || rm -f /geoip/geoip.new
+        [ -s /geoip/geoip6.new ] && mv /geoip/geoip6.new /geoip/geoip6 || rm -f /geoip/geoip6.new
+        [ -s /geoip/geoip ] && [ -s /geoip/geoip6 ] || { echo "Tor geoip download failed"; exit 1; }
+        echo "Tor geoip ready: $$(wc -l < /geoip/geoip) v4 + $$(wc -l < /geoip/geoip6) v6 ranges"
+    volumes:
+      - moav_tor_geoip:/geoip
     cap_drop:
       - ALL
     security_opt:

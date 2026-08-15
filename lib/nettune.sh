@@ -167,7 +167,22 @@ nt_status() {
     fi
 
     if [[ "$applied" == "true" ]]; then
-        echo -e "    ${GREEN}✓${NC} Tuning file present: $NT_CONF_PATH"
+        # Presence is not enough. `net apply` skips a host that already has the
+        # file, so a server tuned by an older MoaV keeps that version's key set
+        # forever -- and then a key added since reads as operator drift. A 2.1.0
+        # server was still running the v1.8.4 bundle, missing tcp_max_syn_backlog.
+        local stale
+        stale=$(comm -23 \
+            <(nt_render_config 0 | grep -oE '^net\.[a-z0-9_.]+' | sort -u) \
+            <(grep -oE '^net\.[a-z0-9_.]+' "$NT_CONF_PATH" 2>/dev/null | sort -u) \
+            | tr '\n' ' ')
+        if [[ -n "${stale// /}" ]]; then
+            echo -e "    ${YELLOW}!${NC} Tuning file is from an older MoaV — missing: ${stale% }"
+            echo -e "      ${DIM}Re-run 'moav net apply' to refresh it (it rewrites the file).${NC}"
+            pass=false
+        else
+            echo -e "    ${GREEN}✓${NC} Tuning file present: $NT_CONF_PATH"
+        fi
     else
         echo -e "    ${YELLOW}○${NC} Tuning file not present (run: moav net apply)"
     fi
@@ -210,6 +225,11 @@ nt_status() {
     fi
 
     if [[ "$applied" == "true" ]]; then
+        if ! $pass; then
+            # Every failure above is a sysctl the bundle sets, so the fix is one
+            # command and it should not have to be inferred from the list.
+            echo -e "      ${DIM}Fix all of the above: moav net apply${NC}"
+        fi
         $pass && return 0 || return 1
     else
         return 2
@@ -280,29 +300,58 @@ nt_proc_counter() {
 
 nt_check_drops() {
     local pass=true
-    local listen_drops syn_overflow rcvbuf_err sndbuf_err retrans
-    listen_drops=$(nt_proc_counter "TcpExt" "ListenDrops")
-    syn_overflow=$(nt_proc_counter "TcpExt" "ListenOverflows")
-    rcvbuf_err=$(nt_proc_counter   "Udp"    "RcvbufErrors")
-    sndbuf_err=$(nt_proc_counter   "Udp"    "SndbufErrors")
-    retrans=$(nt_proc_counter      "Tcp"    "RetransSegs")
+    local retrans
+    retrans=$(nt_proc_counter "Tcp" "RetransSegs")
 
-    # Counters are since-boot. Operator-actionable thresholds — anything non-trivial.
-    local report=()
-    [[ "$listen_drops" -gt 0   ]] && report+=("TCP ListenDrops=$listen_drops (somaxconn / tcp_max_syn_backlog too small or SYN flood)")
-    [[ "$syn_overflow" -gt 0   ]] && report+=("TCP ListenOverflows=$syn_overflow (accept queue overflow)")
-    [[ "$rcvbuf_err"   -gt 100 ]] && report+=("UDP RcvbufErrors=$rcvbuf_err (raise rmem_max — affects Hysteria2/WG)")
-    [[ "$sndbuf_err"   -gt 100 ]] && report+=("UDP SndbufErrors=$sndbuf_err (raise wmem_max)")
+    # proto|key|threshold|description
+    local specs=(
+        "TcpExt|ListenDrops|0|TCP ListenDrops (somaxconn / tcp_max_syn_backlog too small or SYN flood)"
+        "TcpExt|ListenOverflows|0|TCP ListenOverflows (accept queue overflow)"
+        "Udp|RcvbufErrors|100|UDP RcvbufErrors (raise rmem_max - affects Hysteria2/WG)"
+        "Udp|SndbufErrors|100|UDP SndbufErrors (raise wmem_max)"
+    )
 
-    if [[ ${#report[@]} -eq 0 ]]; then
+    local tripped=() spec proto key thresh desc before
+    for spec in "${specs[@]}"; do
+        IFS='|' read -r proto key thresh desc <<< "$spec"
+        before=$(nt_proc_counter "$proto" "$key")
+        [[ "$before" -gt "$thresh" ]] && tripped+=("$proto|$key|$before|$desc")
+    done
+
+    if [[ ${#tripped[@]} -eq 0 ]]; then
         echo -e "    ${GREEN}✓${NC} No notable packet drops (TCP retrans=$retrans since boot)"
-    else
-        local line
-        for line in "${report[@]}"; do
-            echo -e "    ${YELLOW}!${NC} $line"
-            pass=false
-        done
+        return 0
     fi
+
+    # A since-boot total says nothing about now: a bad hour last week and an
+    # ongoing overflow print the same number. Re-read after a pause and report
+    # the delta, rather than handing the operator a command to run themselves.
+    local sample="${MOAV_DROP_SAMPLE_SECONDS:-3}"
+    echo -e "    ${DIM}Sampling ${sample}s to see which of these are still happening...${NC}"
+    sleep "$sample"
+
+    local entry now delta live=false
+    for entry in "${tripped[@]}"; do
+        IFS='|' read -r proto key before desc <<< "$entry"
+        now=$(nt_proc_counter "$proto" "$key")
+        delta=$(( now - before ))
+        if [[ "$delta" -gt 0 ]]; then
+            echo -e "    ${YELLOW}!${NC} ${desc}=${now} — ${YELLOW}+${delta} in ${sample}s, happening now${NC}"
+            live=true
+            pass=false
+        else
+            echo -e "    ${GREEN}✓${NC} ${desc}=${before} since boot — none in ${sample}s, not happening now"
+        fi
+    done
+
+    if $live; then
+        echo -e "      ${DIM}Fix: moav net apply, then re-check. If it persists, the limit is${NC}"
+        echo -e "      ${DIM}already raised and the host is simply saturated — see 'moav doctor host'.${NC}"
+    else
+        echo -e "      ${DIM}Counters do not reset without a reboot, so the totals above stay${NC}"
+        echo -e "      ${DIM}until then. Nothing to do.${NC}"
+    fi
+
     $pass && return 0 || return 1
 }
 

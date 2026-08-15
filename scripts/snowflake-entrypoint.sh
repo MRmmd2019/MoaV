@@ -66,8 +66,25 @@ setup_bandwidth_limit || echo "[snowflake] Continuing without bandwidth limit"
 
 # Run the proxy with output tee'd to both stdout and log file (for metrics exporter)
 # Note: -verbose removed to reduce log noise (SDP offers/answers)
+# /internal/metrics: relayed bytes and connection timeouts as counters.
+METRICS_ARGS=""
+if [ "${SNOWFLAKE_METRICS:-true}" = "true" ]; then
+    METRICS_ARGS="-metrics -metrics-address 0.0.0.0 -metrics-port ${SNOWFLAKE_METRICS_PORT:-9998}"
+fi
+
+# Tor-format geoip; without it the proxy errors on start and labels country "".
+GEOIP_ARGS=""
+if [ -s /usr/share/tor/geoip ]; then
+    GEOIP_ARGS="-geoipdb /usr/share/tor/geoip"
+    [ -s /usr/share/tor/geoip6 ] && GEOIP_ARGS="$GEOIP_ARGS -geoip6db /usr/share/tor/geoip6"
+else
+    echo "[snowflake] no geoip db; the proxy will log a country-metrics warning"
+fi
+
 echo "[snowflake] Starting proxy..."
+# shellcheck disable=SC2086  # both ARGS vars are intentionally word-split
 exec /bin/proxy \
     -capacity "${SNOWFLAKE_CAPACITY}" \
     -summary-interval 90s \
+    $GEOIP_ARGS $METRICS_ARGS \
     2>&1 | tee -a "${LOG_FILE}"

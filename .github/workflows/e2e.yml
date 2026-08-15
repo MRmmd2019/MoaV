@@ -8,10 +8,17 @@ name: e2e
 # domain). Setup + manual-run instructions: docs/devdocs/E2E-TESTING.md
 #
 # Tiers (workflow_dispatch `tier`; push/release use the default):
-#   default — domain mode only (fast)
+#   default — domain mode only (fast). Teardown KEEPS the cert volume, so certbot
+#             finds the existing cert and never calls Let's Encrypt. Free to repeat.
 #   full    — domain + domainless
 #   mega    — domain + domainless + build --local (monitoring from source) + remove images
 # `domainless_only: true` overrides the domain portion for a Let's-Encrypt-free run.
+#
+# COST: full and mega tear down with `uninstall --wipe`, which destroys the cert
+# volume, so each spends a Let's Encrypt issuance. LE allows 5 per 168h for the
+# same exact domain. Iterate on the default tier or `domainless_only`, and save
+# full/mega for the run that matters. The budget check below stops early rather
+# than failing at the certbot step twenty minutes in.
 # TODO: a future tier (or full+) will also drive a real moav-client connection test.
 on:
   push:
@@ -91,6 +98,27 @@ jobs:
           # how WireGuard "passed" on a DNS resolve for months) — so hard-fail.
           test -c /dev/net/tun \
             || { echo "::error::/dev/net/tun missing on the runner — WG/AWG live tests need it"; exit 1; }
+
+      - name: Let's Encrypt budget check
+        # full/mega wipe the cert volume, so this run WILL request a certificate.
+        # LE allows 5 per 168h per exact identifier set, and without this the
+        # failure surfaces ~20 minutes in at the certbot step. crt.sh is a public
+        # certificate-transparency log: no credentials, and it discloses nothing
+        # that is not already public by design.
+        if: (inputs.tier == 'full' || inputs.tier == 'mega') && inputs.domainless_only != true
+        run: |
+          set -uo pipefail
+          if [ -z "${MOAV_DOMAIN:-}" ]; then echo "no DOMAIN configured; skipping"; exit 0; fi
+                    issued=$(curl -sf --max-time 20 "https://crt.sh/?identity=${MOAV_DOMAIN}&exclude=expired&output=json" | python3 -c 'import json,sys,datetime as d; rows=json.load(sys.stdin); cut=d.datetime.now(d.UTC)-d.timedelta(hours=168); print(sum(1 for r in rows if "Encrypt" in (r.get("issuer_name") or "") and d.datetime.fromisoformat(r["entry_timestamp"]).replace(tzinfo=d.UTC)>cut))' 2>/dev/null) || issued=""
+          if [ -z "$issued" ]; then echo "::notice::crt.sh unreadable — proceeding without a budget check"; exit 0; fi
+          echo "Let's Encrypt certificates for this domain in the last 168h: $issued of 5"
+          if [ "$issued" -ge 5 ]; then
+            echo "::error::Let's Encrypt budget is spent ($issued/5 in the last 168h)."
+            echo "::error::This run would fail at the certbot step. Use the default tier,"
+            echo "::error::which reuses the existing cert and costs nothing, or domainless_only."
+            exit 1
+          fi
+          if [ "$issued" -ge 4 ]; then echo "::warning::only $((5 - issued)) issuance(s) left this week"; fi
 
       - name: Prepare .env
         run: |
@@ -174,23 +202,34 @@ jobs:
           echo "::group::container states"
           docker ps -a --filter 'name=^moav-' --format '{{.Names}}\t{{.State}}\t{{.Status}}'
           echo "::endgroup::"
+          # The one-shot set is DERIVED from docker-compose.yml, not listed here.
+          # A hand-kept list drifts: geoip-updater was added later and this step
+          # then failed the whole e2e because a job that correctly exits 0 was
+          # read as a dead service. Absence of a restart policy is what makes a
+          # service one-shot, so ask the compose file.
+          python3 -c 'import yaml; d=yaml.safe_load(open("docker-compose.yml"))["services"]; print("\n".join("moav-"+n for n,v in sorted(d.items()) if v.get("restart") is None))' > /tmp/oneshot.txt
+          echo "::group::one-shot services (exiting is correct)"; cat /tmp/oneshot.txt; echo "::endgroup::"
+
           bad=0
-          while IFS=$'\t' read -r name state status; do
+          while IFS=$'\t' read -r name state status exitcode; do
             [ -n "$name" ] || continue
-            case "$name" in
-              # One-shot jobs: exiting is correct for them, not a failure.
-              moav-certbot|moav-bootstrap|moav-*-init) continue ;;
-            esac
+            if grep -qxF "$name" /tmp/oneshot.txt; then
+              # Exiting is correct, but exiting NON-ZERO never is.
+              if [ "$state" != "running" ] && [ "${exitcode:-0}" != "0" ]; then
+                echo "::error::$name is a one-shot job that failed (exit $exitcode: $status)"; bad=1
+              fi
+              continue
+            fi
             case "$state" in
               running) ;;
               restarting) echo "::error::$name is RESTARTING ($status) — crash loop"; bad=1 ;;
               *)          echo "::error::$name is $state ($status) — expected running"; bad=1 ;;
             esac
-          done < <(docker ps -a --filter 'name=^moav-' --format '{{.Names}}\t{{.State}}\t{{.Status}}')
+          done < <(docker ps -a --filter 'name=^moav-' --format '{{.Names}}\t{{.State}}\t{{.Status}}\t{{.ExitCode}}')
           if [ "$bad" -ne 0 ]; then
             echo "--- logs from the failed container(s) ---"
-            docker ps -a --filter 'name=^moav-' --format '{{.Names}}\t{{.State}}' \
-              | awk -F'\t' '$2!="running"{print $1}' \
+            docker ps -a --filter 'name=^moav-' --format '{{.Names}}\t{{.State}}\t{{.ExitCode}}' \
+              | awk -F'\t' '$2!="running" && $3!="0"{print $1}' \
               | while read -r c; do echo "::group::$c"; docker logs --tail 30 "$c" 2>&1; echo "::endgroup::"; done
             exit 1
           fi
