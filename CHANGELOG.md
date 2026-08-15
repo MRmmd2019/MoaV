@@ -57,7 +57,10 @@ ages out.** Nothing new is recorded from this release on. To remove it now, see
 
   The exporter is removed rather than filtered, so re-adding a scrape job cannot
   bring it back. The four aggregate metrics the dashboards actually used now
-  come from MoaV's own sing-box exporter.
+  come from MoaV's own sing-box exporter, which gained `singbox_active_connections`
+  and `singbox_version_info` and corrected its per-user country attribution (the
+  client IP is read off the connection-`from` log line and joined to the username
+  by connection id, so users no longer all report `XX`).
 
 - **sing-box logged the same pairing to disk**, on every server, not only those
   running monitoring: `[<username>] inbound connection to <host>:443` at the
