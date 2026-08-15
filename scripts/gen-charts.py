@@ -59,7 +59,7 @@ def test_suite_points():
 def render_test_suites(pts):
     W, H, L, R, T, B = 660, 250, 46, 18, 40, 34
     if len(pts) < 2:
-        raise SystemExit("test-suite chart needs at least two tags")
+        return None                     # caller skips; a missing input is not fatal
     ymax = max(n for _, n in pts)
     ymax = max(10, ((ymax // 10) + 1) * 10)
     xs = [L + (W - L - R) * (i / (len(pts) - 1)) for i in range(len(pts))]
@@ -132,7 +132,7 @@ def main():
         # embedded somewhere. An unreferenced chart is dead weight; a referenced
         # one that moved is a broken image nobody notices behind a cached copy.
         svg = render_test_suites([("v1.0", 0), ("v2.0", 24), ("dev", 42)])
-        if "<svg" not in svg or "Test suites" not in svg:
+        if not svg or "<svg" not in svg or "Test suites" not in svg:
             raise SystemExit("the test-suite renderer produced no chart")
         svg = render_translation([("English", 23, 23, PURPLE), ("فارسی", 3, 23, CYAN)])
         if "<svg" not in svg:
@@ -154,9 +154,18 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
 
     pts = test_suite_points()
-    with open(os.path.join(out_dir, "test-suites.svg"), "w", encoding="utf-8") as f:
-        f.write(render_test_suites(pts))
-    print(f"gen-charts: test-suites.svg ({pts[-1][1]} suites at {pts[-1][0]})")
+    svg = render_test_suites(pts)
+    if svg is None:
+        # Fewer than two tagged releases with tests — nothing to trend yet.
+        # A shallow checkout with no tags lands here too, so the workflow uses
+        # fetch-depth: 0. Skip rather than take the star and translation charts
+        # down with it.
+        sys.stderr.write("gen-charts: fewer than two release tags with tests, "
+                         "skipping the test-suite chart\n")
+    else:
+        with open(os.path.join(out_dir, "test-suites.svg"), "w", encoding="utf-8") as f:
+            f.write(svg)
+        print(f"gen-charts: test-suites.svg ({pts[-1][1]} suites at {pts[-1][0]})")
 
     rows = translation_counts(SITE_DIR)
     if rows is None:
