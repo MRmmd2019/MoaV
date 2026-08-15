@@ -82,6 +82,21 @@ net_next_free_octet() {
     printf '%s\n' "$next"
 }
 
+# True if `ip` (e.g. 10.66.66.5) is on an AllowedIPs line belonging to a peer
+# other than `user_id`. A stored client IP is only safe to reuse when no other
+# peer already claims it; duplicates come from the old peer-count+1 allocator
+# (which reused freed octets), a state restore, or a hand-edited conf.
+net_ip_claimed_by_other() {
+    local config_file="$1" ip="$2" user_id="$3"
+    [[ -f "$config_file" ]] || return 1
+    awk -v ip="$ip" -v me="$user_id" '
+        /^\[Peer\]/    { peer = "" }
+        /^# /          { if (peer == "") peer = substr($0, 3) }
+        $1 == "AllowedIPs" && index($0, ip "/32") && peer != me { found = 1 }
+        END { exit(found ? 0 : 1) }
+    ' "$config_file"
+}
+
 # docker compose with a hard deadline, for host scripts that touch running
 # containers. -k: if `docker compose` ignores the SIGTERM at the deadline (e.g.
 # it's stuck in `exec` against a wedged container — the AmneziaWG hot-reload
