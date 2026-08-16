@@ -40,13 +40,13 @@ for the longer argument.
 
 **Links** &nbsp;·&nbsp; [Website](https://moav.sh) &nbsp;·&nbsp; [Docs](https://moav.sh/docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns) &nbsp;·&nbsp; [moav-client](https://github.com/MotherofallVPNs/moav-client)
 
-**Get started** &nbsp;·&nbsp; [Why MoaV exists](#why-moav-exists) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements) &nbsp;·&nbsp; [Running without a domain](#running-without-a-domain)
+**Get started** &nbsp;·&nbsp; [Why MoaV exists](#why-moav-exists) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [See it in action](#see-it-in-action) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements)
 
 **Use it** &nbsp;·&nbsp; [Using MoaV](#using-moav) &nbsp;·&nbsp; [Client Apps](#client-apps) &nbsp;·&nbsp; [Documentation](#documentation)
 
 **Under the hood** &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Protocols](#protocols) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Security](#security)
 
-**Help out** &nbsp;·&nbsp; [Support the project](#support-the-project) &nbsp;·&nbsp; [Community](#community) &nbsp;·&nbsp; [Related projects](#related-projects)
+**Help out** &nbsp;·&nbsp; [Support the project](#support-the-project) &nbsp;·&nbsp; [Related projects](#related-projects)
 
 **More** &nbsp;·&nbsp; [License](#license) &nbsp;·&nbsp; [Changelog](#changelog) &nbsp;·&nbsp; [Disclaimer](#disclaimer)
 
@@ -76,6 +76,31 @@ for the longer argument.
 
 > **[Read the full documentation](https://moav.sh/docs/)** — setup guides, CLI reference, client apps, monitoring, OPSEC, and more.
 
+## See it in action
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="https://moav.sh/docs/SETUP"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/admin-dashboard.jpg" alt="Admin dashboard"></a>
+      <br><sub><b>Admin dashboard</b> · users, services and live status</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="https://moav.sh/docs/MONITORING"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/grafana-dashboard.jpg" alt="Grafana monitoring"></a>
+      <br><sub><b>Grafana</b> · per-protocol throughput and health</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="https://moav.sh/docs/SETUP"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/service-management.jpg" alt="Service management"></a>
+      <br><sub><b>Service management</b> · toggle protocols per container</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="https://github.com/MotherofallVPNs/moav-client"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/moav-client-dashboard.gif" alt="moav-client"></a>
+      <br><sub><b>moav-client</b> · probes every endpoint, routes the fastest</sub>
+    </td>
+  </tr>
+</table>
+
 ## Quick Start
 
 **One-liner install** (recommended):
@@ -101,31 +126,9 @@ nano .env  # Set DOMAIN, ACME_EMAIL, ADMIN_PASSWORD
 ./moav.sh
 ```
 
-<!-- TODO: Screenshot of moav.sh interactive menu terminal -->
 <img src="docs/assets/moav.sh.png" alt="MoaV Interactive Menu" width="350">
 
-**After installation, use `moav` from anywhere:**
-
-```bash
-moav                      # Interactive menu
-moav start                # Start services
-moav status               # Show service status
-moav user add alice       # Add user (generates configs + QR codes)
-moav user add --batch 10  # Batch create users
-moav donate               # Donate configs to MahsaNet/Psiphon/Snowflake
-moav doctor               # Run diagnostics (DNS, ports, services)
-moav update               # Update MoaV
-moav admin password       # Reset admin/Grafana password
-moav help                 # Show all commands
-```
-
-See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the [CLI Reference](https://moav.sh/docs/CLI) for all commands, or browse the [full documentation](https://moav.sh/docs/).
-
-### Deploy Your Own
-
-[![Deploy on Hetzner](https://img.shields.io/badge/Deploy%20on-Hetzner-d50c2d?style=for-the-badge&logo=hetzner&logoColor=white)](https://moav.sh/docs/DEPLOY#hetzner)  [![Deploy on Linode](https://img.shields.io/badge/Deploy%20on-Linode-00a95c?style=for-the-badge&logo=linode&logoColor=white)](https://moav.sh/docs/DEPLOY#linode)  [![Deploy on Vultr](https://img.shields.io/badge/Deploy%20on-Vultr-007bfc?style=for-the-badge&logo=vultr&logoColor=white)](https://moav.sh/docs/DEPLOY#vultr)  [![Deploy on DigitalOcean](https://img.shields.io/badge/Deploy%20on-DigitalOcean-0080ff?style=for-the-badge&logo=digitalocean&logoColor=white)](https://moav.sh/docs/DEPLOY#digitalocean)
-
-
+Then use `moav` from anywhere. See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the [CLI Reference](https://moav.sh/docs/CLI) for every command, or [Using MoaV](#using-moav) below for the day-to-day essentials.
 
 ## Architecture
 
@@ -195,9 +198,10 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 | Telegram MTProxy | 993/tcp | No | ★★★★☆ | ★★★☆☆ | ✅ | Fake-TLS V2, direct Telegram access |
 | XHTTP (VLESS+XHTTP+Reality) | 2096/tcp | No | ★★★★★ | ★★★★☆ | ✅ | Xray-core, no domain needed |
 
-¹ Reality borrows a public SNI via `REALITY_TARGET` — no domain of your own needed.
-² CDN opens **2082** on the origin; clients connect on **443** through the CDN. Cloudflare needs a domain, CloudFront needs none — see [DNS → CDN mode](https://moav.sh/docs/DNS/#cdn-mode).
+¹ Reality borrows a public SNI via `REALITY_TARGET`, so no domain of your own is needed.
+² CDN opens **2082** on the origin; clients connect on **443** through the CDN. Cloudflare needs a domain, CloudFront needs none. See [DNS → CDN mode](https://moav.sh/docs/DNS/#cdn-mode).
 ³ DNS tunnels need NS delegation on your domain; all four share `53/udp`.
+⁴ **No domain?** Every protocol marked **No** above (Reality, Shadowsocks-2022, WireGuard, AmneziaWG, WireGuard-over-wstunnel, Telegram MTProxy, GooseRelay, XHTTP), plus the admin dashboard (self-signed) and both bandwidth-donation relays, run without one. Run `moav` and pick "No domain", or `moav domainless`. The domain-only protocols are skipped.
 
 **Management ports** (not protocols, open only if you use them): `9443` admin dashboard · `9444` Grafana · `80/tcp` Let's Encrypt (setup only).
 
@@ -286,12 +290,6 @@ Full docs: **[moav.sh/docs](https://moav.sh/docs/)**
 - Domain name (optional - see Domain-less Mode below)
 
 **Ports:** each protocol's port and whether it needs a domain are in the [Protocols](#protocols) table above — open only the ones you enable.
-
-## Running without a domain
-
-Don't have a domain? MoaV runs in **domainless mode** on every protocol marked **No** in the [Protocols](#protocols) table — Reality, XHTTP, WireGuard, AmneziaWG, Shadowsocks-2022, Telegram MTProxy, GooseRelay — plus the admin dashboard (self-signed) and both bandwidth-donation relays. The domain-only protocols (Trojan, AnyTLS, Hysteria2, TrustTunnel, DNS tunnels) are skipped.
-
-Run `moav` and select "No domain" when prompted, or `moav domainless` to configure.
 
 ## Project Structure
 
@@ -385,12 +383,7 @@ source of truth, so what you see here is whatever that file says. Take them from
 page or the repository over HTTPS and check the first and last characters after pasting.
 **We will never DM you an address.**
 
-## Community
-
-- **Telegram:** [t.me/motherofallvpns](https://t.me/motherofallvpns) — questions, help, release announcements
-- **X:** [@motherofallvpns](https://x.com/motherofallvpns)
-- **Issues:** [GitHub Issues](https://github.com/MotherofallVPNs/MoaV/issues) for bugs and feature requests
-- **Docs:** [moav.sh/docs](https://moav.sh/docs)
+**Come say hi.** [Telegram](https://t.me/motherofallvpns) for questions, help and release announcements · [X](https://x.com/motherofallvpns) · [GitHub Issues](https://github.com/MotherofallVPNs/MoaV/issues) for bugs and feature requests · [docs](https://moav.sh/docs).
 
 ## Related projects
 
