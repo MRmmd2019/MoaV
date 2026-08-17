@@ -38,6 +38,13 @@ untouched.
 - **telemt 3.4.23 → 3.4.25** (AES key-schedule zeroization and tighter writer-
   queue memory bounds) and **wstunnel 10.6.1 → 10.6.2** (automatic certificate
   reload). Both verified live; prebuilt-binary pins, no config change.
+- **Component bumps**, all verified running: sing-box 1.13.18 → 1.13.19 and
+  Xray 26.6.27 → 26.7.28 (rebuilt from source, configs unchanged, serving live
+  traffic), and the monitoring pins caught up to what `latest` already pulls —
+  Prometheus 3.13.2, Grafana 13.1.3, node_exporter 1.12.1, cAdvisor 0.60.5.
+  Grafana 13 and Prometheus 3.13 have run in production with every MoaV
+  dashboard throughout; the pins were simply stale. (AmneziaWG 3.0 is *not*
+  here — see below.)
 - **A shorter README.** The protocol list appeared three times (Protocols table,
   a near-identical Ports table, the domainless list); merged into one Protocols
   table with a `Domain?` column. Added a "See it in action" screenshot grid
