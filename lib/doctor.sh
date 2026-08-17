@@ -640,24 +640,31 @@ doctor_check_dns() {
             # A grey-cloud record resolves to the origin and the CDN link then
             # behaves like plain VLESS+WS on a second hostname -- no CDN in front,
             # and none of the censorship resistance the CDN path exists for.
-            # cf-ray is served by Cloudflare's edge and by nothing else.
+            # Each CDN stamps a header nothing else sends: Cloudflare cf-ray,
+            # CloudFront x-amz-cf-id / a "cloudfront" via.
             local cdn_hdrs
             cdn_hdrs=$(curl -sS -I --max-time 10 "https://${cdn_host}" 2>/dev/null | tr 'A-Z' 'a-z' || true)
             if printf '%s' "$cdn_hdrs" | grep -qE '^(cf-ray|server: *cloudflare)'; then
-                success "CDN endpoint ${cdn_host} is proxied through Cloudflare"
+                success "CDN endpoint ${cdn_host} is fronted by Cloudflare"
+            elif printf '%s' "$cdn_hdrs" | grep -qE '^x-amz-cf-id|cloudfront'; then
+                success "CDN endpoint ${cdn_host} is fronted by AWS CloudFront"
             elif [[ -z "$cdn_hdrs" ]]; then
-                warn "CDN endpoint ${cdn_host} resolves but did not answer over HTTPS — cannot confirm it is proxied"
-                echo "        If this is a fresh record, give Cloudflare a minute and re-run 'moav doctor dns'."
+                warn "CDN endpoint ${cdn_host} resolves but did not answer over HTTPS — cannot confirm it is fronted by a CDN"
+                echo "        If this is a fresh record, give it a minute and re-run 'moav doctor dns'."
             else
                 local cdn_port
                 cdn_port=$(get_env_val "PORT_CDN" "$env_file" "2082")
-                warn "CDN endpoint ${cdn_host} resolves but is NOT proxied through Cloudflare (no cf-ray header)"
-                echo "        1. Turn the proxy on (orange cloud) for the '${cdn_subdomain:-cdn}' record in your Cloudflare DNS."
-                echo "           Grey-cloud points straight at the origin, so the CDN link gives no CDN and no extra resistance."
-                echo "        2. Send ${cdn_host} to port ${cdn_port}: Cloudflare only proxies its standard ports, so"
-                echo "           without an Origin Rule rewriting the destination port to ${cdn_port} the WebSocket never"
-                echo "           reaches sing-box and the client fails with no useful error."
-                echo "        See https://moav.sh/docs/TROUBLESHOOTING/#cdn-vlessws-not-working"
+                warn "CDN endpoint ${cdn_host} resolves but no CDN is in front of it (no Cloudflare or CloudFront header)"
+                if [[ "$cdn_host" == *.cloudfront.net ]]; then
+                    echo "        The CloudFront distribution is not answering for ${cdn_host}. Check that its"
+                    echo "        origin is HTTP on port ${cdn_port}, and see the verify steps in"
+                    echo "        https://moav.sh/docs/DNS/#cdn-mode"
+                else
+                    echo "        1. Turn the proxy on (orange cloud) for the '${cdn_subdomain:-cdn}' record in Cloudflare DNS."
+                    echo "           Grey-cloud points straight at the origin, so the CDN link gives no CDN and no extra resistance."
+                    echo "        2. Add an Origin Rule rewriting the destination port to ${cdn_port}, or the WebSocket"
+                    echo "           never reaches sing-box. See https://moav.sh/docs/DNS/#cdn-mode"
+                fi
                 failures=$((failures + 1))
             fi
         fi

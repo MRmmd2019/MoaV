@@ -109,6 +109,8 @@ jobs:
         run: bash tests/oneshot-services-test.sh
       - name: wg/awg stored-IP collision
         run: bash tests/wg-ip-collision-test.sh
+      - name: doctor CDN detection + scrape targets
+        run: bash tests/doctor-cdn-test.sh
       - name: snowflake native metrics + dashboard (#183)
         run: bash tests/snowflake-metrics-test.sh
       - name: admin TLS enforcement
