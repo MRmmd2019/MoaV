@@ -5,6 +5,58 @@ All notable changes to MoaV will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-08-17
+
+A patch on 2.2.0: bug fixes, two dependency bumps, and a slimmer README. No new
+features, no config changes, nothing breaking. Keys, users and certificates are
+untouched.
+
+### Fixed
+
+- **WireGuard / AmneziaWG could hand two users the same IP.** A stored client
+  address was reused without checking it was still free, so a duplicate from the
+  old peer-count+1 allocator, a state restore, or a regenerate ordering produced
+  two `[Peer]` blocks with the same `AllowedIPs` and WireGuard routed neither
+  user. The stored IP is now checked against the config and reassigned on a
+  collision, keeping the first writer's address and rewriting the loser's state.
+  If you have hit WireGuard peers that connect but pass no traffic, this is
+  likely why.
+- **`moav doctor dns` false-failed a working AWS CloudFront CDN.** The check only
+  matched Cloudflare's `cf-ray` header and reported "not proxied" for anything
+  else, so a correctly configured CloudFront distribution (verified live,
+  returning `404` end to end) was called broken. It now also recognises
+  CloudFront (`x-amz-cf-id` / a `cloudfront` via), names which CDN is in front,
+  and gives CloudFront-specific remediation.
+- **A permanently-DOWN telemt scrape target.** telemt binds its raw metrics
+  endpoint to loopback with no config option, so the `telemt` job could never
+  come up. Removed it; telemt telemetry already flows through `telemt-exporter`
+  via the API. The per-user panels that needed the raw endpoint are tracked for
+  a dashboard rebuild plus an upstream metrics-bind request.
+
+### Changed
+
+- **telemt 3.4.23 → 3.4.25** (AES key-schedule zeroization and tighter writer-
+  queue memory bounds) and **wstunnel 10.6.1 → 10.6.2** (automatic certificate
+  reload). Both verified live; prebuilt-binary pins, no config change.
+- **A shorter README.** The protocol list appeared three times (Protocols table,
+  a near-identical Ports table, the domainless list); merged into one Protocols
+  table with a `Domain?` column. Added a "See it in action" screenshot grid
+  (reusing images hosted in moav-site), dropped the redundant "Deploy Your Own"
+  and "After installation" blocks, and folded Community into Support the project.
+
+### Docs
+
+- **AWS CloudFront CDN setup** documented end to end, including the origin
+  setting the AWS console hides (HTTP on port 2082), the verify steps, and the
+  origin-exposure note. Cross-linked CDN mode from the setup guide.
+
+### Internal
+
+- e2e preserves the Let's Encrypt cert volume across runs (was spending an
+  issuance per full/mega run and hitting the 5-per-168h limit); a `fresh_cert`
+  dispatch input forces a real issuance when needed. The charts workflow fetches
+  tags and skips a single unbuildable chart instead of failing the whole run.
+
 ## [2.2.0] - 2026-08-14
 
 **Monitoring stopped recording which client visited which site.** Everything
@@ -1875,6 +1927,7 @@ TrustTunnel config validity.
 - Automatic short ID generation for Reality
 
 [Unreleased]: https://github.com/MotherofallVPNs/moav/compare/v2.2.0...HEAD
+[2.2.1]: https://github.com/MotherofallVPNs/moav/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/MotherofallVPNs/moav/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/MotherofallVPNs/moav/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/MotherofallVPNs/moav/compare/v2.0.0...v2.0.1
