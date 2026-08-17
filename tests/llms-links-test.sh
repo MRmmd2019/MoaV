@@ -59,9 +59,22 @@ if [ "${LLMS_CHECK_URLS:-0}" = "1" ]; then
     while IFS= read -r u; do [ -n "$u" ] && urls+=("$u"); done < <(
         grep -oE '\]\(https://[^)]+\)' "$f" | sed 's/^](//; s/)$//' | sed 's/[.,]$//' | sort -u)
     for u in "${urls[@]}"; do
-        code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 20 "$u" 2>/dev/null || echo 000)
-        [ "$code" = "200" ] || { sleep 2; code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 20 "$u" 2>/dev/null || echo 000); }
-        if [ "$code" = "200" ]; then ok "resolves: $u"; else bad "$u -> HTTP $code"; fi
+        code=000
+        for _a in 1 2 3; do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -L --max-time 20 -A 'moav-ci-linkcheck' "$u" 2>/dev/null || echo 000)
+            [ "$code" = "200" ] && break
+            sleep $((_a * 2))
+        done
+        if [ "$code" = "200" ]; then
+            ok "resolves: $u"
+        elif printf '%s' "$u" | grep -qE '^https://(github\.com|raw\.githubusercontent\.com|objects\.githubusercontent\.com|x\.com|t\.me)/'; then
+            # GitHub and social hosts rate-limit unauthenticated CI requests and
+            # go 000/403/404/429/503 under load or a GitHub incident. Warn, don't
+            # fail the release; moav.sh docs links (the ones that rot) stay strict.
+            printf '  warn  %s -> HTTP %s (rate-limit/incident on a GitHub/social host, not verified)\n' "$u" "$code"
+        else
+            bad "$u -> HTTP $code"
+        fi
     done
 fi
 
