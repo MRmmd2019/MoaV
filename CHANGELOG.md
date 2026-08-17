@@ -56,6 +56,9 @@ untouched.
   issuance per full/mega run and hitting the 5-per-168h limit); a `fresh_cert`
   dispatch input forces a real issuance when needed. The charts workflow fetches
   tags and skips a single unbuildable chart instead of failing the whole run.
+  The release-footer link check no longer fails when GitHub rate-limits an
+  unauthenticated CI request (404/403/429): stable hosts (github.com, x.com,
+  t.me) warn instead of blocking, while docs links stay strict.
 
 ## [2.2.0] - 2026-08-14
 
