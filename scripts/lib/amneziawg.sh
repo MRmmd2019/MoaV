@@ -53,6 +53,44 @@ AWG_JMAX=1000
 EOF
 
     log_info "AmneziaWG obfuscation params generated"
+
+    # AWG3 obfuscation on top of the 1.x baseline above.
+    amneziawg_ensure_v3_params
+}
+
+# Append the AWG3 params (header protection, content padding, randomized
+# timings) to amneziawg.env if they aren't there yet. Idempotent, so an
+# existing install upgrading to v3 gains them WITHOUT disturbing the
+# mandatory-match H1-H4/S1-S2 values its live peers already handshake on.
+# S3/S4 are >= 15 (header protection requires S1-S4 >= 12). HeaderProtectionKey
+# is a 32-byte key shared by all peers — same wire format as a wg key, so
+# `wg genkey` produces it. Range params (a-b) are randomized per-op by the
+# daemon at runtime; the ranges themselves are fixed and safe near WG defaults.
+amneziawg_ensure_v3_params() {
+    local env_file="$STATE_DIR/keys/amneziawg.env"
+    [[ -f "$env_file" ]] || return 0
+    if grep -q '^AWG_H_KEY=' "$env_file" 2>/dev/null; then
+        return 0   # already has the v3 params
+    fi
+
+    local s3 s4 hkey
+    s3=$((RANDOM % 136 + 15))
+    s4=$((RANDOM % 136 + 15))
+    hkey=$(wg genkey)
+
+    cat >> "$env_file" <<EOF
+AWG_S3=$s3
+AWG_S4=$s4
+AWG_H_KEY=$hkey
+AWG_CPA=16-96
+AWG_REKEY_AFTER=110-130
+AWG_REKEY_TIMEOUT=5-8
+AWG_REJECT_AFTER=170-190
+AWG_KEEPALIVE_TIMEOUT=10-15
+AWG_MAX_HANDSHAKE=12-20
+AWG_PKA=20-30
+EOF
+    log_info "AmneziaWG v3 params generated (header protection, content padding, timings)"
 }
 
 generate_amneziawg_config() {
@@ -79,6 +117,10 @@ generate_amneziawg_config() {
     # Generate obfuscation params if not exist
     if [[ ! -f "$STATE_DIR/keys/amneziawg.env" ]]; then
         generate_amneziawg_params
+    else
+        # Existing install upgrading to v3: backfill the v3 params in place
+        # (leaves the live-peer H1-H4/S1-S2 untouched).
+        amneziawg_ensure_v3_params
     fi
 
     source "$STATE_DIR/keys/amneziawg.env"
@@ -107,10 +149,19 @@ Jmin = $AWG_JMIN
 Jmax = $AWG_JMAX
 S1 = $AWG_S1
 S2 = $AWG_S2
+S3 = $AWG_S3
+S4 = $AWG_S4
 H1 = $AWG_H1
 H2 = $AWG_H2
 H3 = $AWG_H3
 H4 = $AWG_H4
+HeaderProtectionKey = $AWG_H_KEY
+ContentPaddingAddition = $AWG_CPA
+RekeyAfterTime = $AWG_REKEY_AFTER
+RekeyTimeout = $AWG_REKEY_TIMEOUT
+RejectAfterTime = $AWG_REJECT_AFTER
+KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
+MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
 PostUp = $postup_rules
 PostDown = $postdown_rules
 
@@ -249,6 +300,8 @@ amneziawg_generate_client_config() {
     # are identical to the state file (both are written from the same params).
     local awg_conf="$AWG_CONFIG_DIR/awg0.conf"
     local AWG_JC AWG_JMIN AWG_JMAX AWG_S1 AWG_S2 AWG_H1 AWG_H2 AWG_H3 AWG_H4
+    local AWG_S3 AWG_S4 AWG_HKEY AWG_CPA AWG_REKEY_AFTER AWG_REKEY_TIMEOUT
+    local AWG_REJECT_AFTER AWG_KEEPALIVE_TIMEOUT AWG_MAX_HANDSHAKE
     AWG_JC=$(awk '/^Jc[[:space:]]*=/{print $3; exit}'   "$awg_conf")
     AWG_JMIN=$(awk '/^Jmin[[:space:]]*=/{print $3; exit}' "$awg_conf")
     AWG_JMAX=$(awk '/^Jmax[[:space:]]*=/{print $3; exit}' "$awg_conf")
@@ -258,6 +311,17 @@ amneziawg_generate_client_config() {
     AWG_H2=$(awk '/^H2[[:space:]]*=/{print $3; exit}'   "$awg_conf")
     AWG_H3=$(awk '/^H3[[:space:]]*=/{print $3; exit}'   "$awg_conf")
     AWG_H4=$(awk '/^H4[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    # v3 params (must be read from awg0.conf so the mandatory-match ones —
+    # HeaderProtectionKey, S3, S4 — are byte-identical to the server's).
+    AWG_S3=$(awk '/^S3[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_S4=$(awk '/^S4[[:space:]]*=/{print $3; exit}'   "$awg_conf")
+    AWG_HKEY=$(awk '/^HeaderProtectionKey[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_CPA=$(awk '/^ContentPaddingAddition[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_REKEY_AFTER=$(awk '/^RekeyAfterTime[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_REKEY_TIMEOUT=$(awk '/^RekeyTimeout[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_REJECT_AFTER=$(awk '/^RejectAfterTime[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_KEEPALIVE_TIMEOUT=$(awk '/^KeepaliveTimeout[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_MAX_HANDSHAKE=$(awk '/^MaxHandshakeAttempts[[:space:]]*=/{print $3; exit}' "$awg_conf")
 
     local server_public_key
     server_public_key=$(cat "$AWG_CONFIG_DIR/server.pub")
@@ -280,16 +344,25 @@ Jmin = $AWG_JMIN
 Jmax = $AWG_JMAX
 S1 = $AWG_S1
 S2 = $AWG_S2
+S3 = $AWG_S3
+S4 = $AWG_S4
 H1 = $AWG_H1
 H2 = $AWG_H2
 H3 = $AWG_H3
 H4 = $AWG_H4
+HeaderProtectionKey = $AWG_HKEY
+ContentPaddingAddition = $AWG_CPA
+RekeyAfterTime = $AWG_REKEY_AFTER
+RekeyTimeout = $AWG_REKEY_TIMEOUT
+RejectAfterTime = $AWG_REJECT_AFTER
+KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
+MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
 
 [Peer]
 PublicKey = $server_public_key
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = ${SERVER_IP}:${PORT_AMNEZIAWG:-51821}
-PersistentKeepalive = 25
+PersistentKeepalive = 22-30
 EOF
 
     # Generate IPv6 endpoint config if available
@@ -305,16 +378,25 @@ Jmin = $AWG_JMIN
 Jmax = $AWG_JMAX
 S1 = $AWG_S1
 S2 = $AWG_S2
+S3 = $AWG_S3
+S4 = $AWG_S4
 H1 = $AWG_H1
 H2 = $AWG_H2
 H3 = $AWG_H3
 H4 = $AWG_H4
+HeaderProtectionKey = $AWG_HKEY
+ContentPaddingAddition = $AWG_CPA
+RekeyAfterTime = $AWG_REKEY_AFTER
+RekeyTimeout = $AWG_REKEY_TIMEOUT
+RejectAfterTime = $AWG_REJECT_AFTER
+KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
+MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
 
 [Peer]
 PublicKey = $server_public_key
 AllowedIPs = 0.0.0.0/0, ::/0
 Endpoint = [${SERVER_IPV6}]:${PORT_AMNEZIAWG:-51821}
-PersistentKeepalive = 25
+PersistentKeepalive = 22-30
 EOF
         log_info "Generated AmneziaWG IPv6 endpoint config"
     fi

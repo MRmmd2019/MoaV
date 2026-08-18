@@ -5,6 +5,39 @@ All notable changes to MoaV will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **AmneziaWG v3 obfuscation.** The AmneziaWG sidecar moves from the 1.x
+  parameter set (`Jc/Jmin/Jmax`, `S1/S2`, `H1–H4`) to **v3**, which adds
+  **header protection** (`HeaderProtectionKey` — ChaCha20-encrypts the
+  low-entropy WireGuard message-type/counter header, the main remaining DPI
+  tell), plus content padding (`ContentPaddingAddition`), the `S3/S4` crypto
+  paddings header protection needs (all `S1–S4` are ≥ 12), randomized rekey /
+  timeout / keepalive timings, and a `PersistentKeepalive` range. `amneziawg-go`
+  is pinned to `v3.1.20260814` and `amneziawg-tools` to `v3.1.20260812` (a
+  matched pair; the Go builder moves to 1.25, which v3 requires). Generated
+  configs are validated against a real `awg setconf` + a two-peer handshake, and
+  a new `tests/amneziawg-v3-test.sh` pins param generation and the migration.
+
+### Changed
+- The AmneziaWG server entrypoint now loads the interface, every obfuscation
+  param, and all peers through `awg setconf` (reading the config keys directly)
+  instead of a hand-rolled `awg set` arg builder + peer loop — the v3 `awg set`
+  tokens are inconsistently named and `header-protection-key` can't be piped
+  alongside the private key.
+
+### Upgrading (breaking for existing AmneziaWG users)
+- v3 obfuscation params are **mandatory-match** and there is no version
+  negotiation or fallback: a v3 server silently drops handshakes from clients
+  that don't carry the identical params, and older client apps can't even parse
+  a config that contains the v3 keys. Existing AmneziaWG users must **re-issue**
+  their bundles and use a **v3-capable client app**. Run `moav regenerate-users`
+  after upgrading — it rebuilds `awg0.conf` with the v3 params (backfilled in
+  place, leaving your H/S values untouched) and regenerates every bundle. WG
+  keys and identities do not change; `HeaderProtectionKey` is a new, separate
+  key shared by all of a server's peers.
+
 ## [2.2.1] - 2026-08-17
 
 A patch on 2.2.0: bug fixes, two dependency bumps, and a slimmer README. No new
