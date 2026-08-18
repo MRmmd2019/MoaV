@@ -99,6 +99,23 @@ wireguard_add_peer() {
         client_ip="$WG_CLIENT_IP"
         client_ip_v6="${WG_CLIENT_IP_V6:-}"
         log_info "Loaded existing WireGuard keys for $user_id"
+        # A stored IP is only safe if no other peer already claims it. Reallocate
+        # and rewrite state on a collision, or the append below writes a duplicate
+        # AllowedIPs and WireGuard routes neither user.
+        if net_ip_claimed_by_other "$WG_CONFIG_DIR/wg0.conf" "$client_ip" "$user_id"; then
+            local octet
+            octet=$(net_next_free_octet "$WG_CONFIG_DIR/wg0.conf" "10.66.66" $extra_used) || {
+                log_error "No available IPs in WireGuard network"; return 1; }
+            log_warn "WireGuard: stored IP $client_ip for $user_id is taken; reassigning to 10.66.66.$octet"
+            client_ip="10.66.66.$octet"
+            if [[ -n "${SERVER_IPV6:-}" ]]; then client_ip_v6="fd00:cafe:beef::$octet"; else client_ip_v6=""; fi
+            cat > "$STATE_DIR/users/$user_id/wireguard.env" <<EOF
+WG_PRIVATE_KEY=$client_private_key
+WG_PUBLIC_KEY=$client_public_key
+WG_CLIENT_IP=$client_ip
+WG_CLIENT_IP_V6=$client_ip_v6
+EOF
+        fi
     elif grep -q "# $user_id$" "${WG_CONFIG_DIR}/wg0.conf" 2>/dev/null; then
         # Third state: the server already has a peer for this user, but their key
         # material is NOT in state. The private key only ever existed in their

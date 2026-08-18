@@ -158,6 +158,20 @@ amneziawg_add_peer() {
         client_ip="$AWG_CLIENT_IP"
         client_ip_v6="${AWG_CLIENT_IP_V6:-}"
         log_info "Loaded existing AmneziaWG keys for $user_id"
+        if net_ip_claimed_by_other "$AWG_CONFIG_DIR/awg0.conf" "$client_ip" "$user_id"; then
+            local octet
+            octet=$(net_next_free_octet "$AWG_CONFIG_DIR/awg0.conf" "10.67.67" $extra_used) || {
+                log_error "No available IPs in AmneziaWG network"; return 1; }
+            log_warn "AmneziaWG: stored IP $client_ip for $user_id is taken; reassigning to 10.67.67.$octet"
+            client_ip="10.67.67.$octet"
+            if [[ -n "${SERVER_IPV6:-}" ]]; then client_ip_v6="fd00:cafe:dead::$octet"; else client_ip_v6=""; fi
+            cat > "$STATE_DIR/users/$user_id/amneziawg.env" <<EOF
+AWG_PRIVATE_KEY=$client_private_key
+AWG_PUBLIC_KEY=$client_public_key
+AWG_CLIENT_IP=$client_ip
+AWG_CLIENT_IP_V6=$client_ip_v6
+EOF
+        fi
     elif grep -q "# $user_id$" "${AWG_CONFIG_DIR}/awg0.conf" 2>/dev/null; then
         # Third state: the server already has a peer for this user, but their key
         # material is NOT in state. The private key only ever existed in their

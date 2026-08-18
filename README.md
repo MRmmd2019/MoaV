@@ -40,13 +40,13 @@ for the longer argument.
 
 **Links** &nbsp;·&nbsp; [Website](https://moav.sh) &nbsp;·&nbsp; [Docs](https://moav.sh/docs/) &nbsp;·&nbsp; [Telegram](https://t.me/motherofallvpns) &nbsp;·&nbsp; [moav-client](https://github.com/MotherofallVPNs/moav-client)
 
-**Get started** &nbsp;·&nbsp; [Why MoaV exists](#why-moav-exists) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements) &nbsp;·&nbsp; [Running without a domain](#running-without-a-domain)
+**Get started** &nbsp;·&nbsp; [Why MoaV exists](#why-moav-exists) &nbsp;·&nbsp; [Features](#features) &nbsp;·&nbsp; [See it in action](#see-it-in-action) &nbsp;·&nbsp; [Quick Start](#quick-start) &nbsp;·&nbsp; [Requirements](#requirements)
 
 **Use it** &nbsp;·&nbsp; [Using MoaV](#using-moav) &nbsp;·&nbsp; [Client Apps](#client-apps) &nbsp;·&nbsp; [Documentation](#documentation)
 
 **Under the hood** &nbsp;·&nbsp; [Architecture](#architecture) &nbsp;·&nbsp; [Protocols](#protocols) &nbsp;·&nbsp; [Project Structure](#project-structure) &nbsp;·&nbsp; [Security](#security)
 
-**Help out** &nbsp;·&nbsp; [Support the project](#support-the-project) &nbsp;·&nbsp; [Community](#community) &nbsp;·&nbsp; [Related projects](#related-projects)
+**Help out** &nbsp;·&nbsp; [Support the project](#support-the-project) &nbsp;·&nbsp; [Related projects](#related-projects)
 
 **More** &nbsp;·&nbsp; [License](#license) &nbsp;·&nbsp; [Changelog](#changelog) &nbsp;·&nbsp; [Disclaimer](#disclaimer)
 
@@ -76,6 +76,31 @@ for the longer argument.
 
 > **[Read the full documentation](https://moav.sh/docs/)** — setup guides, CLI reference, client apps, monitoring, OPSEC, and more.
 
+## See it in action
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="https://moav.sh/docs/SETUP"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/admin-dashboard.jpg" alt="Admin dashboard"></a>
+      <br><sub><b>Admin dashboard</b> · users, services and live status</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="https://moav.sh/docs/MONITORING"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/grafana-dashboard.jpg" alt="Grafana monitoring"></a>
+      <br><sub><b>Grafana</b> · per-protocol throughput and health</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <a href="https://moav.sh/docs/SETUP"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/service-management.jpg" alt="Service management"></a>
+      <br><sub><b>Service management</b> · toggle protocols per container</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="https://github.com/MotherofallVPNs/moav-client"><img src="https://raw.githubusercontent.com/MotherofallVPNs/moav-site/main/docs/assets/moav-client-dashboard.gif" alt="moav-client"></a>
+      <br><sub><b>moav-client</b> · probes every endpoint, routes the fastest</sub>
+    </td>
+  </tr>
+</table>
+
 ## Quick Start
 
 **One-liner install** (recommended):
@@ -101,31 +126,9 @@ nano .env  # Set DOMAIN, ACME_EMAIL, ADMIN_PASSWORD
 ./moav.sh
 ```
 
-<!-- TODO: Screenshot of moav.sh interactive menu terminal -->
 <img src="docs/assets/moav.sh.png" alt="MoaV Interactive Menu" width="350">
 
-**After installation, use `moav` from anywhere:**
-
-```bash
-moav                      # Interactive menu
-moav start                # Start services
-moav status               # Show service status
-moav user add alice       # Add user (generates configs + QR codes)
-moav user add --batch 10  # Batch create users
-moav donate               # Donate configs to MahsaNet/Psiphon/Snowflake
-moav doctor               # Run diagnostics (DNS, ports, services)
-moav update               # Update MoaV
-moav admin password       # Reset admin/Grafana password
-moav help                 # Show all commands
-```
-
-See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the [CLI Reference](https://moav.sh/docs/CLI) for all commands, or browse the [full documentation](https://moav.sh/docs/).
-
-### Deploy Your Own
-
-[![Deploy on Hetzner](https://img.shields.io/badge/Deploy%20on-Hetzner-d50c2d?style=for-the-badge&logo=hetzner&logoColor=white)](https://moav.sh/docs/DEPLOY#hetzner)  [![Deploy on Linode](https://img.shields.io/badge/Deploy%20on-Linode-00a95c?style=for-the-badge&logo=linode&logoColor=white)](https://moav.sh/docs/DEPLOY#linode)  [![Deploy on Vultr](https://img.shields.io/badge/Deploy%20on-Vultr-007bfc?style=for-the-badge&logo=vultr&logoColor=white)](https://moav.sh/docs/DEPLOY#vultr)  [![Deploy on DigitalOcean](https://img.shields.io/badge/Deploy%20on-DigitalOcean-0080ff?style=for-the-badge&logo=digitalocean&logoColor=white)](https://moav.sh/docs/DEPLOY#digitalocean)
-
-
+Then use `moav` from anywhere. See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the [CLI Reference](https://moav.sh/docs/CLI) for every command, or [Using MoaV](#using-moav) below for the day-to-day essentials.
 
 ## Architecture
 
@@ -175,32 +178,34 @@ See the [Setup Guide](https://moav.sh/docs/SETUP) for complete instructions, the
 
 ## Protocols
 
-| Protocol | Port | Stealth | Speed | Default | Use Case |
-|----------|------|---------|-------|---------|----------|
-| Reality (VLESS) | 443/tcp | ★★★★★ | ★★★★☆ | ✅ | Primary; a strong first choice where it works |
-| Hysteria2 | 443/udp | ★★★★☆ | ★★★★★ | ✅ | Fast, works when TCP throttled |
-| Trojan | 8443/tcp | ★★★★☆ | ★★★★☆ | ✅ | Backup, uses your domain |
-| AnyTLS | 8445/tcp | ★★★★★ | ★★★★☆ | ⬜ | Defeats TLS-in-TLS fingerprinting, uses your domain |
-| Shadowsocks-2022 | 8388/tcp+udp | ★★★★☆ | ★★★★☆ | ✅ | AEAD-2022 anti-probing; Outline-app compatible |
-| CDN (VLESS+WS) | 443 via Cloudflare | ★★★★★ | ★★★☆☆ | ⬜ | When server IP is blocked; needs Cloudflare fronting first |
-| TrustTunnel | 4443/tcp+udp | ★★★★★ | ★★★★☆ | ✅ | HTTP/2 & QUIC, looks like HTTPS |
-| WireGuard (Direct) | 51820/udp | ★★★☆☆ | ★★★★★ | ✅ | Full VPN, simple setup |
-| AmneziaWG | 51821/udp | ★★★★★ | ★★★★☆ | ✅ | Obfuscated WireGuard, resists common DPI signatures |
-| WireGuard (wstunnel) | 8080/tcp | ★★★★☆ | ★★★★☆ | ✅ | VPN when UDP is blocked |
-| DNS Tunnel (dnstt) | 53/udp | ★★★☆☆ | ★☆☆☆☆ | ✅ | Last resort, hard to block |
-| Slipstream | 53/udp | ★★★☆☆ | ★★☆☆☆ | ✅ | QUIC-over-DNS, 1.5-5x faster than dnstt |
-| MasterDNS | 53/udp | ★★★☆☆ | ★★★☆☆ | ✅ | Advanced DNS tunnel (ARQ + resolver LB), MahsaNG v16 |
-| XDNS (VLESS+mKCP+DNS) | 53/udp | ★★★☆☆ | ★☆☆☆☆ | ✅ | DNS tunnel via Xray FinalMask; all 4 DNS tunnels share port 53 |
-| GooseRelay | 8444/tcp | ★★★★★ | ★★☆☆☆ | ⬜ | SOCKS5 via Google Apps Script, fronted as google.com, MahsaNG v16 |
-| Telegram MTProxy | 993/tcp | ★★★★☆ | ★★★☆☆ | ✅ | Fake-TLS V2, direct Telegram access |
-| XHTTP (VLESS+XHTTP+Reality) | 2096/tcp | ★★★★★ | ★★★★☆ | ✅ | Xray-core, no domain needed |
-| Psiphon Conduit | — | — | — | ✅ | Donate bandwidth to Psiphon (2M+ users) |
-| Tor Snowflake | — | — | — | ✅ | Donate bandwidth to Tor network |
-| MahsaNet | — | — | — | ⬜ | Donate VPN configs to Mahsa VPN (2M+ users) |
+| Protocol | Port (open) | Domain? | Stealth | Speed | Default | Use Case |
+|----------|-------------|---------|---------|-------|---------|----------|
+| Reality (VLESS) | 443/tcp | No¹ | ★★★★★ | ★★★★☆ | ✅ | Primary; a strong first choice where it works |
+| Hysteria2 | 443/udp | Yes | ★★★★☆ | ★★★★★ | ✅ | Fast, works when TCP throttled |
+| Trojan | 8443/tcp | Yes | ★★★★☆ | ★★★★☆ | ✅ | Backup, uses your domain |
+| AnyTLS | 8445/tcp | Yes | ★★★★★ | ★★★★☆ | ⬜ | Defeats TLS-in-TLS fingerprinting |
+| Shadowsocks-2022 | 8388/tcp+udp | No | ★★★★☆ | ★★★★☆ | ✅ | AEAD-2022 anti-probing; Outline-app compatible |
+| CDN (VLESS+WS) | 2082/tcp² | via CDN² | ★★★★★ | ★★★☆☆ | ⬜ | When the server IP is blocked; needs a CDN in front |
+| TrustTunnel | 4443/tcp+udp | Yes | ★★★★★ | ★★★★☆ | ✅ | HTTP/2 & QUIC, looks like HTTPS |
+| WireGuard (Direct) | 51820/udp | No | ★★★☆☆ | ★★★★★ | ✅ | Full VPN, simple setup |
+| AmneziaWG | 51821/udp | No | ★★★★★ | ★★★★☆ | ✅ | Obfuscated WireGuard, resists common DPI signatures |
+| WireGuard (wstunnel) | 8080/tcp | No | ★★★★☆ | ★★★★☆ | ✅ | VPN when UDP is blocked |
+| DNS Tunnel (dnstt) | 53/udp | Yes³ | ★★★☆☆ | ★☆☆☆☆ | ✅ | Last resort, hard to block |
+| Slipstream | 53/udp | Yes³ | ★★★☆☆ | ★★☆☆☆ | ✅ | QUIC-over-DNS, 1.5-5x faster than dnstt |
+| MasterDNS | 53/udp | Yes³ | ★★★☆☆ | ★★★☆☆ | ✅ | Advanced DNS tunnel (ARQ + resolver LB), MahsaNG v16 |
+| XDNS (VLESS+mKCP+DNS) | 53/udp | Yes³ | ★★★☆☆ | ★☆☆☆☆ | ✅ | DNS tunnel via Xray FinalMask |
+| GooseRelay | 8444/tcp | No | ★★★★★ | ★★☆☆☆ | ⬜ | SOCKS5 via Google Apps Script, fronted as google.com, MahsaNG v16 |
+| Telegram MTProxy | 993/tcp | No | ★★★★☆ | ★★★☆☆ | ✅ | Fake-TLS V2, direct Telegram access |
+| XHTTP (VLESS+XHTTP+Reality) | 2096/tcp | No | ★★★★★ | ★★★★☆ | ✅ | Xray-core, no domain needed |
 
-**Default** = enabled in `.env.example`. Services still only run under their
-profile, so `moav start conduit` is what actually starts Conduit. MahsaNet is an
-action (`moav donate`), not a service.
+¹ Reality borrows a public SNI via `REALITY_TARGET`, so no domain of your own is needed.
+² CDN opens **2082** on the origin; clients connect on **443** through the CDN. Cloudflare needs a domain, CloudFront needs none. See [DNS → CDN mode](https://moav.sh/docs/DNS/#cdn-mode).
+³ DNS tunnels need NS delegation on your domain; all four share `53/udp`.
+⁴ **No domain?** Every protocol marked **No** above (Reality, Shadowsocks-2022, WireGuard, AmneziaWG, WireGuard-over-wstunnel, Telegram MTProxy, GooseRelay, XHTTP), plus the admin dashboard (self-signed) and both bandwidth-donation relays, run without one. Run `moav` and pick "No domain", or `moav domainless`. The domain-only protocols are skipped.
+
+**Management ports** (not protocols, open only if you use them): `9443` admin dashboard · `9444` Grafana · `80/tcp` Let's Encrypt (setup only).
+
+**Default** = enabled in `.env.example`; services still only run under their profile (`moav start <name>`). **Bandwidth donation** — [Psiphon Conduit](#related-projects), [Tor Snowflake](#related-projects), [MahsaNet](#related-projects) — are actions (`moav donate` / `moav start conduit`), not protocols; see [Support the project](#support-the-project).
 
 ## Using MoaV
 
@@ -284,41 +289,7 @@ Full docs: **[moav.sh/docs](https://moav.sh/docs/)**
 - Public IPv4
 - Domain name (optional - see Domain-less Mode below)
 
-**Ports (open as needed):**
-| Port | Protocol | Service | Requires Domain |
-|------|----------|---------|-----------------|
-| 443/tcp | TCP | Reality (VLESS) | No — borrows a public SNI via `REALITY_TARGET` |
-| 443/udp | UDP | Hysteria2 | Yes |
-| 8443/tcp | TCP | Trojan | Yes |
-| 8445/tcp | TCP | AnyTLS | Yes |
-| 8388/tcp+udp | TCP+UDP | Shadowsocks-2022 | No |
-| 4443/tcp+udp | TCP+UDP | TrustTunnel | Yes |
-| 2082/tcp | TCP | CDN WebSocket | Cloudflare: yes · CloudFront: no |
-| 51820/udp | UDP | WireGuard | No |
-| 51821/udp | UDP | AmneziaWG | No |
-| 8080/tcp | TCP | wstunnel | No |
-| 993/tcp | TCP | Telegram MTProxy | No |
-| 2096/tcp | TCP | XHTTP (VLESS+XHTTP+Reality) | No |
-| 8444/tcp | TCP | GooseRelay exit (when `ENABLE_GOOSERELAY=true`) | No |
-| 9443/tcp | TCP | Admin dashboard | No |
-| 9444/tcp | TCP | Grafana (monitoring) | No |
-| 53/udp | UDP | DNS tunnels (dnstt / Slipstream / MasterDNS / XDNS — all share this port) | Yes |
-| 80/tcp | TCP | Let's Encrypt | Yes (during setup) |
-
-## Running without a domain
-
-Don't have a domain? MoaV can run in **domainless mode** with:
-- **Reality** (VLESS+Reality, primary protocol)
-- **XHTTP** (VLESS+XHTTP+Reality via Xray-core)
-- **WireGuard** (direct UDP + WebSocket tunnel)
-- **AmneziaWG** (obfuscated WireGuard, resists common DPI signatures)
-- **Telegram MTProxy** (fake-TLS, direct Telegram access)
-- **GooseRelay** (SOCKS5 over Google Apps Script — no domain needed)
-- **Admin dashboard** (uses self-signed certificate)
-- **Conduit** (Psiphon bandwidth donation)
-- **Snowflake** (Tor bandwidth donation)
-
-Run `moav` and select "No domain" when prompted, or use `moav domainless` to configure.
+**Ports:** each protocol's port and whether it needs a domain are in the [Protocols](#protocols) table above — open only the ones you enable.
 
 ## Project Structure
 
@@ -412,12 +383,7 @@ source of truth, so what you see here is whatever that file says. Take them from
 page or the repository over HTTPS and check the first and last characters after pasting.
 **We will never DM you an address.**
 
-## Community
-
-- **Telegram:** [t.me/motherofallvpns](https://t.me/motherofallvpns) — questions, help, release announcements
-- **X:** [@motherofallvpns](https://x.com/motherofallvpns)
-- **Issues:** [GitHub Issues](https://github.com/MotherofallVPNs/MoaV/issues) for bugs and feature requests
-- **Docs:** [moav.sh/docs](https://moav.sh/docs)
+**Come say hi.** [Telegram](https://t.me/motherofallvpns) for questions, help and release announcements · [X](https://x.com/motherofallvpns) · [GitHub Issues](https://github.com/MotherofallVPNs/MoaV/issues) for bugs and feature requests · [docs](https://moav.sh/docs).
 
 ## Related projects
 

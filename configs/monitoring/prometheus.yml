@@ -78,10 +78,11 @@ scrape_configs:
 
   # telemt - Telegram MTProxy native Prometheus metrics
   # NOTE: Only available when running with --profile telegram
-  - job_name: 'telemt'
-    static_configs:
-      - targets: ['telemt:9090']
-    scrape_timeout: 10s
+  # telemt binds its raw metrics endpoint (9090) to loopback with no config to
+  # change it, so nothing outside the container can scrape it. telemt telemetry
+  # comes through telemt-exporter (below), which reads telemt's API on 9091.
+  # A raw-metrics job here would sit permanently DOWN. Per-user telemt panels
+  # that need the raw metrics await an upstream metrics bind option.
 
   # telemt API Exporter - ME pool health, DC stats, upstream quality
   # NOTE: Only available when running with --profile telegram + monitoring

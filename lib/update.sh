@@ -488,9 +488,8 @@ print_post_update_apply_steps() {
             [[ -n "$f" ]] && echo -e "    ${CYAN}$f${NC}"
         done <<< "$templates"
         echo ""
-        echo "The generated configs on disk may not reflect this change until they"
-        echo "are regenerated. Re-bootstrap to pick it up — bootstrap is idempotent"
-        echo "and preserves your keys and user UUIDs."
+        echo "The configs on disk will not reflect this until they are regenerated."
+        echo "Re-bootstrap to apply it (idempotent; keeps your keys and user UUIDs)."
         echo ""
     fi
 
@@ -530,7 +529,7 @@ print_post_update_apply_steps() {
     fi
     echo ""
 
-    echo -e "${DIM}Note: 'moav restart' reuses the old image — use 'moav start' (docker compose up -d) to pick up rebuilt images.${NC}"
+    echo -e "${DIM}Note: 'moav restart' reuses the old image. Use 'moav start' (docker compose up -d) to pick up rebuilt images.${NC}"
 }
 
 # Check for new variables in .env.example that are missing from .env
