@@ -55,6 +55,26 @@ targets = [t for j in jobs.values() for sc in j.get("static_configs", []) for t 
 sys.exit(0 if ("telemt:9090" not in targets and "telemt-api" in jobs) else 1)
 PY
 
+# --- the telemt dashboard must not query the unreachable raw metrics ----------
+# We removed the telemt:9090 scrape job, so any panel on telemt_* (non-api)
+# renders "No data". The dashboard must use only telemt_api_* (the exporter).
+DASH="$ROOT/configs/monitoring/grafana/provisioning/dashboards/telemt.json"
+raw=$(python3 - "$DASH" <<'PY'
+import json, re, sys
+d = json.load(open(sys.argv[1]))
+bad = set()
+for p in d["panels"]:
+    for t in p.get("targets", []):
+        for m in re.findall(r"\btelemt_[a-z_]+", t.get("expr","")):
+            if not m.startswith("telemt_api"):
+                bad.add(m)
+print(" ".join(sorted(bad)))
+PY
+)
+[ -z "$raw" ] \
+    && ok "the telemt dashboard queries only telemt_api_* (nothing that 9090 fed)" \
+    || bad "telemt dashboard still queries unreachable raw metrics: $raw"
+
 echo ""
 echo "  passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
