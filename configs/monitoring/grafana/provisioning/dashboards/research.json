@@ -315,6 +315,51 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conduit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffe119"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conduit (bridge)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffe119"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Snowflake (bridge)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f032e6"
+                }
+              }
+            ]
           }
         ]
       },
@@ -330,7 +375,7 @@
           "instant": true
         }
       ],
-      "description": "Currently CONNECTED per protocol. WireGuard/AmneziaWG use live peer_active (recent handshake), not the provisioned count.",
+      "description": "Currently CONNECTED per protocol. WireGuard/AmneziaWG use live peer_active, not the provisioned count.",
       "options": {
         "pieType": "donut",
         "legend": {
@@ -444,13 +489,58 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conduit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffe119"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conduit (bridge)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffe119"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Snowflake (bridge)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f032e6"
+                }
+              }
+            ]
           }
         ]
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(sum(rate(singbox_protocol_bytes_up[$__rate_interval]))+sum(rate(singbox_protocol_bytes_down[$__rate_interval])),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(rate(xray_inbound_download_bytes[$__rate_interval]))+sum(rate(xray_inbound_upload_bytes[$__rate_interval])),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(rate(wireguard_peer_transfer_rx_bytes[$__rate_interval]))+sum(rate(wireguard_peer_transfer_tx_bytes[$__rate_interval])),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(rate(amneziawg_peer_transfer_rx_bytes[$__rate_interval]))+sum(rate(amneziawg_peer_transfer_tx_bytes[$__rate_interval])),\"proto\",\"AmneziaWG\",\"\",\"\")",
+          "expr": "label_replace(sum(rate(singbox_protocol_bytes_up[$__rate_interval]))+sum(rate(singbox_protocol_bytes_down[$__rate_interval])),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(rate(xray_inbound_download_bytes[$__rate_interval]))+sum(rate(xray_inbound_upload_bytes[$__rate_interval])),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(rate(wireguard_peer_transfer_rx_bytes[$__rate_interval]))+sum(rate(wireguard_peer_transfer_tx_bytes[$__rate_interval])),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(rate(amneziawg_peer_transfer_rx_bytes[$__rate_interval]))+sum(rate(amneziawg_peer_transfer_tx_bytes[$__rate_interval])),\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(rate(conduit_bytes_downloaded[$__rate_interval]))+sum(rate(conduit_bytes_uploaded[$__rate_interval])),\"proto\",\"Conduit (bridge)\",\"\",\"\") or label_replace(sum(rate(tor_snowflake_proxy_traffic_inbound_bytes_total[$__rate_interval]))+sum(rate(tor_snowflake_proxy_traffic_outbound_bytes_total[$__rate_interval])),\"proto\",\"Snowflake (bridge)\",\"\",\"\")",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -459,7 +549,7 @@
           "instant": true
         }
       ],
-      "description": "Current throughput share. Idle provisioned peers move no bytes. (Telegram/MTProxy exposes no byte metric; bridges are in their own section.)",
+      "description": "Current throughput share across ALL engines incl. the Conduit + Snowflake bridges. Conduit typically dominates (it relays for many strangers). Idle provisioned peers move no bytes.",
       "options": {
         "pieType": "donut",
         "legend": {
@@ -483,7 +573,7 @@
     {
       "id": 9,
       "type": "table",
-      "title": "Provisioned peers (created configs)",
+      "title": "Provisioned users (created configs)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -503,16 +593,17 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(wireguard_peers_total,\"proto\",\"WireGuard\",\"\",\"\") or label_replace(amneziawg_peers_total,\"proto\",\"AmneziaWG\",\"\",\"\")",
+          "expr": "label_replace(sum(singbox_total_users),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(xray_total_users),\"proto\",\"xray\",\"\",\"\") or label_replace(wireguard_peers_total,\"proto\",\"WireGuard\",\"\",\"\") or label_replace(amneziawg_peers_total,\"proto\",\"AmneziaWG\",\"\",\"\")",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
+          "legendFormat": "{{proto}}",
           "instant": true,
           "format": "table"
         }
       ],
-      "description": "Created peer configs from *_peers_total. WireGuard/AmneziaWG expose this; sing-box/xray/Telegram do not report a provisioned-user count (only active), so they're omitted here rather than shown with a wrong number.",
+      "description": "Created user/peer configs per protocol: sing-box (singbox_total_users), xray (xray_total_users), WireGuard/AmneziaWG (*_peers_total). Telegram/MTProxy exposes no provisioned-user metric. Note: xray/sing-box counts can differ from WG/AWG if a protocol isn't enabled for every user.",
       "transformations": [
         {
           "id": "organize",
@@ -525,7 +616,7 @@
             },
             "renameByName": {
               "proto": "Protocol",
-              "Value": "Created peers"
+              "Value": "Created users"
             }
           }
         }
@@ -624,6 +715,51 @@
                 }
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conduit"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffe119"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conduit (bridge)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffe119"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Snowflake (bridge)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f032e6"
+                }
+              }
+            ]
           }
         ]
       },
@@ -638,7 +774,7 @@
           "legendFormat": "{{proto}}"
         }
       ],
-      "description": "Connected users per protocol over time (active metrics, same colours as the pie)."
+      "description": "Connected users per protocol over time."
     },
     {
       "id": 11,
@@ -661,7 +797,7 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
+        "h": 6,
         "w": 4,
         "x": 0,
         "y": 24
@@ -706,7 +842,7 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
+        "h": 6,
         "w": 4,
         "x": 4,
         "y": 24
@@ -728,7 +864,7 @@
           "instant": true
         }
       ],
-      "description": "Current Conduit relay throughput.",
+      "description": "Current Conduit relay throughput (down+up). Verified correct: e.g. ~294 KB/s for 31 clients, well under the 12.5 MB/s limit.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -751,7 +887,7 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 10,
+        "h": 6,
         "w": 16,
         "x": 8,
         "y": 24
@@ -1296,10 +1432,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
+        "h": 6,
         "w": 4,
         "x": 0,
-        "y": 29
+        "y": 30
       },
       "fieldConfig": {
         "defaults": {
@@ -1318,7 +1454,7 @@
           "instant": true
         }
       ],
-      "description": "Successful Snowflake (Tor) connections. Low here: the proxy mostly times out (see next).",
+      "description": "Successful Snowflake (Tor) connections. Low here: the proxy mostly times out.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -1341,10 +1477,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
+        "h": 6,
         "w": 4,
         "x": 4,
-        "y": 29
+        "y": 30
       },
       "fieldConfig": {
         "defaults": {
@@ -1363,7 +1499,7 @@
           "instant": true
         }
       ],
-      "description": "Client connections that failed after rendezvous (NAT/censorship). If this dwarfs 'successful', the Snowflake proxy is reachable but not completing relays.",
+      "description": "Client connections that failed after rendezvous (NAT/censorship). If this dwarfs 'successful', the proxy is reachable but not completing relays.",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -1379,18 +1515,548 @@
     },
     {
       "id": 17,
-      "type": "text",
-      "title": "Snowflake note",
+      "type": "barchart",
+      "title": "Snowflake reach by country",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "gridPos": {
-        "h": 5,
+        "h": 6,
         "w": 16,
         "x": 8,
-        "y": 29
+        "y": 30
       },
-      "options": {
-        "mode": "markdown",
-        "content": "Snowflake reports **per-country counts that are near-1** because it's completing very few relays (timeouts >> successes) and rounds low counts for privacy. Not a MoaV counting bug \u2014 these are the proxy's own upstream numbers. Traffic relayed and success/timeout above are the honest health signal."
-      }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "IR"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e6194B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RU"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3cb44b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "US"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4363d8"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DE"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f58231"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GB"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#911eb4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FR"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#42d4f4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NL"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f032e6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#bfef45"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "IN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fabed4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TR"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#469990"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#dcbeff"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SE"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9A6324"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FI"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#800000"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f58231"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#469990"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AE"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#66c2a5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "QA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fc8d62"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MX"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8da0cb"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "JO"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e78ac3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CU"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#a6d854"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ET"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffd92f"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e5c494"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ZA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b3b3b3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "OM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#a6cee3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TH"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fb9a99"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#cab2d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SD"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fdbf6f"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "UA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808000"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AZ"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fc8d62"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "KZ"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8da0cb"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5a5a5a"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "??"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5a5a5a"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "XX"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5a5a5a"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "other"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9aa0a6"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (country)(tor_snowflake_proxy_connections_total)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{country}}",
+          "instant": true
+        }
+      ],
+      "description": "Successful Snowflake connections by client country. Counts are near-1 because the proxy completes very few relays (timeouts >> successes) and rounds low counts for privacy \u2014 these are Snowflake's own upstream numbers, not a MoaV miscount."
     },
     {
       "id": 18,
@@ -1401,13 +2067,13 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 36
       }
     },
     {
       "id": 19,
       "type": "piechart",
-      "title": "Source countries (VPN + Conduit bridge)",
+      "title": "Source countries \u2014 aggregated (VPN + Conduit)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1416,7 +2082,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 37
       },
       "fieldConfig": {
         "defaults": {
@@ -1947,7 +2613,7 @@
           "instant": true
         }
       ],
-      "description": "Connected users/peers by source country across sing-box, xray, WireGuard, AmneziaWG, and Conduit's relayed clients. A reach view, not bytes. Top 20.",
+      "description": "Connected users/peers by source country across all VPN protocols + Conduit's relayed clients. Top 20.",
       "options": {
         "pieType": "pie",
         "legend": {
@@ -1970,8 +2636,8 @@
     },
     {
       "id": 20,
-      "type": "timeseries",
-      "title": "Source countries over time (top 8)",
+      "type": "table",
+      "title": "Source countries by protocol",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1980,537 +2646,100 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 37
       },
       "fieldConfig": {
         "defaults": {
           "unit": "short"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "IR"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#e6194B"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "RU"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#3cb44b"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "US"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#4363d8"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "DE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f58231"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GB"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#911eb4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "FR"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#42d4f4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "NL"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f032e6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#bfef45"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "IN"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fabed4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "TR"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#469990"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CN"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#dcbeff"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#9A6324"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "FI"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#800000"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MM"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f58231"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#469990"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "AE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#66c2a5"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "QA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fc8d62"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MX"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#8da0cb"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "JO"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#e78ac3"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CU"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#a6d854"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ET"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#ffd92f"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GN"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#e5c494"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ZA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#b3b3b3"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "OM"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#a6cee3"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "TH"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fb9a99"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SN"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#cab2d6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SD"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fdbf6f"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "UA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#808000"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "AZ"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fc8d62"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "KZ"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#8da0cb"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "unknown"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#5a5a5a"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "??"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#5a5a5a"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "XX"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#5a5a5a"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "other"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#9aa0a6"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(8, sum by (country)(((singbox_active_users_by_country or xray_active_users_by_country or wireguard_active_peers_by_country or amneziawg_active_peers_by_country) or label_replace(conduit_region_connected_clients,\"country\",\"$1\",\"region\",\"(.+)\"))))",
+          "expr": "sum by (country)(singbox_active_users_by_country)",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "{{country}}"
+          "legendFormat": "sing-box",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (country)(xray_active_users_by_country)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "xray",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "expr": "sum by (country)(wireguard_active_peers_by_country)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "WireGuard",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "expr": "sum by (country)(amneziawg_active_peers_by_country)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "AmneziaWG",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "expr": "sum by (country)(label_replace(conduit_region_connected_clients,\"country\",\"$1\",\"region\",\"(.+)\"))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "Conduit",
+          "instant": true,
+          "format": "table"
         }
       ],
-      "description": "Connected sources per country over time (top 8)."
+      "description": "Per-protocol breakdown: how many connected sources per country, split by protocol (sing-box/xray/WireGuard/AmneziaWG/Conduit). The aggregated pie at left is the sum.",
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "country",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "instance": true,
+              "job": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "country": "Country",
+              "Value #A": "sing-box",
+              "Value #B": "xray",
+              "Value #C": "WireGuard",
+              "Value #D": "AmneziaWG",
+              "Value #E": "Conduit"
+            }
+          }
+        }
+      ]
     },
     {
       "id": 21,
@@ -2521,7 +2750,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 47
       }
     },
     {
@@ -2536,7 +2765,7 @@
         "h": 9,
         "w": 7,
         "x": 0,
-        "y": 46
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -2740,7 +2969,7 @@
         "h": 9,
         "w": 10,
         "x": 7,
-        "y": 46
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -3056,10 +3285,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 4,
+        "h": 6,
         "w": 7,
         "x": 17,
-        "y": 46
+        "y": 48
       },
       "fieldConfig": {
         "defaults": {
@@ -3101,10 +3330,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "h": 5,
+        "h": 3,
         "w": 7,
         "x": 17,
-        "y": 50
+        "y": 54
       },
       "fieldConfig": {
         "defaults": {
@@ -3157,7 +3386,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 55
+        "y": 57
       },
       "fieldConfig": {
         "defaults": {
@@ -3190,7 +3419,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 64
       }
     },
     {
@@ -3201,7 +3430,7 @@
         "h": 3,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 65
       },
       "options": {
         "mode": "markdown",
@@ -3220,7 +3449,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 66
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -3273,7 +3502,7 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 66
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -3310,7 +3539,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 66
+        "y": 68
       },
       "fieldConfig": {
         "defaults": {
@@ -3358,7 +3587,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 75
+        "y": 77
       }
     },
     {
@@ -3373,7 +3602,7 @@
         "h": 9,
         "w": 10,
         "x": 0,
-        "y": 76
+        "y": 78
       },
       "fieldConfig": {
         "defaults": {
@@ -3937,7 +4166,7 @@
         "h": 9,
         "w": 14,
         "x": 10,
-        "y": 76
+        "y": 78
       },
       "fieldConfig": {
         "defaults": {
