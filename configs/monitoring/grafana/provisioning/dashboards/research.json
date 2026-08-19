@@ -40,7 +40,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 6,
         "x": 0,
         "y": 1
       },
@@ -78,15 +78,15 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Protocols running",
+      "title": "Protocols up",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 4,
+        "w": 6,
+        "x": 6,
         "y": 1
       },
       "fieldConfig": {
@@ -106,7 +106,7 @@
           "instant": true
         }
       ],
-      "description": "Protocol engines with a live scrape target.",
+      "description": "Protocol engines up out of those monitored (sing-box, xray, WireGuard, AmneziaWG, Telegram, Snowflake, Conduit).",
       "options": {
         "reduceOptions": {
           "calcs": [
@@ -122,51 +122,6 @@
     },
     {
       "id": 4,
-      "type": "stat",
-      "title": "Protocols monitored",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 1
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "count(up{job=~\"singbox-users|xray-users|wireguard|amneziawg|conduit|telemt-api|snowflake-proxy\"})",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "instant": true
-        }
-      ],
-      "description": "sing-box, xray, WireGuard, AmneziaWG, Telegram, Snowflake, Conduit.",
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "none",
-        "graphMode": "none",
-        "textMode": "auto"
-      }
-    },
-    {
-      "id": 5,
       "type": "stat",
       "title": "Source countries",
       "datasource": {
@@ -211,7 +166,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 5,
       "type": "stat",
       "title": "Destination countries",
       "datasource": {
@@ -256,9 +211,9 @@
       }
     },
     {
-      "id": 7,
+      "id": 6,
       "type": "row",
-      "title": "Protocols",
+      "title": "Protocols (your VPN users)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -268,9 +223,9 @@
       }
     },
     {
-      "id": 8,
+      "id": 7,
       "type": "piechart",
-      "title": "Active users / clients by protocol",
+      "title": "Active users by protocol",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -360,43 +315,13 @@
                 }
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Snowflake"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f032e6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Conduit (bridge)"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#ffe119"
-                }
-              }
-            ]
           }
         ]
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(sum(singbox_active_users),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(xray_active_users),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(wireguard_peer_active),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(amneziawg_peer_active),\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(telemt_api_connections_current),\"proto\",\"Telegram\",\"\",\"\") or label_replace(sum(conduit_connected_clients),\"proto\",\"Conduit (bridge)\",\"\",\"\")",
+          "expr": "label_replace(sum(singbox_active_users),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(xray_active_users),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(wireguard_peer_active),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(amneziawg_peer_active),\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(telemt_api_connections_current),\"proto\",\"Telegram\",\"\",\"\")",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -405,7 +330,7 @@
           "instant": true
         }
       ],
-      "description": "Currently CONNECTED per protocol. WireGuard/AmneziaWG use live peer_active (recent handshake), not the provisioned count \u2014 an idle created peer is not counted here.",
+      "description": "Currently CONNECTED per protocol. WireGuard/AmneziaWG use live peer_active (recent handshake), not the provisioned count.",
       "options": {
         "pieType": "donut",
         "legend": {
@@ -427,7 +352,7 @@
       }
     },
     {
-      "id": 9,
+      "id": 8,
       "type": "piechart",
       "title": "Traffic by protocol (real load)",
       "datasource": {
@@ -519,36 +444,6 @@
                 }
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Snowflake"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f032e6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Conduit (bridge)"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#ffe119"
-                }
-              }
-            ]
           }
         ]
       },
@@ -564,7 +459,7 @@
           "instant": true
         }
       ],
-      "description": "Current throughput share per protocol. This is the honest 'who is actually carrying traffic' view \u2014 idle provisioned peers move no bytes.",
+      "description": "Current throughput share. Idle provisioned peers move no bytes. (Telegram/MTProxy exposes no byte metric; bridges are in their own section.)",
       "options": {
         "pieType": "donut",
         "legend": {
@@ -586,8 +481,8 @@
       }
     },
     {
-      "id": 10,
-      "type": "barchart",
+      "id": 9,
+      "type": "table",
       "title": "Provisioned peers (created configs)",
       "datasource": {
         "type": "prometheus",
@@ -603,132 +498,43 @@
         "defaults": {
           "unit": "short"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "sing-box"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#4363d8"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "xray"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f58231"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "WireGuard"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#3cb44b"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "AmneziaWG"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#911eb4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Telegram"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#42d4f4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Snowflake"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f032e6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Conduit (bridge)"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#ffe119"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(wireguard_peers_total,\"proto\",\"WireGuard\",\"\",\"\") or label_replace(amneziawg_peers_total,\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(xray_total_users),\"proto\",\"xray\",\"\",\"\")",
+          "expr": "label_replace(wireguard_peers_total,\"proto\",\"WireGuard\",\"\",\"\") or label_replace(amneziawg_peers_total,\"proto\",\"AmneziaWG\",\"\",\"\")",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "{{proto}}",
-          "instant": true
+          "instant": true,
+          "format": "table"
         }
       ],
-      "description": "Total CREATED peer configs \u2014 WireGuard/AmneziaWG (`*_peers_total`) and xray users. Includes idle/never-connected peers, so this is a capacity/inventory count, NOT a usage measure. Compare with 'active' and 'traffic' at left."
+      "description": "Created peer configs from *_peers_total. WireGuard/AmneziaWG expose this; sing-box/xray/Telegram do not report a provisioned-user count (only active), so they're omitted here rather than shown with a wrong number.",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "instance": true,
+              "job": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "proto": "Protocol",
+              "Value": "Created peers"
+            }
+          }
+        }
+      ]
     },
     {
-      "id": 11,
+      "id": 10,
       "type": "timeseries",
-      "title": "Active users / clients over time",
+      "title": "Active users by protocol over time",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -818,43 +624,13 @@
                 }
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Snowflake"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f032e6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Conduit (bridge)"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#ffe119"
-                }
-              }
-            ]
           }
         ]
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(sum(singbox_active_users),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(xray_active_users),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(wireguard_peer_active),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(amneziawg_peer_active),\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(telemt_api_connections_current),\"proto\",\"Telegram\",\"\",\"\") or label_replace(sum(conduit_connected_clients),\"proto\",\"Conduit (bridge)\",\"\",\"\")",
+          "expr": "label_replace(sum(singbox_active_users),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(xray_active_users),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(wireguard_peer_active),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(amneziawg_peer_active),\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(telemt_api_connections_current),\"proto\",\"Telegram\",\"\",\"\")",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -862,12 +638,12 @@
           "legendFormat": "{{proto}}"
         }
       ],
-      "description": "Connected users/clients per protocol over time (active metrics, same colours as the pie). Snowflake has no concurrent-client gauge, so it appears by country under Sources."
+      "description": "Connected users per protocol over time (active metrics, same colours as the pie)."
     },
     {
-      "id": 12,
+      "id": 11,
       "type": "row",
-      "title": "Sources \u2014 where traffic comes from",
+      "title": "Bridges \u2014 relaying for others (not your VPN users)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -877,17 +653,107 @@
       }
     },
     {
+      "id": 12,
+      "type": "stat",
+      "title": "Conduit clients",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(conduit_connected_clients)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "description": "Clients currently relayed through the Conduit (Psiphon) bridge.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
       "id": 13,
-      "type": "piechart",
-      "title": "Source countries (VPN + Conduit bridge)",
+      "type": "stat",
+      "title": "Conduit relayed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(conduit_bytes_downloaded[$__rate_interval]))+sum(rate(conduit_bytes_uploaded[$__rate_interval]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "description": "Current Conduit relay throughput.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 14,
+      "type": "barchart",
+      "title": "Conduit reach by country",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 10,
-        "w": 10,
-        "x": 0,
+        "w": 16,
+        "x": 8,
         "y": 24
       },
       "fieldConfig": {
@@ -1236,6 +1102,743 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#b3b3b3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "OM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#a6cee3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TH"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fb9a99"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#cab2d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SD"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fdbf6f"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "UA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808000"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AZ"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fc8d62"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "KZ"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8da0cb"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unknown"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5a5a5a"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "??"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5a5a5a"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "XX"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#5a5a5a"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "other"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9aa0a6"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "topk(15, sum by (region)(conduit_region_connected_clients))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "{{region}}",
+          "instant": true
+        }
+      ],
+      "description": "Clients this server relays for as a Conduit bridge, by country (top 15)."
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Snowflake successful",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(tor_snowflake_proxy_connections_total)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "description": "Successful Snowflake (Tor) connections. Low here: the proxy mostly times out (see next).",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Snowflake timeouts",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "tor_snowflake_proxy_connection_timeouts_total",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "description": "Client connections that failed after rendezvous (NAT/censorship). If this dwarfs 'successful', the Snowflake proxy is reachable but not completing relays.",
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 17,
+      "type": "text",
+      "title": "Snowflake note",
+      "gridPos": {
+        "h": 5,
+        "w": 16,
+        "x": 8,
+        "y": 29
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Snowflake reports **per-country counts that are near-1** because it's completing very few relays (timeouts >> successes) and rounds low counts for privacy. Not a MoaV counting bug \u2014 these are the proxy's own upstream numbers. Traffic relayed and success/timeout above are the honest health signal."
+      }
+    },
+    {
+      "id": 18,
+      "type": "row",
+      "title": "Sources \u2014 where your users are from",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 34
+      }
+    },
+    {
+      "id": 19,
+      "type": "piechart",
+      "title": "Source countries (VPN + Conduit bridge)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "IR"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e6194B"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RU"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3cb44b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "US"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4363d8"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "DE"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f58231"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GB"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#911eb4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FR"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#42d4f4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "NL"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f032e6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#bfef45"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "IN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fabed4"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TR"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#469990"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#dcbeff"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SE"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9A6324"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "FI"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#800000"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#f58231"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#469990"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "AE"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#66c2a5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "QA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fc8d62"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "MX"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#8da0cb"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "JO"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e78ac3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CU"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#a6d854"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ET"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#ffd92f"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e5c494"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ZA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#b3b3b3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "OM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#a6cee3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TH"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fb9a99"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#cab2d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SD"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fdbf6f"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "UA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808000"
                 }
               }
             ]
@@ -1366,18 +1969,18 @@
       }
     },
     {
-      "id": 14,
-      "type": "barchart",
-      "title": "Conduit bridge reach by country",
+      "id": 20,
+      "type": "timeseries",
+      "title": "Source countries over time (top 8)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 10,
-        "w": 7,
-        "x": 10,
-        "y": 24
+        "w": 12,
+        "x": 12,
+        "y": 35
       },
       "fieldConfig": {
         "defaults": {
@@ -1732,14 +2335,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "AZ"
+              "options": "OM"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#fc8d62"
+                  "fixedColor": "#a6cee3"
                 }
               }
             ]
@@ -1747,14 +2350,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "KZ"
+              "options": "TH"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#8da0cb"
+                  "fixedColor": "#fb9a99"
                 }
               }
             ]
@@ -1762,14 +2365,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "unknown"
+              "options": "SN"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#5a5a5a"
+                  "fixedColor": "#cab2d6"
                 }
               }
             ]
@@ -1777,14 +2380,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "??"
+              "options": "SD"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#5a5a5a"
+                  "fixedColor": "#fdbf6f"
                 }
               }
             ]
@@ -1792,409 +2395,14 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "XX"
+              "options": "UA"
             },
             "properties": [
               {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
-                  "fixedColor": "#5a5a5a"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "other"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#9aa0a6"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "topk(12, sum by (region)(conduit_region_connected_clients))",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "legendFormat": "{{region}}",
-          "instant": true
-        }
-      ],
-      "description": "Clients this server relays for as a Conduit bridge, by country (top 12)."
-    },
-    {
-      "id": 15,
-      "type": "barchart",
-      "title": "Snowflake reach by country",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 7,
-        "x": 17,
-        "y": 24
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "IR"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#e6194B"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "RU"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#3cb44b"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "US"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#4363d8"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "DE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f58231"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GB"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#911eb4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "FR"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#42d4f4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "NL"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f032e6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#bfef45"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "IN"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fabed4"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "TR"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#469990"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CN"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#dcbeff"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#9A6324"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "FI"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#800000"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MM"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#f58231"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "SA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#469990"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "AE"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#66c2a5"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "QA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fc8d62"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MX"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#8da0cb"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "JO"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#e78ac3"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CU"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#a6d854"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ET"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#ffd92f"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "GN"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#e5c494"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "ZA"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#b3b3b3"
+                  "fixedColor": "#808000"
                 }
               }
             ]
@@ -2294,19 +2502,18 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(12, sum by (country)(tor_snowflake_proxy_connections_total))",
+          "expr": "topk(8, sum by (country)(((singbox_active_users_by_country or xray_active_users_by_country or wireguard_active_peers_by_country or amneziawg_active_peers_by_country) or label_replace(conduit_region_connected_clients,\"country\",\"$1\",\"region\",\"(.+)\"))))",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "legendFormat": "{{country}}",
-          "instant": true
+          "legendFormat": "{{country}}"
         }
       ],
-      "description": "Connections proxied through this server's Snowflake, by client country (top 12). Cumulative Tor-bridge traffic."
+      "description": "Connected sources per country over time (top 8)."
     },
     {
-      "id": 16,
+      "id": 21,
       "type": "row",
       "title": "Destination ports & protocols (sing-box observed)",
       "collapsed": false,
@@ -2314,11 +2521,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 45
       }
     },
     {
-      "id": 17,
+      "id": 22,
       "type": "piechart",
       "title": "Bytes by destination port",
       "datasource": {
@@ -2329,7 +2536,7 @@
         "h": 9,
         "w": 7,
         "x": 0,
-        "y": 35
+        "y": 46
       },
       "fieldConfig": {
         "defaults": {
@@ -2522,7 +2729,7 @@
       }
     },
     {
-      "id": 18,
+      "id": 23,
       "type": "piechart",
       "title": "Bytes by protocol (QUIC/HTTPS split)",
       "datasource": {
@@ -2533,7 +2740,7 @@
         "h": 9,
         "w": 10,
         "x": 7,
-        "y": 35
+        "y": 46
       },
       "fieldConfig": {
         "defaults": {
@@ -2841,7 +3048,7 @@
       }
     },
     {
-      "id": 19,
+      "id": 24,
       "type": "stat",
       "title": "QUIC share of web (443)",
       "datasource": {
@@ -2852,7 +3059,7 @@
         "h": 4,
         "w": 7,
         "x": 17,
-        "y": 35
+        "y": 46
       },
       "fieldConfig": {
         "defaults": {
@@ -2886,7 +3093,7 @@
       }
     },
     {
-      "id": 20,
+      "id": 25,
       "type": "piechart",
       "title": "TCP vs UDP",
       "datasource": {
@@ -2897,7 +3104,7 @@
         "h": 5,
         "w": 7,
         "x": 17,
-        "y": 39
+        "y": 50
       },
       "fieldConfig": {
         "defaults": {
@@ -2939,7 +3146,7 @@
       }
     },
     {
-      "id": 21,
+      "id": 26,
       "type": "timeseries",
       "title": "Port traffic over time",
       "datasource": {
@@ -2950,7 +3157,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 55
       },
       "fieldConfig": {
         "defaults": {
@@ -2975,7 +3182,7 @@
       "description": "Throughput per destination port (top 8)."
     },
     {
-      "id": 22,
+      "id": 27,
       "type": "row",
       "title": "Destination sites (sing-box only, k-anonymised)",
       "collapsed": false,
@@ -2983,18 +3190,18 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 62
       }
     },
     {
-      "id": 23,
+      "id": 28,
       "type": "text",
       "title": "",
       "gridPos": {
         "h": 3,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 63
       },
       "options": {
         "mode": "markdown",
@@ -3002,7 +3209,7 @@
       }
     },
     {
-      "id": 24,
+      "id": 29,
       "type": "piechart",
       "title": "Share of traffic by site",
       "datasource": {
@@ -3013,7 +3220,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 55
+        "y": 66
       },
       "fieldConfig": {
         "defaults": {
@@ -3055,7 +3262,7 @@
       }
     },
     {
-      "id": 25,
+      "id": 30,
       "type": "barchart",
       "title": "Top sites by connections",
       "datasource": {
@@ -3066,7 +3273,7 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 55
+        "y": 66
       },
       "fieldConfig": {
         "defaults": {
@@ -3092,7 +3299,7 @@
       "description": "Cumulative connections per site (top 12)."
     },
     {
-      "id": 26,
+      "id": 31,
       "type": "table",
       "title": "Distinct clients per named site",
       "datasource": {
@@ -3103,7 +3310,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 55
+        "y": 66
       },
       "fieldConfig": {
         "defaults": {
@@ -3143,7 +3350,7 @@
       ]
     },
     {
-      "id": 27,
+      "id": 32,
       "type": "row",
       "title": "Geography & trends",
       "collapsed": false,
@@ -3151,11 +3358,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 64
+        "y": 75
       }
     },
     {
-      "id": 28,
+      "id": 33,
       "type": "piechart",
       "title": "Traffic by destination country",
       "datasource": {
@@ -3166,7 +3373,7 @@
         "h": 9,
         "w": 10,
         "x": 0,
-        "y": 65
+        "y": 76
       },
       "fieldConfig": {
         "defaults": {
@@ -3521,6 +3728,81 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "OM"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#a6cee3"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "TH"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fb9a99"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SN"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#cab2d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SD"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fdbf6f"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "UA"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#808000"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "AZ"
             },
             "properties": [
@@ -3644,7 +3926,7 @@
       }
     },
     {
-      "id": 29,
+      "id": 34,
       "type": "timeseries",
       "title": "Traffic over time by direction",
       "datasource": {
@@ -3655,7 +3937,7 @@
         "h": 9,
         "w": 14,
         "x": 10,
-        "y": 65
+        "y": 76
       },
       "fieldConfig": {
         "defaults": {
