@@ -54,7 +54,7 @@ EOF
 amneziawg_ensure_v3_params
 env_file="$STATE_DIR/keys/amneziawg.env"
 for k in AWG_S3 AWG_S4 AWG_H_KEY AWG_CPA AWG_REKEY_AFTER AWG_REKEY_TIMEOUT \
-         AWG_REJECT_AFTER AWG_KEEPALIVE_TIMEOUT AWG_MAX_HANDSHAKE AWG_PKA; do
+         AWG_REJECT_AFTER AWG_KEEPALIVE_TIMEOUT AWG_MAX_HANDSHAKE AWG_PKA AWG_RTRAILERS; do
     grep -q "^${k}=" "$env_file" && ok "migration adds $k" || bad "migration missing $k"
 done
 grep -q '^AWG_H1=111$' "$env_file" && grep -q '^AWG_S1=100$' "$env_file" \
@@ -75,7 +75,7 @@ generate_amneziawg_config >/dev/null 2>&1
 conf="$AWG_CONFIG_DIR/awg0.conf"
 for key in "S3 =" "S4 =" "HeaderProtectionKey =" "ContentPaddingAddition =" \
            "RekeyAfterTime =" "RekeyTimeout =" "RejectAfterTime =" \
-           "KeepaliveTimeout =" "MaxHandshakeAttempts ="; do
+           "KeepaliveTimeout =" "MaxHandshakeAttempts =" "RandomTrailers ="; do
     grep -q "^${key}" "$conf" && ok "awg0.conf has ${key%% *}" || bad "awg0.conf missing ${key%% *}"
 done
 

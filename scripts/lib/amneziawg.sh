@@ -89,8 +89,9 @@ AWG_REJECT_AFTER=170-190
 AWG_KEEPALIVE_TIMEOUT=10-15
 AWG_MAX_HANDSHAKE=12-20
 AWG_PKA=20-30
+AWG_RTRAILERS=on
 EOF
-    log_info "AmneziaWG v3 params generated (header protection, content padding, timings)"
+    log_info "AmneziaWG v3 params generated (header protection, content padding, random trailers, timings)"
 }
 
 generate_amneziawg_config() {
@@ -162,6 +163,7 @@ RekeyTimeout = $AWG_REKEY_TIMEOUT
 RejectAfterTime = $AWG_REJECT_AFTER
 KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
 MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
+RandomTrailers = $AWG_RTRAILERS
 PostUp = $postup_rules
 PostDown = $postdown_rules
 
@@ -301,7 +303,7 @@ amneziawg_generate_client_config() {
     local awg_conf="$AWG_CONFIG_DIR/awg0.conf"
     local AWG_JC AWG_JMIN AWG_JMAX AWG_S1 AWG_S2 AWG_H1 AWG_H2 AWG_H3 AWG_H4
     local AWG_S3 AWG_S4 AWG_HKEY AWG_CPA AWG_REKEY_AFTER AWG_REKEY_TIMEOUT
-    local AWG_REJECT_AFTER AWG_KEEPALIVE_TIMEOUT AWG_MAX_HANDSHAKE
+    local AWG_REJECT_AFTER AWG_KEEPALIVE_TIMEOUT AWG_MAX_HANDSHAKE AWG_RTRAILERS
     AWG_JC=$(awk '/^Jc[[:space:]]*=/{print $3; exit}'   "$awg_conf")
     AWG_JMIN=$(awk '/^Jmin[[:space:]]*=/{print $3; exit}' "$awg_conf")
     AWG_JMAX=$(awk '/^Jmax[[:space:]]*=/{print $3; exit}' "$awg_conf")
@@ -322,6 +324,7 @@ amneziawg_generate_client_config() {
     AWG_REJECT_AFTER=$(awk '/^RejectAfterTime[[:space:]]*=/{print $3; exit}' "$awg_conf")
     AWG_KEEPALIVE_TIMEOUT=$(awk '/^KeepaliveTimeout[[:space:]]*=/{print $3; exit}' "$awg_conf")
     AWG_MAX_HANDSHAKE=$(awk '/^MaxHandshakeAttempts[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_RTRAILERS=$(awk '/^RandomTrailers[[:space:]]*=/{print $3; exit}' "$awg_conf")
 
     local server_public_key
     server_public_key=$(cat "$AWG_CONFIG_DIR/server.pub")
@@ -357,6 +360,7 @@ RekeyTimeout = $AWG_REKEY_TIMEOUT
 RejectAfterTime = $AWG_REJECT_AFTER
 KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
 MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
+RandomTrailers = $AWG_RTRAILERS
 
 [Peer]
 PublicKey = $server_public_key
@@ -391,6 +395,7 @@ RekeyTimeout = $AWG_REKEY_TIMEOUT
 RejectAfterTime = $AWG_REJECT_AFTER
 KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
 MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
+RandomTrailers = $AWG_RTRAILERS
 
 [Peer]
 PublicKey = $server_public_key

@@ -14,7 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   low-entropy WireGuard message-type/counter header, the main remaining DPI
   tell), plus content padding (`ContentPaddingAddition`), the `S3/S4` crypto
   paddings header protection needs (all `S1–S4` are ≥ 12), randomized rekey /
-  timeout / keepalive timings, and a `PersistentKeepalive` range. `amneziawg-go`
+  timeout / keepalive timings, a `PersistentKeepalive` range, and **v3.1
+  `RandomTrailers`** (random-length trailers on handshake/cookie packets).
+  `amneziawg-go`
   is pinned to `v3.1.20260814` and `amneziawg-tools` to `v3.1.20260812` (a
   matched pair; the Go builder moves to 1.25, which v3 requires). Generated
   configs are validated against a real `awg setconf` + a two-peer handshake, and
