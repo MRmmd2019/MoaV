@@ -139,6 +139,13 @@ generate_amneziawg_config() {
         log_info "AmneziaWG IPv6 enabled: $AWG_SERVER_IP_V6"
     fi
 
+    # Optional v3.1 DisableCookies (default off: keep WireGuard's handshake-flood
+    # DoS defence). AWG_DISABLE_COOKIES=true drops the distinctive cookie-reply
+    # packet for a bit more obfuscation, at the cost of that protection. Read at
+    # generation time so `moav regenerate-users` applies a change to it.
+    local awg_dcookies=""
+    [[ "${AWG_DISABLE_COOKIES:-false}" == "true" ]] && awg_dcookies="DisableCookies = on"
+
     cat > "$AWG_CONFIG_DIR/awg0.conf" <<EOF
 [Interface]
 Address = $server_addresses
@@ -164,6 +171,7 @@ RejectAfterTime = $AWG_REJECT_AFTER
 KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
 MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
 RandomTrailers = $AWG_RTRAILERS
+$awg_dcookies
 PostUp = $postup_rules
 PostDown = $postdown_rules
 
@@ -303,7 +311,7 @@ amneziawg_generate_client_config() {
     local awg_conf="$AWG_CONFIG_DIR/awg0.conf"
     local AWG_JC AWG_JMIN AWG_JMAX AWG_S1 AWG_S2 AWG_H1 AWG_H2 AWG_H3 AWG_H4
     local AWG_S3 AWG_S4 AWG_HKEY AWG_CPA AWG_REKEY_AFTER AWG_REKEY_TIMEOUT
-    local AWG_REJECT_AFTER AWG_KEEPALIVE_TIMEOUT AWG_MAX_HANDSHAKE AWG_RTRAILERS
+    local AWG_REJECT_AFTER AWG_KEEPALIVE_TIMEOUT AWG_MAX_HANDSHAKE AWG_RTRAILERS AWG_DCOOKIES
     AWG_JC=$(awk '/^Jc[[:space:]]*=/{print $3; exit}'   "$awg_conf")
     AWG_JMIN=$(awk '/^Jmin[[:space:]]*=/{print $3; exit}' "$awg_conf")
     AWG_JMAX=$(awk '/^Jmax[[:space:]]*=/{print $3; exit}' "$awg_conf")
@@ -325,6 +333,9 @@ amneziawg_generate_client_config() {
     AWG_KEEPALIVE_TIMEOUT=$(awk '/^KeepaliveTimeout[[:space:]]*=/{print $3; exit}' "$awg_conf")
     AWG_MAX_HANDSHAKE=$(awk '/^MaxHandshakeAttempts[[:space:]]*=/{print $3; exit}' "$awg_conf")
     AWG_RTRAILERS=$(awk '/^RandomTrailers[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    AWG_DCOOKIES=$(awk '/^DisableCookies[[:space:]]*=/{print $3; exit}' "$awg_conf")
+    local dcookies_line=""
+    [[ -n "$AWG_DCOOKIES" ]] && dcookies_line="DisableCookies = $AWG_DCOOKIES"
 
     local server_public_key
     server_public_key=$(cat "$AWG_CONFIG_DIR/server.pub")
@@ -361,6 +372,7 @@ RejectAfterTime = $AWG_REJECT_AFTER
 KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
 MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
 RandomTrailers = $AWG_RTRAILERS
+$dcookies_line
 
 [Peer]
 PublicKey = $server_public_key
@@ -396,6 +408,7 @@ RejectAfterTime = $AWG_REJECT_AFTER
 KeepaliveTimeout = $AWG_KEEPALIVE_TIMEOUT
 MaxHandshakeAttempts = $AWG_MAX_HANDSHAKE
 RandomTrailers = $AWG_RTRAILERS
+$dcookies_line
 
 [Peer]
 PublicKey = $server_public_key

@@ -460,6 +460,7 @@ cmd_regenerate_users() {
     local enable_hysteria2=$(get_env_val "ENABLE_HYSTERIA2" .env "true")
     local enable_wireguard=$(get_env_val "ENABLE_WIREGUARD" .env "true")
     local enable_amneziawg=$(get_env_val "ENABLE_AMNEZIAWG" .env "true")
+    local awg_disable_cookies=$(get_env_val "AWG_DISABLE_COOKIES" .env "false")
     local enable_dnstt=$(get_env_val "ENABLE_DNSTT" .env "true")
     local enable_slipstream=$(get_env_val "ENABLE_SLIPSTREAM" .env "true")
     local slipstream_subdomain=$(get_env_val "SLIPSTREAM_SUBDOMAIN" .env "s")
@@ -515,6 +516,7 @@ cmd_regenerate_users() {
             -e "ENABLE_HYSTERIA2=${enable_hysteria2:-true}" \
             -e "ENABLE_WIREGUARD=${enable_wireguard:-true}" \
             -e "ENABLE_AMNEZIAWG=${enable_amneziawg:-true}" \
+            -e "AWG_DISABLE_COOKIES=${awg_disable_cookies:-false}" \
             -e "ENABLE_DNSTT=${enable_dnstt:-false}" \
             -e "ENABLE_SLIPSTREAM=${enable_slipstream:-false}" \
             -e "SLIPSTREAM_SUBDOMAIN=${slipstream_subdomain:-s}" \

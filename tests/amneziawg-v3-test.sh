@@ -79,6 +79,17 @@ for key in "S3 =" "S4 =" "HeaderProtectionKey =" "ContentPaddingAddition =" \
     grep -q "^${key}" "$conf" && ok "awg0.conf has ${key%% *}" || bad "awg0.conf missing ${key%% *}"
 done
 
+# --- 2b. DisableCookies toggle: absent by default, present when opted in -------
+grep -q "^DisableCookies" "$conf" && bad "DisableCookies present by default (should be off)" \
+    || ok "DisableCookies off by default (cookies kept on)"
+export STATE_DIR="$WORK/s2c"; AWG_CONFIG_DIR="$WORK/s2c/cfg"
+mkdir -p "$STATE_DIR/keys" "$AWG_CONFIG_DIR"
+AWG_DISABLE_COOKIES=true generate_amneziawg_config >/dev/null 2>&1
+grep -q "^DisableCookies = on" "$AWG_CONFIG_DIR/awg0.conf" \
+    && ok "AWG_DISABLE_COOKIES=true emits DisableCookies = on" || bad "toggle did not emit DisableCookies"
+# restore the default-config path for section 3
+export STATE_DIR="$WORK/s2"; AWG_CONFIG_DIR="$WORK/s2/cfg"; conf="$AWG_CONFIG_DIR/awg0.conf"
+
 # --- 3. client config carries the v3 keys + a keepalive range -----------------
 user="tester"
 mkdir -p "$STATE_DIR/users/$user"
