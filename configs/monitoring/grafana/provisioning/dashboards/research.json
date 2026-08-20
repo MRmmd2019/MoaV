@@ -399,7 +399,7 @@
     {
       "id": 8,
       "type": "piechart",
-      "title": "Traffic by protocol (real load)",
+      "title": "Traffic by protocol (total over range)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -412,7 +412,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps"
+          "unit": "bytes"
         },
         "overrides": [
           {
@@ -540,7 +540,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "label_replace(sum(rate(singbox_protocol_bytes_up[$__rate_interval]))+sum(rate(singbox_protocol_bytes_down[$__rate_interval])),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(rate(xray_inbound_download_bytes[$__rate_interval]))+sum(rate(xray_inbound_upload_bytes[$__rate_interval])),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(rate(wireguard_peer_transfer_rx_bytes[$__rate_interval]))+sum(rate(wireguard_peer_transfer_tx_bytes[$__rate_interval])),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(rate(amneziawg_peer_transfer_rx_bytes[$__rate_interval]))+sum(rate(amneziawg_peer_transfer_tx_bytes[$__rate_interval])),\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(rate(conduit_bytes_downloaded[$__rate_interval]))+sum(rate(conduit_bytes_uploaded[$__rate_interval])),\"proto\",\"Conduit (bridge)\",\"\",\"\") or label_replace(sum(rate(tor_snowflake_proxy_traffic_inbound_bytes_total[$__rate_interval]))+sum(rate(tor_snowflake_proxy_traffic_outbound_bytes_total[$__rate_interval])),\"proto\",\"Snowflake (bridge)\",\"\",\"\")",
+          "expr": "label_replace(sum(increase(singbox_protocol_bytes_up[$__range]))+sum(increase(singbox_protocol_bytes_down[$__range])),\"proto\",\"sing-box\",\"\",\"\") or label_replace(sum(increase(xray_inbound_download_bytes[$__range]))+sum(increase(xray_inbound_upload_bytes[$__range])),\"proto\",\"xray\",\"\",\"\") or label_replace(sum(increase(wireguard_peer_transfer_rx_bytes[$__range]))+sum(increase(wireguard_peer_transfer_tx_bytes[$__range])),\"proto\",\"WireGuard\",\"\",\"\") or label_replace(sum(increase(amneziawg_peer_transfer_rx_bytes[$__range]))+sum(increase(amneziawg_peer_transfer_tx_bytes[$__range])),\"proto\",\"AmneziaWG\",\"\",\"\") or label_replace(sum(increase(conduit_bytes_downloaded[$__range]))+sum(increase(conduit_bytes_uploaded[$__range])),\"proto\",\"Conduit (bridge)\",\"\",\"\") or label_replace(sum(increase(tor_snowflake_proxy_traffic_inbound_bytes_total[$__range]))+sum(increase(tor_snowflake_proxy_traffic_outbound_bytes_total[$__range])),\"proto\",\"Snowflake (bridge)\",\"\",\"\")",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -549,7 +549,7 @@
           "instant": true
         }
       ],
-      "description": "Current throughput share across ALL engines incl. the Conduit + Snowflake bridges. Conduit typically dominates (it relays for many strangers). Idle provisioned peers move no bytes.",
+      "description": "Total bytes moved per engine over the dashboard time range (default 24h), incl. the Conduit + Snowflake bridges. Conduit typically dominates (it relays for many strangers). Idle provisioned peers move no bytes.",
       "options": {
         "pieType": "donut",
         "legend": {
@@ -836,7 +836,7 @@
     {
       "id": 13,
       "type": "stat",
-      "title": "Conduit relayed",
+      "title": "Conduit relayed (range)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -849,14 +849,14 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps"
+          "unit": "bytes"
         },
         "overrides": []
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(conduit_bytes_downloaded[$__rate_interval]))+sum(rate(conduit_bytes_uploaded[$__rate_interval]))",
+          "expr": "sum(increase(conduit_bytes_downloaded[$__range]))+sum(increase(conduit_bytes_uploaded[$__range]))",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -864,7 +864,7 @@
           "instant": true
         }
       ],
-      "description": "Current Conduit relay throughput (down+up). Verified correct: e.g. ~294 KB/s for 31 clients, well under the 12.5 MB/s limit.",
+      "description": "Total bytes relayed by the Conduit bridge over the dashboard range (down+up). Lifetime is ~756 GB; current throughput ~294 KB/s for 31 clients.",
       "options": {
         "reduceOptions": {
           "calcs": [
