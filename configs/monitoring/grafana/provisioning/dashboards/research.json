@@ -19,6 +19,21 @@
   },
   "panels": [
     {
+      "id": 35,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "\u26a0\ufe0f **Experimental dashboard.** These numbers and charts are a work in progress and still need review \u2014 some may not exactly match reality (metric semantics, k-anonymity folding, bridge-vs-VPN counts, rate-vs-volume). Treat them as directional, not authoritative. Spot a mismatch or have a fix? **[Open a MoaV issue](https://github.com/MotherofallVPNs/MoaV/issues)**."
+      }
+    },
+    {
       "id": 1,
       "type": "row",
       "title": "Overview",
@@ -27,7 +42,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 3
       }
     },
     {
@@ -42,7 +57,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 1
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -87,7 +102,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 1
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -132,7 +147,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 1
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -177,7 +192,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 1
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -219,7 +234,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 8
       }
     },
     {
@@ -234,7 +249,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 6
+        "y": 9
       },
       "fieldConfig": {
         "defaults": {
@@ -408,7 +423,7 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 6
+        "y": 9
       },
       "fieldConfig": {
         "defaults": {
@@ -582,7 +597,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 6
+        "y": 9
       },
       "fieldConfig": {
         "defaults": {
@@ -634,7 +649,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 15
+        "y": 18
       },
       "fieldConfig": {
         "defaults": {
@@ -785,7 +800,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 26
       }
     },
     {
@@ -800,7 +815,7 @@
         "h": 6,
         "w": 4,
         "x": 0,
-        "y": 24
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -845,7 +860,7 @@
         "h": 6,
         "w": 4,
         "x": 4,
-        "y": 24
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -890,7 +905,7 @@
         "h": 6,
         "w": 16,
         "x": 8,
-        "y": 24
+        "y": 27
       },
       "fieldConfig": {
         "defaults": {
@@ -1435,7 +1450,7 @@
         "h": 6,
         "w": 4,
         "x": 0,
-        "y": 30
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1480,7 +1495,7 @@
         "h": 6,
         "w": 4,
         "x": 4,
-        "y": 30
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -1525,7 +1540,7 @@
         "h": 6,
         "w": 16,
         "x": 8,
-        "y": 30
+        "y": 33
       },
       "fieldConfig": {
         "defaults": {
@@ -2067,7 +2082,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 39
       }
     },
     {
@@ -2082,7 +2097,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 37
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -2646,7 +2661,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 37
+        "y": 40
       },
       "fieldConfig": {
         "defaults": {
@@ -2750,7 +2765,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 47
+        "y": 50
       }
     },
     {
@@ -2765,7 +2780,7 @@
         "h": 9,
         "w": 7,
         "x": 0,
-        "y": 48
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -2969,7 +2984,7 @@
         "h": 9,
         "w": 10,
         "x": 7,
-        "y": 48
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -3288,7 +3303,7 @@
         "h": 6,
         "w": 7,
         "x": 17,
-        "y": 48
+        "y": 51
       },
       "fieldConfig": {
         "defaults": {
@@ -3333,7 +3348,7 @@
         "h": 3,
         "w": 7,
         "x": 17,
-        "y": 54
+        "y": 57
       },
       "fieldConfig": {
         "defaults": {
@@ -3386,7 +3401,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 60
       },
       "fieldConfig": {
         "defaults": {
@@ -3419,7 +3434,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 64
+        "y": 67
       }
     },
     {
@@ -3430,7 +3445,7 @@
         "h": 3,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 68
       },
       "options": {
         "mode": "markdown",
@@ -3449,7 +3464,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 68
+        "y": 71
       },
       "fieldConfig": {
         "defaults": {
@@ -3502,7 +3517,7 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 68
+        "y": 71
       },
       "fieldConfig": {
         "defaults": {
@@ -3539,7 +3554,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 68
+        "y": 71
       },
       "fieldConfig": {
         "defaults": {
@@ -3587,7 +3602,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 77
+        "y": 80
       }
     },
     {
@@ -3602,7 +3617,7 @@
         "h": 9,
         "w": 10,
         "x": 0,
-        "y": 78
+        "y": 81
       },
       "fieldConfig": {
         "defaults": {
@@ -4166,7 +4181,7 @@
         "h": 9,
         "w": 14,
         "x": 10,
-        "y": 78
+        "y": 81
       },
       "fieldConfig": {
         "defaults": {
