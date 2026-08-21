@@ -143,6 +143,8 @@ jobs:
         run: bash tests/zombie-reaper-test.sh
       - name: doctor host (load/swap/zombies) + check wiring
         run: bash tests/hostload-test.sh
+      - name: self-signed TLS note (fresh-install cert warning)
+        run: bash tests/tls-note-test.sh
       - name: release footer generator
         run: bash tests/release-footer-test.sh
       - name: release footer links resolve (network)
