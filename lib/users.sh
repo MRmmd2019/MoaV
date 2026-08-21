@@ -559,6 +559,23 @@ cmd_regenerate_users() {
     # bundles THEN sync_server_users, always reaching the reconcile even if a
     # bundle failed). Reload the proxies so the re-inserted users take effect.
     docker compose restart sing-box xray >/dev/null 2>&1 || true
+
+    # WG/AWG were missing here: regenerate rebuilds wg0/awg0.conf on disk but the
+    # running servers keep stale peers until reloaded (moav user add already does).
+    if [[ "${enable_wireguard:-true}" == "true" ]] && [[ "$(docker inspect -f '{{.State.Running}}' moav-wireguard 2>/dev/null)" == "true" ]]; then
+        local wg_stripped
+        wg_stripped=$(docker exec -i moav-wireguard wg-quick strip wg0 2>/dev/null || true)  # never abort the caller under set -e
+        if [[ -n "$wg_stripped" ]]; then
+            printf '%s\n' "$wg_stripped" | docker exec -i moav-wireguard wg syncconf wg0 /dev/stdin >/dev/null 2>&1 \
+                || docker restart moav-wireguard >/dev/null 2>&1 || true
+        else
+            docker restart moav-wireguard >/dev/null 2>&1 || true
+        fi
+    fi
+    # AmneziaWG has no awg-quick; its entrypoint re-applies awg0.conf on start.
+    if [[ "${enable_amneziawg:-true}" == "true" ]] && [[ "$(docker inspect -f '{{.State.Running}}' moav-amneziawg 2>/dev/null)" == "true" ]]; then
+        docker restart moav-amneziawg >/dev/null 2>&1 || true
+    fi
     echo ""
 
     if [[ $user_count -gt 0 ]]; then
