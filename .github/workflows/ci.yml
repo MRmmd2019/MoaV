@@ -121,6 +121,8 @@ jobs:
         run: bash tests/admin-tls-test.sh
       - name: admin IP whitelist (CIDR) unit test
         run: python3 tests/admin-ip-whitelist-test.py
+      - name: MahsaNet donate protocols validation
+        run: python3 tests/mahsanet-protocols-test.py
       - name: refactor verification (static)
         run: bash tests/refactor-verify.sh
       - name: protocol-roster drift gate
