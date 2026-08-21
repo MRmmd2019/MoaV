@@ -73,6 +73,17 @@ print_community_links() {
     echo -e "  ${DIM}Issues/bugs: ${MOAV_URL_GH}/issues${NC}"
 }
 
+# Without a DOMAIN the admin/Grafana TLS cert is self-signed, so browsers show
+# "not secure" / ERR_CERT_AUTHORITY_INVALID on first visit. That's expected on a
+# fresh install, not a bug — spell it out next to the URLs so operators don't
+# think something broke. No-op once a DOMAIN (browser-trusted cert) is set.
+print_tls_selfsigned_note() {
+    [[ -z "$(get_env_val "DOMAIN" .env "")" ]] || return 0
+    echo -e "  ${YELLOW}Note:${NC} the admin/Grafana cert is self-signed (no DOMAIN set), so your browser"
+    echo -e "        will warn \"not secure\" / ERR_CERT_AUTHORITY_INVALID on first visit — that's"
+    echo -e "        expected; click Advanced → Proceed. Set a DOMAIN for a trusted Let's Encrypt cert."
+}
+
 print_header() {
     # Only clear when stdout is a TTY (avoids "TERM not set" abort under setsid).
     if [[ -t 1 ]]; then

@@ -23,6 +23,28 @@ echo "[conduit] Max common clients: $CONDUIT_MAX_COMMON_CLIENTS"
 echo "[conduit] Metrics endpoint: $CONDUIT_METRICS_ADDR"
 echo "[conduit] Data directory: $CONDUIT_DATA_DIR"
 
+# Warn when the CPU allocation looks too small for the configured client load —
+# conduit relaying is CPU-bound (rough guideline ~200 clients per vCPU), and the
+# compose default caps this service at 0.5 CPU. Read the cgroup limit (v2 then
+# v1); "max"/unset means uncapped, so no warning.
+_cpu_q=""; _cpu_p=""
+if [ -r /sys/fs/cgroup/cpu.max ]; then
+    read -r _cpu_q _cpu_p < /sys/fs/cgroup/cpu.max
+elif [ -r /sys/fs/cgroup/cpu/cpu.cfs_quota_us ]; then
+    _cpu_q=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us 2>/dev/null)
+    _cpu_p=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us 2>/dev/null)
+fi
+if [ "$_cpu_q" != "max" ] && [ "${_cpu_q:-0}" -gt 0 ] 2>/dev/null && [ "${_cpu_p:-0}" -gt 0 ] 2>/dev/null; then
+    # clients per vCPU = clients / (quota/period) = clients*period/quota
+    if [ $(( CONDUIT_MAX_COMMON_CLIENTS * _cpu_p )) -gt $(( 200 * _cpu_q )) ]; then
+        echo "[conduit] WARNING: configured for ${CONDUIT_MAX_COMMON_CLIENTS} clients but limited to"
+        echo "[conduit]          ~$(( _cpu_q * 100 / _cpu_p ))% of one CPU core. Relaying is CPU-bound"
+        echo "[conduit]          (~200 clients/vCPU rule of thumb) — if you see high CPU or latency,"
+        echo "[conduit]          raise this service's 'cpus' in docker-compose.yml or lower"
+        echo "[conduit]          CONDUIT_MAX_COMMON_CLIENTS."
+    fi
+fi
+
 # Handle shutdown gracefully - use signal numbers for POSIX compatibility
 # 15 = SIGTERM, 2 = SIGINT
 cleanup() {
