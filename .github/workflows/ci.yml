@@ -51,6 +51,8 @@ jobs:
         run: bash tests/wg-keygen-fallback-test.sh
       - name: user UUID capture (no two-line double-capture)
         run: bash tests/uuid-capture-test.sh
+      - name: malformed credentials.env guard
+        run: bash tests/creds-valid-test.sh
       - name: config naming (server label + wg 15-char limit)
         run: bash tests/config-naming-test.sh
       - name: grafana branding non-fatal

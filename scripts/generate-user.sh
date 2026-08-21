@@ -41,7 +41,18 @@ if [[ ! -f "$USER_CREDS_FILE" ]]; then
     exit 1
 fi
 
-source "$USER_CREDS_FILE"
+# A corrupt credentials.env (bash-unparseable) must not abort with an opaque
+# error, and a partial/malformed one must not silently emit broken bundles.
+if ! source "$USER_CREDS_FILE" 2>/dev/null; then
+    log_error "credentials.env for '$USER_ID' failed to parse (corrupt): $USER_CREDS_FILE"
+    log_error "Remove it and re-run 'moav user add $USER_ID' to regenerate."
+    exit 1
+fi
+if ! creds_valid "${USER_UUID:-}" "${USER_PASSWORD:-}"; then
+    log_error "credentials.env for '$USER_ID' is malformed — USER_UUID/USER_PASSWORD missing or invalid: $USER_CREDS_FILE"
+    log_error "Remove it and re-run 'moav user add $USER_ID' to regenerate."
+    exit 1
+fi
 
 # Load Reality keys whenever they exist. Deliberately NOT gated on
 # ENABLE_REALITY: XHTTP is VLESS+Reality-over-xhttp and needs the same keys, and

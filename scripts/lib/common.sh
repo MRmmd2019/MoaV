@@ -310,6 +310,16 @@ get_env_val() {
     echo "${val:-$default}"
 }
 
+# creds_valid <uuid> <password> — 0 iff both universal user credentials are
+# well-formed (UUID + non-empty password). Guards against a malformed or
+# partially-written credentials.env silently producing broken bundles.
+creds_valid() {
+    local uuid="${1:-}" password="${2:-}"
+    [[ "$uuid" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || return 1
+    [[ -n "$password" ]] || return 1
+    return 0
+}
+
 # Donate mode: restrict a user to the protocols in DONATE_ONLY_PROTOCOLS.
 # Reference, including how to add a protocol: docs/devdocs/DONATE-MODE.md
 #
