@@ -620,7 +620,8 @@ services:
       context: .
       dockerfile: dockerfiles/Dockerfile.amneziawg
       args:
-        AWGTOOLS_VERSION: ${AWGTOOLS_VERSION:-1.0.20260223}
+        AMNEZIAWG_GO_VERSION: ${AMNEZIAWG_GO_VERSION:-v3.1.20260814}
+        AWGTOOLS_VERSION: ${AWGTOOLS_VERSION:-3.1.20260812}
         GOPROXY: "${GOPROXY:-https://proxy.golang.org|https://goproxy.cn|direct}"
         GOSUMDB: "${GOSUMDB:-off}"
     container_name: moav-amneziawg
@@ -1386,7 +1387,7 @@ services:
         SINGBOX_VERSION: ${SINGBOX_VERSION:-1.13.19}
         WSTUNNEL_VERSION: ${WSTUNNEL_VERSION:-10.6.1}
         TRUSTTUNNEL_CLIENT_VERSION: ${TRUSTTUNNEL_CLIENT_VERSION:-1.0.49}
-        AWGTOOLS_VERSION: ${AWGTOOLS_VERSION:-1.0.20260223}
+        AWGTOOLS_VERSION: ${AWGTOOLS_VERSION:-3.1.20260812}
         SLIPSTREAM_VERSION: ${SLIPSTREAM_VERSION:-2026.02.22.1}
         DNSTT_VERSION: ${DNSTT_VERSION:-v1.20260501.0}
     container_name: moav-client

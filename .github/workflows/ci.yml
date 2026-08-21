@@ -109,6 +109,8 @@ jobs:
         run: bash tests/oneshot-services-test.sh
       - name: wg/awg stored-IP collision
         run: bash tests/wg-ip-collision-test.sh
+      - name: AmneziaWG v3 params
+        run: bash tests/amneziawg-v3-test.sh
       - name: doctor CDN detection + scrape targets
         run: bash tests/doctor-cdn-test.sh
       - name: snowflake native metrics + dashboard (#183)
