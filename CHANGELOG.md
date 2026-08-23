@@ -16,12 +16,18 @@ of hardening and operator-UX fixes. Keys, users, and certificates are otherwise
 untouched.
 
 ### Added
-- **Monitoring: two new Grafana dashboards.** A cross-protocol **Overview** and a
-  **Research** site-analytics view (experimental, behind
-  `ENABLE_SITE_ANALYTICS_RESEARCH`, with an in-dashboard banner). Adds fuller
-  protocol tables (active / traffic / provisioned), per-protocol and bridge
-  traffic, source-by-protocol, a growth chart, and Snowflake reach. Every
-  dashboard now uses **one consistent colour per country and per protocol**.
+- **New "MoaV — Overview" Grafana dashboard.** A cross-protocol operator view
+  that pulls active users, traffic, and reach for every protocol into one place.
+- **New "MoaV — Research" site-analytics dashboard.** An experimental view
+  (behind `ENABLE_SITE_ANALYTICS_RESEARCH`, with an in-dashboard "experimental"
+  banner) for aggregate destination/country/port research, a growth chart, and
+  Snowflake reach. Counters are range-scoped so panels read as volume over the
+  selected window, not an ever-climbing total.
+- **Monitoring visualization refresh.** The protocol table is split into
+  **active / traffic / provisioned**, VPN protocols are separated from bridges
+  (Tor / Snowflake / Conduit), and per-protocol + bridge traffic and
+  source-by-protocol panels were added. Every dashboard now uses **one
+  consistent colour per country and per protocol**.
 - **`moav://` compact subscription.** Each user bundle's `subscription.txt` gains
   a single `moav://` line encoding the whole enabled proxy surface, alongside the
   legacy per-protocol URIs (additive — other clients ignore the scheme).
@@ -57,6 +63,8 @@ untouched.
   alongside the private key.
 - Traffic-by-protocol is charted as **volume over the selected range** (MB/GB),
   not an instantaneous rate.
+- `AWG_DISABLE_COOKIES` moved to the Advanced section of `.env.example`, next to
+  the other WireGuard/AmneziaWG variables.
 
 ### Fixed
 - **`moav regenerate-users` left WireGuard/AmneziaWG on stale peers.** It only
@@ -72,6 +80,13 @@ untouched.
 - The telemt dashboard was rebuilt on the metrics that are actually reachable,
   and Research-dashboard counters are range-scoped so panels show volume rather
   than an ever-climbing total.
+
+### Internal
+- New regression tests, all wired into CI: AmneziaWG v3 params
+  (`amneziawg-v3-test.sh`), `regenerate-users` WG/AWG reload, `moav cert`
+  idempotency + domainless no-op, the self-signed-cert note, the MahsaNet
+  `protocols` validation, the malformed-`credentials.env` guard, and the
+  `moav://` emitter golden test.
 
 ### Security
 - The MahsaNet donate endpoint (`/api/mahsanet/donate`) now validates the
