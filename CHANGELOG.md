@@ -7,7 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-08-23
+
+Two new Grafana dashboards and consistent colours across monitoring; AmneziaWG
+moves to **v3 obfuscation** (breaking for existing AmneziaWG users — see
+Upgrading); user bundles gain a compact **`moav://`** subscription; plus a batch
+of hardening and operator-UX fixes. Keys, users, and certificates are otherwise
+untouched.
+
 ### Added
+- **Monitoring: two new Grafana dashboards.** A cross-protocol **Overview** and a
+  **Research** site-analytics view (experimental, behind
+  `ENABLE_SITE_ANALYTICS_RESEARCH`, with an in-dashboard banner). Adds fuller
+  protocol tables (active / traffic / provisioned), per-protocol and bridge
+  traffic, source-by-protocol, a growth chart, and Snowflake reach. Every
+  dashboard now uses **one consistent colour per country and per protocol**.
+- **`moav://` compact subscription.** Each user bundle's `subscription.txt` gains
+  a single `moav://` line encoding the whole enabled proxy surface, alongside the
+  legacy per-protocol URIs (additive — other clients ignore the scheme).
+  [moav-client](https://github.com/MotherofallVPNs/moav-client) expands it and
+  dedups it against the legacy URIs. See `docs/MOAV_BUNDLE.md`.
+- **Conduit CPU-budget warning.** The conduit sidecar reads its cgroup CPU limit
+  and warns when the configured client count exceeds it (compose caps conduit at
+  0.5 CPU, so a high `CONDUIT_MAX_COMMON_CLIENTS` silently over-subscribed it).
+- **Self-signed-cert note on a fresh install.** When there is no `DOMAIN`, the
+  start/bootstrap summary now explains the expected browser
+  `ERR_CERT_AUTHORITY_INVALID` warning and how to get a trusted certificate.
 - **AmneziaWG v3 obfuscation.** The AmneziaWG sidecar moves from the 1.x
   parameter set (`Jc/Jmin/Jmax`, `S1/S2`, `H1–H4`) to **v3**, which adds
   **header protection** (`HeaderProtectionKey` — ChaCha20-encrypts the
@@ -30,6 +55,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of a hand-rolled `awg set` arg builder + peer loop — the v3 `awg set`
   tokens are inconsistently named and `header-protection-key` can't be piped
   alongside the private key.
+- Traffic-by-protocol is charted as **volume over the selected range** (MB/GB),
+  not an instantaneous rate.
+
+### Fixed
+- **`moav regenerate-users` left WireGuard/AmneziaWG on stale peers.** It only
+  restarted sing-box + xray, so a regenerated user's key was written to
+  `wg0.conf`/`awg0.conf` on disk but never loaded into the running server — the
+  tunnel handshook yet the peer was unknown and passed no traffic. It now
+  hot-syncs WireGuard peers (`wg syncconf`, non-disruptive) and reloads
+  AmneziaWG, guarded so an empty strip can't wipe peers.
+- **A malformed `credentials.env` produced broken bundles.** `generate-user.sh`
+  now rejects a corrupt or partial credentials file (unparseable, or an empty /
+  invalid `USER_UUID`/`USER_PASSWORD` from an aborted write) with a clear
+  remediation hint, instead of silently emitting a bundle with empty credentials.
+- The telemt dashboard was rebuilt on the metrics that are actually reachable,
+  and Research-dashboard counters are range-scoped so panels show volume rather
+  than an ever-climbing total.
+
+### Security
+- The MahsaNet donate endpoint (`/api/mahsanet/donate`) now validates the
+  `protocols` request body — a bounded list of simple tokens — instead of passing
+  it unchecked into the user-provisioning environment.
 
 ### Upgrading (breaking for existing AmneziaWG users)
 - v3 obfuscation params are **mandatory-match** and there is no version
@@ -1973,7 +2020,8 @@ TrustTunnel config validity.
 - uTLS fingerprint spoofing (Chrome)
 - Automatic short ID generation for Reality
 
-[Unreleased]: https://github.com/MotherofallVPNs/moav/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/MotherofallVPNs/moav/compare/v2.2.2...HEAD
+[2.2.2]: https://github.com/MotherofallVPNs/moav/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/MotherofallVPNs/moav/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/MotherofallVPNs/moav/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/MotherofallVPNs/moav/compare/v2.0.1...v2.1.0
