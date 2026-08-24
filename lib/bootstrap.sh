@@ -146,6 +146,9 @@ run_bootstrap() {
             if echo "$SELECTED_PROFILE_STRING" | grep -qE "monitoring"; then
                 echo -e "  ${CYAN}Grafana:${NC}         $(get_grafana_url)"
             fi
+            if echo "$SELECTED_PROFILE_STRING" | grep -qE "admin|monitoring|all"; then
+                print_tls_selfsigned_note
+            fi
             echo ""
         else
             echo ""

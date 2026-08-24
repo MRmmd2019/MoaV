@@ -988,6 +988,7 @@ start_services() {
         fi
 
         if echo "$profiles" | grep -qE "admin|monitoring|all"; then
+            print_tls_selfsigned_note
             echo ""
         fi
         show_log_help

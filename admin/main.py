@@ -814,6 +814,21 @@ MAHSANET_PROTOCOLS = os.environ.get("MAHSANET_PROTOCOLS", "reality hysteria2").s
 MAHSANET_POOL = os.environ.get("MAHSANET_POOL", "mahsa")
 
 
+def validate_donate_protocols(protocols):
+    """Validate the /api/mahsanet/donate 'protocols' body field. Returns the
+    list, or raises ValueError. The values flow into DONATE_ONLY_PROTOCOLS ->
+    user-add.sh, so a non-list would crash the " ".join and stray values would
+    reach a shell env; keep it a bounded list of simple protocol tokens."""
+    if not isinstance(protocols, list) or not protocols:
+        raise ValueError("protocols must be a non-empty list")
+    if len(protocols) > 20:
+        raise ValueError("too many protocols (max 20)")
+    for p in protocols:
+        if not isinstance(p, str) or not re.match(r'^[a-z0-9_-]{1,32}$', p):
+            raise ValueError(f"invalid protocol: {p!r}")
+    return protocols
+
+
 def _mahsanet_ads_url() -> str:
     """The link MahsaNet shows next to a donated config.
 
@@ -940,13 +955,15 @@ async def mahsanet_donate(request: Request, _: str = Depends(verify_auth)):
     body = await request.json()
     count = int(body.get("count", 1))
     prefix = body.get("prefix", "mahsa").strip()
-    protocols = body.get("protocols", MAHSANET_PROTOCOLS)
-
     # Validate
     if count < 1 or count > 50:
         raise HTTPException(status_code=400, detail="Count must be 1-50")
     if not re.match(r'^[a-zA-Z0-9_-]+$', prefix):
         raise HTTPException(status_code=400, detail="Invalid prefix")
+    try:
+        protocols = validate_donate_protocols(body.get("protocols", MAHSANET_PROTOCOLS))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Generate users via user-add.sh
     if not USER_ADD_SCRIPT.exists():

@@ -460,6 +460,7 @@ cmd_regenerate_users() {
     local enable_hysteria2=$(get_env_val "ENABLE_HYSTERIA2" .env "true")
     local enable_wireguard=$(get_env_val "ENABLE_WIREGUARD" .env "true")
     local enable_amneziawg=$(get_env_val "ENABLE_AMNEZIAWG" .env "true")
+    local awg_disable_cookies=$(get_env_val "AWG_DISABLE_COOKIES" .env "false")
     local enable_dnstt=$(get_env_val "ENABLE_DNSTT" .env "true")
     local enable_slipstream=$(get_env_val "ENABLE_SLIPSTREAM" .env "true")
     local slipstream_subdomain=$(get_env_val "SLIPSTREAM_SUBDOMAIN" .env "s")
@@ -515,6 +516,7 @@ cmd_regenerate_users() {
             -e "ENABLE_HYSTERIA2=${enable_hysteria2:-true}" \
             -e "ENABLE_WIREGUARD=${enable_wireguard:-true}" \
             -e "ENABLE_AMNEZIAWG=${enable_amneziawg:-true}" \
+            -e "AWG_DISABLE_COOKIES=${awg_disable_cookies:-false}" \
             -e "ENABLE_DNSTT=${enable_dnstt:-false}" \
             -e "ENABLE_SLIPSTREAM=${enable_slipstream:-false}" \
             -e "SLIPSTREAM_SUBDOMAIN=${slipstream_subdomain:-s}" \
@@ -543,7 +545,7 @@ cmd_regenerate_users() {
             -e "PORT_DNS=${port_dns:-53}" \
             -e "PORT_XDNS=${port_xdns:-53}" \
         --entrypoint /bin/bash \
-        bootstrap -c 'source /app/lib/common.sh; source /app/lib/sing-box.sh; source /app/lib/xray.sh; source /app/lib/sync.sh; source /app/lib/provision.sh; provision_all_users force'; then
+        bootstrap -c 'source /app/lib/common.sh; source /app/lib/sing-box.sh; source /app/lib/xray.sh; source /app/lib/sync.sh; source /app/lib/provision.sh; source /app/lib/amneziawg.sh; if [ "${ENABLE_AMNEZIAWG:-true}" = true ]; then generate_amneziawg_config; fi; provision_all_users force'; then
         user_count=$(echo "$users_found" | wc -w | tr -d ' ')
         echo -e "  ${GREEN}✓${NC} provisioning run finished"
     else
@@ -557,6 +559,23 @@ cmd_regenerate_users() {
     # bundles THEN sync_server_users, always reaching the reconcile even if a
     # bundle failed). Reload the proxies so the re-inserted users take effect.
     docker compose restart sing-box xray >/dev/null 2>&1 || true
+
+    # WG/AWG were missing here: regenerate rebuilds wg0/awg0.conf on disk but the
+    # running servers keep stale peers until reloaded (moav user add already does).
+    if [[ "${enable_wireguard:-true}" == "true" ]] && [[ "$(docker inspect -f '{{.State.Running}}' moav-wireguard 2>/dev/null)" == "true" ]]; then
+        local wg_stripped
+        wg_stripped=$(docker exec -i moav-wireguard wg-quick strip wg0 2>/dev/null || true)  # never abort the caller under set -e
+        if [[ -n "$wg_stripped" ]]; then
+            printf '%s\n' "$wg_stripped" | docker exec -i moav-wireguard wg syncconf wg0 /dev/stdin >/dev/null 2>&1 \
+                || docker restart moav-wireguard >/dev/null 2>&1 || true
+        else
+            docker restart moav-wireguard >/dev/null 2>&1 || true
+        fi
+    fi
+    # AmneziaWG has no awg-quick; its entrypoint re-applies awg0.conf on start.
+    if [[ "${enable_amneziawg:-true}" == "true" ]] && [[ "$(docker inspect -f '{{.State.Running}}' moav-amneziawg 2>/dev/null)" == "true" ]]; then
+        docker restart moav-amneziawg >/dev/null 2>&1 || true
+    fi
     echo ""
 
     if [[ $user_count -gt 0 ]]; then

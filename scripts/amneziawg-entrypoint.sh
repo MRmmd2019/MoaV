@@ -58,21 +58,9 @@ ADDRESS=$(grep -i 'Address' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' 
 LISTEN_PORT=$(grep -i 'ListenPort' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
 MTU=$(grep -i 'MTU' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
 
-# Parse AmneziaWG obfuscation params
-JC=$(grep -i '^Jc' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-JMIN=$(grep -i '^Jmin' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-JMAX=$(grep -i '^Jmax' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-S1=$(grep -i '^S1' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-S2=$(grep -i '^S2' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-H1=$(grep -i '^H1' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-H2=$(grep -i '^H2' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-H3=$(grep -i '^H3' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-H4=$(grep -i '^H4' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' || true)
-
 # Fail loudly on missing essentials rather than proceeding to the monitor loop
 # with an empty key -- that left the container reporting healthy while the
-# tunnel was dead. The obfuscation params above are genuinely optional, which is
-# exactly why every scraper needed `|| true`: absence is their normal case.
+# tunnel was dead.
 [ -n "$PRIVATE_KEY" ] || { echo "[amneziawg] ERROR: no PrivateKey in $CONFIG_FILE"; exit 1; }
 [ -n "$ADDRESS" ]     || { echo "[amneziawg] ERROR: no Address in $CONFIG_FILE"; exit 1; }
 [ -n "$LISTEN_PORT" ] || LISTEN_PORT=51821   # optional; awg default
@@ -80,71 +68,34 @@ H4=$(grep -i '^H4' "$CONFIG_FILE" | head -1 | cut -d'=' -f2- | tr -d ' \t\r\n' |
 echo "[amneziawg] Address: $ADDRESS"
 echo "[amneziawg] Listen port: $LISTEN_PORT"
 echo "[amneziawg] MTU: ${MTU:-default}"
-echo "[amneziawg] Obfuscation: Jc=$JC S1=$S1 S2=$S2 H1=$H1 H2=$H2 H3=$H3 H4=$H4"
 
-# Build awg set command with obfuscation params
-AWG_SET_ARGS="private-key /dev/stdin listen-port $LISTEN_PORT"
-[ -n "$JC" ] && AWG_SET_ARGS="$AWG_SET_ARGS jc $JC"
-[ -n "$JMIN" ] && AWG_SET_ARGS="$AWG_SET_ARGS jmin $JMIN"
-[ -n "$JMAX" ] && AWG_SET_ARGS="$AWG_SET_ARGS jmax $JMAX"
-[ -n "$S1" ] && AWG_SET_ARGS="$AWG_SET_ARGS s1 $S1"
-[ -n "$S2" ] && AWG_SET_ARGS="$AWG_SET_ARGS s2 $S2"
-[ -n "$H1" ] && AWG_SET_ARGS="$AWG_SET_ARGS h1 $H1"
-[ -n "$H2" ] && AWG_SET_ARGS="$AWG_SET_ARGS h2 $H2"
-[ -n "$H3" ] && AWG_SET_ARGS="$AWG_SET_ARGS h3 $H3"
-[ -n "$H4" ] && AWG_SET_ARGS="$AWG_SET_ARGS h4 $H4"
+# Load the private key + every obfuscation param (Jc/S1-S4/H1-H4 + the AWG3
+# keys: HeaderProtectionKey, ContentPaddingAddition, timings) + all peers in one
+# shot via `awg setconf`, which reads the config keys directly. This replaces a
+# hand-rolled `awg set` arg builder + peer loop: the AWG3 `awg set` tokens are
+# inconsistently named (hyphen vs underscore) and header-protection-key can't be
+# piped alongside the private key. setconf only speaks wg-protocol keys, so strip
+# the wg-quick-only directives (Address/DNS/MTU/PostUp/PostDown) — applied with
+# ip(8)/iptables below.
+STRIPPED=$(mktemp)
+awk '
+    /^[[:space:]]*\[Interface\]/ {section="i"; print; next}
+    /^[[:space:]]*\[Peer\]/      {section="p"; print; next}
+    /^[[:space:]]*$/             {print; next}
+    /^[[:space:]]*#/             {print; next}
+    section=="i" && /^[[:space:]]*(Address|DNS|MTU|PostUp|PostDown|SaveConfig)[[:space:]]*=/ {next}
+    {print}
+' "$CONFIG_FILE" > "$STRIPPED"
 
-# Set private key and obfuscation params
-echo "$PRIVATE_KEY" | awg set "$INTERFACE" $AWG_SET_ARGS
-
-# Add peers from config
-echo "[amneziawg] Adding peers..."
-IN_PEER=0
-PEER_PUBKEY=""
-PEER_ALLOWED=""
-
-while IFS= read -r line || [ -n "$line" ]; do
-    # Trim whitespace
-    line=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-
-    # Skip empty lines and comments
-    [ -z "$line" ] && continue
-    echo "$line" | grep -q '^#' && continue
-
-    # Check for [Peer] section
-    if echo "$line" | grep -qi '^\[Peer\]'; then
-        # Add previous peer if exists
-        if [ -n "$PEER_PUBKEY" ] && [ -n "$PEER_ALLOWED" ]; then
-            echo "[amneziawg]   Adding peer: ${PEER_PUBKEY:0:20}..."
-            awg set "$INTERFACE" peer "$PEER_PUBKEY" allowed-ips "$PEER_ALLOWED"
-        fi
-        IN_PEER=1
-        PEER_PUBKEY=""
-        PEER_ALLOWED=""
-        continue
-    fi
-
-    # Check for [Interface] section (exit peer mode)
-    if echo "$line" | grep -qi '^\[Interface\]'; then
-        IN_PEER=0
-        continue
-    fi
-
-    # Parse peer settings
-    if [ "$IN_PEER" = "1" ]; then
-        if echo "$line" | grep -qi '^PublicKey'; then
-            PEER_PUBKEY=$(echo "$line" | cut -d'=' -f2- | tr -d ' \t\r\n')
-        elif echo "$line" | grep -qi '^AllowedIPs'; then
-            PEER_ALLOWED=$(echo "$line" | cut -d'=' -f2- | tr -d ' \t\r\n')
-        fi
-    fi
-done < "$CONFIG_FILE"
-
-# Add last peer if exists
-if [ -n "$PEER_PUBKEY" ] && [ -n "$PEER_ALLOWED" ]; then
-    echo "[amneziawg]   Adding peer: ${PEER_PUBKEY:0:20}..."
-    awg set "$INTERFACE" peer "$PEER_PUBKEY" allowed-ips "$PEER_ALLOWED"
+if ! awg setconf "$INTERFACE" "$STRIPPED"; then
+    echo "[amneziawg] ERROR: awg setconf failed"
+    cat "$STRIPPED"
+    rm -f "$STRIPPED"
+    exit 1
 fi
+rm -f "$STRIPPED"
+
+# Peers were loaded by `awg setconf` above (it reads every [Peer] block).
 
 # Set interface address and MTU, then bring up
 echo "[amneziawg] Setting address $ADDRESS..."

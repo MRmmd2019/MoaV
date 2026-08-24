@@ -16,6 +16,7 @@ source /app/lib/masterdns.sh
 source /app/lib/gooserelay.sh
 source /app/lib/telemt.sh
 source /app/lib/sing-box.sh
+source /app/lib/moav-bundle.sh
 source /app/lib/trusttunnel.sh
 source /app/lib/xray.sh
 source /app/lib/bundle-readme.sh
@@ -41,7 +42,18 @@ if [[ ! -f "$USER_CREDS_FILE" ]]; then
     exit 1
 fi
 
-source "$USER_CREDS_FILE"
+# A corrupt credentials.env (bash-unparseable) must not abort with an opaque
+# error, and a partial/malformed one must not silently emit broken bundles.
+if ! source "$USER_CREDS_FILE" 2>/dev/null; then
+    log_error "credentials.env for '$USER_ID' failed to parse (corrupt): $USER_CREDS_FILE"
+    log_error "Remove it and re-run 'moav user add $USER_ID' to regenerate."
+    exit 1
+fi
+if ! creds_valid "${USER_UUID:-}" "${USER_PASSWORD:-}"; then
+    log_error "credentials.env for '$USER_ID' is malformed — USER_UUID/USER_PASSWORD missing or invalid: $USER_CREDS_FILE"
+    log_error "Remove it and re-run 'moav user add $USER_ID' to regenerate."
+    exit 1
+fi
 
 # Load Reality keys whenever they exist. Deliberately NOT gated on
 # ENABLE_REALITY: XHTTP is VLESS+Reality-over-xhttp and needs the same keys, and
@@ -632,6 +644,17 @@ if [[ "${ENABLE_XDNS:-false}" == "true" ]] && [[ -n "${DOMAIN:-}" ]]; then
             log_info "  - XDNS configs generated"
         fi
     fi
+fi
+
+# -----------------------------------------------------------------------------
+# Emit the compact moav:// bundle — one URL covering every enabled proxy
+# protocol, alongside the legacy per-protocol URIs. moav-client expands + dedups
+# it; other clients ignore the unknown scheme. See docs/MOAV_BUNDLE.md.
+# -----------------------------------------------------------------------------
+MOAV_BUNDLE=$(moav_bundle_link "$USER_ID" "$SERVER_IP")
+if [[ -n "$MOAV_BUNDLE" ]]; then
+    echo "$MOAV_BUNDLE" > "$OUTPUT_DIR/moav-bundle.txt"
+    log_info "  - moav:// compact bundle generated"
 fi
 
 # -----------------------------------------------------------------------------

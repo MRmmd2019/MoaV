@@ -276,6 +276,38 @@ grep -q 'MIXED=False' <<<"$out" \
     && ok "the Site Usage columns are all the same kind" \
     || bad "the table mixes cumulative and range columns, so some read 0 while others do not"
 
+# --- a country is one colour across every dashboard -------------------------
+# byName overrides work on pie charts (palette-classic-by-name does not); every
+# {{country}} panel must map a country to the SAME fixed colour.
+out=$(python3 - "$DASH" <<'PY'
+import json, os, sys, collections
+seen = collections.defaultdict(set)
+panels = 0
+for fn in sorted(os.listdir(sys.argv[1])):
+    if not fn.endswith(".json"): continue
+    d = json.load(open(os.path.join(sys.argv[1], fn)))
+    def walk(p):
+        global panels
+        lf = " ".join(t.get("legendFormat","") for t in p.get("targets",[]))
+        if "{{country}}" in lf and p.get("type") in ("piechart","table","stat"):
+            ov = p.get("fieldConfig",{}).get("overrides",[])
+            cc = {o["matcher"]["options"]: o["properties"][0]["value"]["fixedColor"]
+                  for o in ov if o.get("matcher",{}).get("id")=="byName"
+                  and o["properties"][0].get("id")=="color"}
+            if "IR" in cc: panels += 1
+            for c,h in cc.items(): seen[c].add(h)
+        for n in p.get("panels",[]): walk(n)
+    for p in d["panels"]: walk(p)
+conflicts = {c: hs for c,hs in seen.items() if len(hs) > 1}
+print("PANELS=%d CONFLICTS=%s" % (panels, conflicts or "none"))
+PY
+)
+if grep -q 'CONFLICTS=none' <<<"$out" && ! grep -q 'PANELS=0' <<<"$out"; then
+    ok "country colours are consistent across dashboards ($(grep -oE 'PANELS=[0-9]+' <<<"$out"))"
+else
+    bad "a country maps to different colours across panels: $out"
+fi
+
 echo ""
 echo "  passed: $pass   failed: $fail"
 [ "$fail" -eq 0 ] || exit 1
