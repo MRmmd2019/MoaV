@@ -1,0 +1,202 @@
+name: MR-MMD-2019-MoaV
+
+on:
+  workflow_dispatch:
+
+jobs:
+  moav:
+    name: Run MoaV with Cloudflare Quick Tunnel
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 360
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      - name: Display runner information
+        shell: bash
+        run: |
+          echo "System information"
+          echo "=================="
+
+          uname -a
+
+          echo ""
+          echo "CPU:"
+          nproc
+
+          echo ""
+          echo "Memory:"
+          free -h
+
+
+      - name: Install required packages
+        shell: bash
+        run: |
+          echo "Installing required packages..."
+
+          sudo apt update
+
+          sudo apt install -y \
+            curl \
+            wget \
+            git \
+            jq \
+            qrencode \
+            unzip \
+            openssl
+
+          echo "Packages installed successfully."
+
+
+      - name: Verify Docker
+        shell: bash
+        run: |
+          echo "Checking Docker..."
+
+          docker --version
+          docker compose version
+
+          docker info >/dev/null
+
+          echo "Docker is ready."
+
+
+      - name: Install cloudflared
+        shell: bash
+        run: |
+          echo "Installing cloudflared..."
+
+          curl -L \
+          https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
+          -o cloudflared
+
+          chmod +x cloudflared
+
+          sudo mv cloudflared /usr/local/bin/cloudflared
+
+          cloudflared --version
+
+          echo "cloudflared installed."
+
+
+      - name: Prepare MoaV configuration
+        shell: bash
+        run: |
+          echo "Preparing MoaV configuration..."
+
+          cp .env.example .env
+
+
+          # Domainless mode
+          sed -i 's/^DOMAIN=.*/DOMAIN=/' .env
+          sed -i 's/^ACME_EMAIL=.*/ACME_EMAIL=/' .env
+
+
+          # Temporary admin password
+          PASSWORD=$(openssl rand -hex 16)
+
+          sed -i "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$PASSWORD/" .env
+
+
+          # Start proxy + admin
+          sed -i \
+          's/^DEFAULT_PROFILES=.*/DEFAULT_PROFILES=proxy admin/' \
+          .env
+
+
+          echo ""
+          echo "Generated temporary admin password:"
+          echo "$PASSWORD"
+
+
+          echo "Configuration completed."
+
+
+      - name: Install MoaV
+        shell: bash
+        run: |
+          echo "Installing MoaV..."
+
+          chmod +x moav.sh
+
+          ./moav.sh install
+
+          echo "MoaV installation completed."
+
+
+      - name: Start MoaV services
+        shell: bash
+        run: |
+          echo "Starting MoaV services..."
+
+          ./moav.sh start
+
+          echo "Waiting for services..."
+
+          sleep 30
+
+
+          echo ""
+          echo "Checking admin dashboard..."
+
+          curl -k \
+          https://localhost:9443/api/health \
+          || true
+
+
+          echo ""
+          echo "MoaV started."
+
+
+      - name: Start Cloudflare Quick Tunnel
+        shell: bash
+        run: |
+          echo "Starting Cloudflare Quick Tunnel..."
+
+          cloudflared tunnel \
+            --url https://localhost:9443 \
+            --no-tls-verify \
+            --no-autoupdate \
+            2>&1 | tee cloudflared.log &
+
+
+          echo "Waiting for tunnel..."
+
+          sleep 20
+
+
+          echo ""
+          echo "======================================"
+          echo "Cloudflare Tunnel URL"
+          echo "======================================"
+
+
+          grep -E \
+          "https://.*trycloudflare.com" \
+          cloudflared.log \
+          || true
+
+
+          echo "======================================"
+          echo "Tunnel started."
+          echo "======================================"
+
+
+      - name: Keep service alive
+        shell: bash
+        run: |
+          echo "MoaV is running."
+
+          while true
+          do
+            echo ""
+            echo "Heartbeat: $(date -u)"
+
+            docker ps
+
+            sleep 600
+          done
