@@ -20,24 +20,18 @@ jobs:
         shell: bash
         run: |
           echo "System information"
-          echo "=================="
-
           uname -a
 
-          echo ""
           echo "CPU:"
           nproc
 
-          echo ""
           echo "Memory:"
           free -h
 
 
-      - name: Install required packages
+      - name: Install packages
         shell: bash
         run: |
-          echo "Installing required packages..."
-
           sudo apt update
 
           sudo apt install -y \
@@ -49,26 +43,20 @@ jobs:
             unzip \
             openssl
 
-          echo "Packages installed successfully."
-
 
       - name: Verify Docker
         shell: bash
         run: |
-          echo "Checking Docker..."
-
           docker --version
           docker compose version
-
           docker info >/dev/null
 
-          echo "Docker is ready."
+          echo "Docker ready."
 
 
       - name: Install cloudflared
         shell: bash
         run: |
-          echo "Installing cloudflared..."
 
           curl -L \
           https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
@@ -80,13 +68,12 @@ jobs:
 
           cloudflared --version
 
-          echo "cloudflared installed."
-
 
       - name: Prepare MoaV configuration
         shell: bash
         run: |
-          echo "Preparing MoaV configuration..."
+
+          echo "Preparing MoaV..."
 
           cp .env.example .env
 
@@ -99,80 +86,101 @@ jobs:
           # Temporary admin password
           PASSWORD=$(openssl rand -hex 16)
 
-          sed -i "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$PASSWORD/" .env
+          sed -i \
+          "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$PASSWORD/" \
+          .env
 
 
-          # Start proxy + admin
+          # Enable proxy + admin
           sed -i \
           's/^DEFAULT_PROFILES=.*/DEFAULT_PROFILES=proxy admin/' \
           .env
 
 
+          # Disable certificate-required protocols
+          sed -i 's/^ENABLE_TROJAN=.*/ENABLE_TROJAN=false/' .env
+          sed -i 's/^ENABLE_ANYTLS=.*/ENABLE_ANYTLS=false/' .env
+          sed -i 's/^ENABLE_HYSTERIA2=.*/ENABLE_HYSTERIA2=false/' .env
+          sed -i 's/^ENABLE_DNSTT=.*/ENABLE_DNSTT=false/' .env
+          sed -i 's/^ENABLE_SLIPSTREAM=.*/ENABLE_SLIPSTREAM=false/' .env
+          sed -i 's/^ENABLE_MASTERDNS=.*/ENABLE_MASTERDNS=false/' .env
+          sed -i 's/^ENABLE_TRUSTTUNNEL=.*/ENABLE_TRUSTTUNNEL=false/' .env
+
+
           echo ""
-          echo "Generated temporary admin password:"
+          echo "Final configuration:"
+          grep -E \
+          "DOMAIN|DEFAULT_PROFILES|ENABLE_|ADMIN_PASSWORD" \
+          .env || true
+
+
+          echo ""
+          echo "=============================="
+          echo "Temporary ADMIN PASSWORD"
           echo "$PASSWORD"
-
-
-          echo "Configuration completed."
+          echo "=============================="
 
 
       - name: Install MoaV
         shell: bash
         run: |
-          echo "Installing MoaV..."
 
           chmod +x moav.sh
 
           ./moav.sh install
 
-          echo "MoaV installation completed."
+
+      - name: Bootstrap MoaV
+        shell: bash
+        run: |
+
+          echo "Running bootstrap..."
+
+          ./moav.sh bootstrap </dev/null
 
 
       - name: Start MoaV services
         shell: bash
         run: |
-          echo "Starting MoaV services..."
+
+          echo "Starting services..."
 
           ./moav.sh start
+
 
           echo "Waiting for services..."
 
           sleep 30
 
 
-          echo ""
-          echo "Checking admin dashboard..."
+          echo "Health check..."
 
           curl -k \
           https://localhost:9443/api/health \
           || true
 
 
-          echo ""
-          echo "MoaV started."
-
-
       - name: Start Cloudflare Quick Tunnel
         shell: bash
         run: |
-          echo "Starting Cloudflare Quick Tunnel..."
+
+          echo "Starting Cloudflare Tunnel..."
+
 
           cloudflared tunnel \
-            --url https://localhost:9443 \
-            --no-tls-verify \
-            --no-autoupdate \
-            2>&1 | tee cloudflared.log &
+          --url https://localhost:9443 \
+          --no-tls-verify \
+          --no-autoupdate \
+          2>&1 | tee cloudflared.log &
 
-
-          echo "Waiting for tunnel..."
 
           sleep 20
 
 
           echo ""
-          echo "======================================"
-          echo "Cloudflare Tunnel URL"
-          echo "======================================"
+          echo "================================"
+          echo "Tunnel URL"
+          echo "================================"
 
 
           grep -E \
@@ -181,22 +189,22 @@ jobs:
           || true
 
 
-          echo "======================================"
-          echo "Tunnel started."
-          echo "======================================"
+          echo "================================"
 
 
-      - name: Keep service alive
+      - name: Keep alive
         shell: bash
         run: |
-          echo "MoaV is running."
+
+          echo "MoaV running."
 
           while true
           do
-            echo ""
-            echo "Heartbeat: $(date -u)"
+
+            echo "Heartbeat $(date -u)"
 
             docker ps
 
             sleep 600
+
           done
